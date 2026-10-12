@@ -31,6 +31,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.audio.PositionedSoundRecord;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.Gui;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.scoreboard.Team;
 import net.minecraft.util.ResourceLocation;
@@ -159,19 +160,15 @@ public class EnemyDetectorModule extends HudModule {
         // ---- danh sách người được viền: chỉ ở ngoài sảnh Hypixel, lấy tối đa N người gần nhất
         outlineIds.clear();
         if (outline.value && !HypixelUtil.inLobby()) {
-            List<EntityPlayer> cand = new ArrayList<EntityPlayer>();
-            for (EntityPlayer p : mc.theWorld.playerEntities) {
-                if (isOutlineTarget(p)) cand.add(p);
+            // Dùng đúng danh sách radar (found): cùng bán kính, cùng bộ lọc NPC / đồng đội, đã sắp xếp theo khoảng cách
+            int max = outMax.getInt();
+            for (Entry en : found) {
+                if (outlineIds.size() >= max) break;
+                Entity ent = mc.theWorld.getEntityByID(en.id);
+                if (!(ent instanceof EntityPlayer)) continue;
+                if (ent.isInvisible() && !outInvisible.value) continue;
+                outlineIds.add(en.id);
             }
-            final EntityPlayer me = mc.thePlayer;
-            Collections.sort(cand, new Comparator<EntityPlayer>() {
-                @Override
-                public int compare(EntityPlayer a, EntityPlayer b) {
-                    return Float.compare(me.getDistanceToEntity(a), me.getDistanceToEntity(b));
-                }
-            });
-            int max = Math.min(cand.size(), outMax.getInt());
-            for (int i = 0; i < max; i++) outlineIds.add(cand.get(i).getEntityId());
         }
     }
 
@@ -452,18 +449,6 @@ public class EnemyDetectorModule extends HudModule {
     private int ownedRb = -1;
     private boolean armed;
     private EntityPlayer target;
-
-    private boolean isOutlineTarget(EntityPlayer p) {
-        Minecraft mc = Minecraft.getMinecraft();
-        if (mc.thePlayer == null || p == mc.thePlayer || p.isDead || p.getHealth() <= 0f || p.isSpectator()) return false;
-        if (p.isInvisible() && !outInvisible.value) return false;
-        if (mc.thePlayer.getDistanceSqToEntity(p) > radius.value * radius.value) return false;
-        // Bỏ NPC / bot (không có trong tab list)
-        if (ignoreNpc.value && !HypixelUtil.isRealPlayer(p)) return false;
-        // Chỉ kẻ địch: bỏ đồng đội cùng team
-        if (!ignoreTeam.value) return true;
-        return !TeamUtil.isTeammate(mc.thePlayer, p);
-    }
 
     /** Gắn layer vẽ viền vào renderer người chơi (một lần cho mỗi renderer). */
     @SuppressWarnings({"unchecked", "rawtypes"})
