@@ -710,6 +710,10 @@ public class EnemyDetectorModule extends HudModule {
         silFb = null;
     }
 
+    /** LunarLite gọi mỗi khung hình ở RenderWorldLast. Hiện chưa vẽ gì. */
+    public void renderMarkers(float partialTicks) {
+    }
+
     public void onPre(RenderPlayerEvent.Pre e) {
         armed = false;
         target = null;
