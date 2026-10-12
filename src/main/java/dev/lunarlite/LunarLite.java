@@ -184,6 +184,7 @@ public class LunarLite {
     @SubscribeEvent
     public void onWorldLast(RenderWorldLastEvent e) {
         if (BOW_TRAJECTORY != null) BOW_TRAJECTORY.render(e.partialTicks);
+        if (ENEMY_DETECTOR != null) ENEMY_DETECTOR.renderMarkers(e.partialTicks);
     }
 
     @SubscribeEvent
