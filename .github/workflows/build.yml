@@ -1,1 +1,181 @@
+name: Zhwii Client - Build System
 
+run-name: >-
+  Zhwii Build • ${{ github.event_name == 'workflow_dispatch' && inputs.build_task || 'build' }}
+  • ${{ github.ref_name }}
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - develop
+    paths-ignore:
+      - "**.md"
+      - "LICENSE"
+      - ".gitignore"
+
+  pull_request:
+    branches:
+      - main
+      - master
+      - develop
+
+  workflow_dispatch:
+    inputs:
+      build_task:
+        description: "Gradle task to execute"
+        required: true
+        default: "build"
+        type: choice
+        options:
+          - build
+          - assemble
+          - clean
+          - tasks
+
+      clean_build:
+        description: "Clean before building"
+        required: true
+        default: true
+        type: boolean
+
+      artifact_name:
+        description: "Name of the uploaded build artifact"
+        required: true
+        default: "Zhwii-Client-1.8.9"
+        type: string
+
+      upload_artifact:
+        description: "Upload generated JAR files"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lunarlite-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Compile Zhwii Client
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      JAVA_VERSION: "8"
+      GRADLE_VERSION: "2.14.1"
+      BUILD_TASK: ${{ inputs.build_task || 'build' }}
+      CLEAN_BUILD: ${{ inputs.clean_build || 'false' }}
+      ARTIFACT_NAME: ${{ inputs.artifact_name || 'Zhwii-Client-1.8.9' }}
+      UPLOAD_ARTIFACT: ${{ inputs.upload_artifact || 'true' }}
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+          cache-disabled: false
+
+      - name: Show build environment
+        shell: bash
+        run: |
+          echo "=================================="
+          echo " Zhwii Client"
+          echo " Minecraft: 1.8.9"
+          echo " Java: $JAVA_VERSION"
+          echo " Gradle: $GRADLE_VERSION"
+          echo " Task: $BUILD_TASK"
+          echo "=================================="
+          java -version
+          gradle --version
+          echo
+          echo "Repository: $GITHUB_REPOSITORY"
+          echo "Branch: $GITHUB_REF_NAME"
+
+      - name: Validate project structure
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ ! -f build.gradle ] && [ ! -f build.gradle.kts ]; then
+            echo "::error::No Gradle build file found at repository root."
+            exit 1
+          fi
+
+          echo "Gradle project found."
+          echo "Project files:"
+          ls -la
+
+      - name: Build Client Hub
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "$CLEAN_BUILD" = "true" ] && [ "$BUILD_TASK" != "clean" ]; then
+            gradle --no-daemon --stacktrace clean
+          fi
+
+          case "$BUILD_TASK" in
+            build|assemble|clean|tasks)
+              gradle --no-daemon --stacktrace "$BUILD_TASK"
+              ;;
+            *)
+              echo "::error::Unsupported Gradle task."
+              exit 1
+              ;;
+          esac
+
+      - name: List generated JAR files
+        if: success()
+        shell: bash
+        run: |
+          echo "Searching build/libs for JAR files..."
+
+          if [ -d build/libs ]; then
+            find build/libs -maxdepth 1 -type f -name '*.jar' -print
+          else
+            echo "No build/libs directory was generated."
+          fi
+
+      - name: Upload Client Hub artifacts
+        if: success() && env.UPLOAD_ARTIFACT == 'true' && (inputs.build_task == 'build' || inputs.build_task == 'assemble' || inputs.build_task == '')
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: build/libs/*.jar
+          if-no-files-found: error
+          compression-level: 9
+          retention-days: 14
+
+      - name: Build summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Zhwii Client"
+            echo
+            echo "- Minecraft: 1.8.9"
+            echo "- Java: $JAVA_VERSION"
+            echo "- Gradle: $GRADLE_VERSION"
+            echo "- Task: $BUILD_TASK"
+            echo "- Commit: $GITHUB_SHA"
+            echo "- Branch: $GITHUB_REF_NAME"
+            echo
+            echo "Check the job logs for compilation errors."
+          } >> "$GITHUB_STEP_SUMMARY"
