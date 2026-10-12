@@ -11,6 +11,7 @@ import net.minecraft.client.entity.AbstractClientPlayer;
 import net.minecraft.client.model.ModelBase;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.OpenGlHelper;
+import net.minecraft.client.renderer.entity.RenderManager;
 import net.minecraft.client.renderer.entity.RenderPlayer;
 import net.minecraft.client.renderer.entity.RendererLivingEntity;
 import net.minecraft.client.renderer.entity.layers.LayerRenderer;
@@ -70,6 +71,8 @@ public class EnemyDetectorModule extends HudModule {
     private final BoolSetting throughWalls = add(new BoolSetting("outline_walls", "Through Walls", true), "Outline", outline);
     private final BoolSetting outInvisible = add(new BoolSetting("outline_invisible", "Show Invisible", true), "Outline", outline);
     private final BoolSetting outRainbow = add(new BoolSetting("outline_rainbow", "Rainbow Outline", true), "Outline", outline);
+    private final BoolSetting marker = add(new BoolSetting("marker", "Head Marker (tam giác)", true), "Outline", outline);
+    private final SliderSetting markSize = add(new SliderSetting("marker_size", "Marker Size", 0.6, 0.2, 2.0, 0.1, ""), "Outline", outline);
 
     private static class Entry {
         final int id;
@@ -449,6 +452,71 @@ public class EnemyDetectorModule extends HudModule {
     private int ownedRb = -1;
     private boolean armed;
     private EntityPlayer target;
+
+    /** Tam giác đều chúc xuống phía trên đầu mỗi người đang được đánh dấu (vẽ ở RenderWorldLastEvent). */
+    public void renderMarkers(float pt) {
+        if (!enabled || !outline.value || !marker.value || outlineIds.isEmpty()) return;
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.theWorld == null || mc.thePlayer == null) return;
+        RenderManager rm = mc.getRenderManager();
+
+        GlStateManager.pushMatrix();
+        GlStateManager.disableTexture2D();
+        GlStateManager.disableLighting();
+        GlStateManager.disableCull();
+        GlStateManager.enableBlend();
+        GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0);
+        GlStateManager.depthMask(false);
+        if (throughWalls.value) GlStateManager.disableDepth();
+        GL11.glLineWidth(2.0f);
+
+        for (Integer id : outlineIds) {
+            Entity ent = mc.theWorld.getEntityByID(id);
+            if (!(ent instanceof EntityPlayer)) continue;
+            double x = ent.lastTickPosX + (ent.posX - ent.lastTickPosX) * pt - rm.viewerPosX;
+            double y = ent.lastTickPosY + (ent.posY - ent.lastTickPosY) * pt - rm.viewerPosY;
+            double z = ent.lastTickPosZ + (ent.posZ - ent.lastTickPosZ) * pt - rm.viewerPosZ;
+            double dist = Math.sqrt(x * x + y * y + z * z);
+            float s = (float) (markSize.get() * Math.max(1.0, dist * 0.1)); // xa thì to dần để vẫn nhìn rõ
+
+            int rgb = outRainbow.value && rainbow != null
+                    ? rainbow.resolve(outColor.rgb(), (id % 10) * 60f) : outColor.argb();
+            float r = ((rgb >> 16) & 255) / 255f, g = ((rgb >> 8) & 255) / 255f, b = (rgb & 255) / 255f;
+
+            // Tam giác đều cạnh 1: chiều cao = sqrt(3)/2; đỉnh chúc xuống, đáy nằm trên
+            final float hh = 0.4330127f;
+            GlStateManager.pushMatrix();
+            GlStateManager.translate(x, y + ent.height + 0.3 + hh * s, z);
+            GlStateManager.rotate(-rm.playerViewY, 0f, 1f, 0f);
+            GlStateManager.rotate(rm.playerViewX, 1f, 0f, 0f);
+            GlStateManager.scale(s, s, s);
+
+            GlStateManager.color(r, g, b, 0.9f);
+            GL11.glBegin(GL11.GL_TRIANGLES);
+            GL11.glVertex3f(-0.5f, hh, 0f);
+            GL11.glVertex3f(0.5f, hh, 0f);
+            GL11.glVertex3f(0f, -hh, 0f);
+            GL11.glEnd();
+
+            GlStateManager.color(0f, 0f, 0f, 0.9f);
+            GL11.glBegin(GL11.GL_LINE_LOOP);
+            GL11.glVertex3f(-0.5f, hh, 0f);
+            GL11.glVertex3f(0.5f, hh, 0f);
+            GL11.glVertex3f(0f, -hh, 0f);
+            GL11.glEnd();
+            GlStateManager.popMatrix();
+        }
+
+        GL11.glLineWidth(1.0f);
+        GlStateManager.enableDepth();
+        GlStateManager.depthMask(true);
+        GlStateManager.disableBlend();
+        GlStateManager.enableCull();
+        GlStateManager.enableLighting();
+        GlStateManager.enableTexture2D();
+        GlStateManager.color(1f, 1f, 1f, 1f);
+        GlStateManager.popMatrix();
+    }
 
     /** Gắn layer vẽ viền vào renderer người chơi (một lần cho mỗi renderer). */
     @SuppressWarnings({"unchecked", "rawtypes"})
