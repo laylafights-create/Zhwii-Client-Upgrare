@@ -20,16 +20,19 @@ import net.minecraft.potion.PotionEffect;
 import net.minecraft.util.ResourceLocation;
 
 /**
- * Hiệu ứng thuốc dạng thẻ giống "Phát hiện kẻ địch": thanh tiêu đề + đếm số hiệu ứng,
- * mỗi hiệu ứng một thẻ riêng (icon, tên + cấp, viên thuốc thời gian, thanh thời gian còn lại).
- * Sắp hết (< 30s vàng, < 10s đỏ + nhấp nháy), hiệu ứng xấu có nền ửng đỏ.
+ * Hiệu ứng thuốc dạng thẻ nhỏ gọn: tiêu đề + số lượng, mỗi hiệu ứng một thẻ gồm
+ * ô biểu tượng (icon đúng của hiệu ứng), tên + cấp, viên thời gian và thanh thời gian mảnh.
+ * Sắp hết (< 30s vàng, < 10s đỏ + nhấp nháy), hiệu ứng xấu ửng đỏ.
  */
 public class PotionModule extends HudModule {
-    private static final int HEAD = 20, MIN_W = 104;
-    private static final int C_SAFE = 0xFF5CE08A, C_WARN = 0xFFFFC857, C_DANGER = 0xFFFF5C5C;
+    private static final int HEAD = 16, MIN_W = 96;
+    private static final int TILE = 14;                       // ô biểu tượng
+    private static final float ICON_SCALE = 0.72f;            // icon 18px thu nhỏ còn ~13px
+    private static final int C_WARN = 0xFFFFC857, C_DANGER = 0xFFFF5C5C;
     private static final int LOW_TICKS = 200, MID_TICKS = 600; // 10s / 30s
     private static final String[] ROMAN = { "", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X" };
     private static final ResourceLocation INVENTORY = new ResourceLocation("textures/gui/container/inventory.png");
+    private static final String TITLE = "\u00a7lHIỆU ỨNG";
 
     private final BoolSetting showDuration = add(new BoolSetting("duration", "Show Duration", true));
     private final BoolSetting effectColors = add(new BoolSetting("effect_colors", "Use Effect Colors", true));
@@ -39,13 +42,13 @@ public class PotionModule extends HudModule {
     private final BoolSetting sortTime = add(new BoolSetting("sort_time", "Sort By Time Left", false));
 
     private static class Entry {
-        final int id, dur, max, rgb;
+        final int id, dur, max, rgb, nameW, levelW, timeW;
         final Potion potion;
         final String name, level, time;
         final boolean infinite, bad;
 
-        Entry(int id, Potion potion, String name, String level, String time, int dur, int max, int rgb,
-              boolean infinite, boolean bad) {
+        Entry(FontRenderer fr, int id, Potion potion, String name, String level, String time,
+              int dur, int max, int rgb, boolean infinite, boolean bad) {
             this.id = id;
             this.potion = potion;
             this.name = name;
@@ -56,14 +59,29 @@ public class PotionModule extends HudModule {
             this.rgb = rgb;
             this.infinite = infinite;
             this.bad = bad;
+            // đo chữ một lần ở tick thay vì mỗi frame
+            this.nameW = fr.getStringWidth(name);
+            this.levelW = fr.getStringWidth(level);
+            this.timeW = fr.getStringWidth(time);
         }
     }
 
+    private static final Comparator<Entry> BY_TIME = new Comparator<Entry>() {
+        @Override
+        public int compare(Entry a, Entry b) {
+            int da = a.infinite ? Integer.MAX_VALUE : a.dur;
+            int db = b.infinite ? Integer.MAX_VALUE : b.dur;
+            return da < db ? -1 : (da == db ? 0 : 1);
+        }
+    };
+
     private List<Entry> current = new ArrayList<Entry>();
     private List<Entry> sample;
-    private final Map<Integer, Integer> maxDur = new HashMap<Integer, Integer>();    // thời lượng lớn nhất đã thấy (để tính %)
-    private final Map<Integer, Float> appear = new HashMap<Integer, Float>();        // tiến độ hiện ra của từng thẻ
-    private final Map<Integer, Float> barAnim = new HashMap<Integer, Float>();       // thanh thời gian chạy mượt
+    private final Map<Integer, Integer> maxDur = new HashMap<Integer, Integer>(); // thời lượng lớn nhất đã thấy
+    private final Map<Integer, Float> appear = new HashMap<Integer, Float>();     // tiến độ hiện ra
+    private final Map<Integer, Float> barAnim = new HashMap<Integer, Float>();    // thanh chạy mượt
+    private final Set<Integer> seen = new HashSet<Integer>();                     // tái sử dụng, tránh tạo mới
+    private long lastNs;
 
     public PotionModule() {
         super("potions", "Potion Status", "Hiệu ứng thuốc đang có, thời gian còn lại và cảnh báo sắp hết.",
@@ -74,8 +92,7 @@ public class PotionModule extends HudModule {
 
     private static String fmt(int ticks) {
         int s = Math.max(0, ticks) / 20;
-        int m = s / 60;
-        return m + ":" + (s % 60 < 10 ? "0" : "") + (s % 60);
+        return (s / 60) + ":" + (s % 60 < 10 ? "0" : "") + (s % 60);
     }
 
     private static String roman(int amp) {
@@ -86,12 +103,13 @@ public class PotionModule extends HudModule {
     public void onTick() {
         Minecraft mc = Minecraft.getMinecraft();
         if (!enabled || mc.thePlayer == null) {
-            current = new ArrayList<Entry>();
+            if (!current.isEmpty()) current = new ArrayList<Entry>();
             maxDur.clear();
             return;
         }
+        FontRenderer f = mc.fontRendererObj;
         List<Entry> list = new ArrayList<Entry>();
-        Set<Integer> seen = new HashSet<Integer>();
+        seen.clear();
         for (Object o : mc.thePlayer.getActivePotionEffects()) {
             PotionEffect pe = (PotionEffect) o;
             int id = pe.getPotionID();
@@ -101,27 +119,18 @@ public class PotionModule extends HudModule {
             if (m == null || dur > m) m = dur; // uống lại / gia hạn => thanh đầy lại
             maxDur.put(id, m);
             seen.add(id);
-            list.add(new Entry(id, p, I18n.format(pe.getEffectName()), roman(pe.getAmplifier() + 1),
+            list.add(new Entry(f, id, p, I18n.format(pe.getEffectName()), roman(pe.getAmplifier() + 1),
                     Potion.getDurationString(pe), dur, m, p == null ? 0xFFFFFF : p.getLiquidColor(),
                     pe.getIsPotionDurationMax(), p != null && p.isBadEffect()));
         }
         maxDur.keySet().retainAll(seen);
-        if (sortTime.value) {
-            Collections.sort(list, new Comparator<Entry>() {
-                @Override
-                public int compare(Entry a, Entry b) {
-                    int da = a.infinite ? Integer.MAX_VALUE : a.dur;
-                    int db = b.infinite ? Integer.MAX_VALUE : b.dur;
-                    return da < db ? -1 : (da == db ? 0 : 1);
-                }
-            });
-        }
+        if (sortTime.value) Collections.sort(list, BY_TIME);
         current = list;
     }
 
     private static Entry fake(int id, Potion p, int amp, int dur, int max) {
-        return new Entry(-1 - id, p, I18n.format(p.getName()), roman(amp), fmt(dur), dur, max,
-                p.getLiquidColor(), false, p.isBadEffect());
+        return new Entry(Minecraft.getMinecraft().fontRendererObj, -1 - id, p, I18n.format(p.getName()), roman(amp),
+                fmt(dur), dur, max, p.getLiquidColor(), false, p.isBadEffect());
     }
 
     private List<Entry> list(boolean preview) {
@@ -138,21 +147,20 @@ public class PotionModule extends HudModule {
     // ------------------------------------------------------------------ kích thước
 
     private int rowH() {
-        return showBar.value ? 24 : showIcon.value ? 22 : 14;
+        return (showBar.value || showIcon.value) ? 20 : 14;
     }
 
     @Override
     public int getWidth(boolean preview) {
         List<Entry> es = list(preview);
         if (es.isEmpty()) return 0;
-        FontRenderer fr = fr();
         int content = 0;
         for (Entry e : es) {
-            int w = fr.getStringWidth(e.name) + 3 + fr.getStringWidth(e.level);
-            if (showDuration.value) w += 8 + fr.getStringWidth(e.time) + 6;
-            content = Math.max(content, w);
+            int w = e.nameW + 3 + e.levelW;
+            if (showDuration.value) w += 10 + e.timeW + 6;
+            if (w > content) content = w;
         }
-        return Math.max(MIN_W, 3 + 6 + (showIcon.value ? 22 : 0) + content + 4 + 3);
+        return Math.max(MIN_W, 3 + 4 + (showIcon.value ? TILE + 4 : 0) + content + 4 + 3);
     }
 
     @Override
@@ -182,18 +190,28 @@ public class PotionModule extends HudModule {
         return warnLow.value && !e.infinite && e.dur <= LOW_TICKS;
     }
 
-    private void drawIcon(Entry e, int ix, int iy, int fallback) {
+    /** Ô biểu tượng: nền tint theo màu hiệu ứng + icon đúng của thuốc; thuốc không có icon thì dùng chữ cái đầu. */
+    private void drawIcon(FontRenderer fr, Entry e, int tx, int ty, int color, boolean low, float pulse) {
+        rr(tx, ty, TILE, TILE, 4, withAlpha(color, 0x30));
+        if (low && pulse > 0.01f) rr(tx, ty, TILE, TILE, 4, withAlpha(C_DANGER, Math.round(pulse * 0x50)));
+
         Potion p = e.potion;
         if (p != null && p.hasStatusIcon()) {
             int idx = p.getStatusIconIndex();
+            float off = (TILE - 18f * ICON_SCALE) / 2f;
             Minecraft.getMinecraft().getTextureManager().bindTexture(INVENTORY);
+            GlStateManager.pushMatrix();
+            GlStateManager.translate(tx + off, ty + off, 0f);
+            GlStateManager.scale(ICON_SCALE, ICON_SCALE, 1f);
             GlStateManager.enableBlend();
             GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0);
             GlStateManager.color(1f, 1f, 1f, 1f);
-            Gui.drawModalRectWithCustomSizedTexture(ix, iy, idx % 8 * 18, 198 + idx / 8 * 18, 18, 18, 256f, 256f);
+            Gui.drawModalRectWithCustomSizedTexture(0, 0, idx % 8 * 18, 198 + idx / 8 * 18, 18, 18, 256f, 256f);
             GlStateManager.disableBlend();
+            GlStateManager.popMatrix();
         } else {
-            rr(ix + 3, iy + 3, 12, 12, 4, fallback); // thuốc không có icon: chấm màu
+            String c = e.name.isEmpty() ? "?" : e.name.substring(0, 1).toUpperCase();
+            fr.drawString("\u00a7l" + c, tx + (TILE - fr.getStringWidth(c) - 1) / 2f, ty + (TILE - 8) / 2f, color, false);
         }
     }
 
@@ -207,8 +225,15 @@ public class PotionModule extends HudModule {
         if (total == 0) return;
         int W = getWidth(preview), h = getHeight(preview);
 
+        // dt để animation mượt như nhau ở mọi FPS
+        long now = System.nanoTime();
+        float dt = lastNs == 0 ? 0.016f : Math.min(0.1f, (now - lastNs) / 1e9f);
+        lastNs = now;
+        float kAppear = 1f - (float) Math.exp(-dt * 16f);
+        float kBar = 1f - (float) Math.exp(-dt * 12f);
+
         boolean anyLow = false;
-        for (Entry e : es) if (isLow(e)) anyLow = true;
+        for (Entry e : es) if (isLow(e)) { anyLow = true; break; }
         float pulse = anyLow ? (float) (Math.sin(System.currentTimeMillis() / 110.0) * 0.5 + 0.5) : 0f;
         int accent = accentColor(0) | 0xFF000000;
         int status = anyLow ? C_DANGER : accent;
@@ -219,17 +244,16 @@ public class PotionModule extends HudModule {
         // ---- thanh tiêu đề
         rr(x + 2, y + 2, W - 4, HEAD - 4, 3, 0x40000000);
         if (pulse > 0.01f) rr(x + 2, y + 2, W - 4, HEAD - 4, 3, withAlpha(C_DANGER, Math.round(pulse * 0x44)));
-        int icx = x + 10, icy = y + HEAD / 2;
+        int icx = x + 9, icy = y + HEAD / 2;
         rr(icx - 4, icy - 4, 9, 9, 4, withAlpha(status, 0x38 + Math.round(pulse * 0x70)));
         rr(icx - 2, icy - 2, 5, 5, 2, status);
 
-        String title = "\u00a7lHIỆU ỨNG";
         int ty0 = y + (HEAD - 8) / 2;
-        fr.drawString(title, x + 18, ty0, status, shadow.value);
+        fr.drawString(TITLE, x + 17, ty0, status, shadow.value);
         String n = String.valueOf(total);
         int bw = Math.max(11, fr.getStringWidth(n) + 7);
-        int bx = x + 18 + fr.getStringWidth(title) + 5;
-        rr(bx, y + 5, bw, 10, 4, status);
+        int bx = x + 17 + fr.getStringWidth(TITLE) + 5;
+        rr(bx, y + 3, bw, 10, 4, status);
         fr.drawString(n, bx + (bw - fr.getStringWidth(n)) / 2f, ty0, 0xFF101010, false);
 
         Draw.fadeLine(x + 6, y + HEAD - 1, W - 12, status & 0xFFFFFF, 0xAA);
@@ -237,23 +261,24 @@ public class PotionModule extends HudModule {
         // ---- danh sách
         int rh = rowH();
         int cardX = x + 3, cardW = W - 6, cardH = rh - 2;
-        Set<Integer> alive = new HashSet<Integer>();
+        boolean tracking = !preview;
+        if (tracking) seen.clear();
+
         for (int i = 0; i < total; i++) {
             Entry e = es.get(i);
             int ry = y + HEAD + 2 + i * rh;
 
-            // hiện ra mượt + thanh thời gian chạy mượt
             float ap = 1f;
             float frac = e.infinite ? 1f : (e.max <= 0 ? 0f : Math.max(0f, Math.min(1f, e.dur / (float) e.max)));
-            if (!preview) {
+            if (tracking) {
                 Float cur = appear.get(e.id);
-                ap = cur == null ? 0f : cur + (1f - cur) * 0.22f;
+                ap = cur == null ? 0f : cur + (1f - cur) * kAppear;
                 if (ap > 0.99f) ap = 1f;
                 appear.put(e.id, ap);
                 Float bc = barAnim.get(e.id);
-                frac = bc == null ? frac : bc + (frac - bc) * 0.2f;
+                frac = bc == null ? frac : bc + (frac - bc) * kBar;
                 barAnim.put(e.id, frac);
-                alive.add(e.id);
+                seen.add(e.id);
             }
 
             int base = effectColors.value ? vivid(e.rgb) : accent;
@@ -262,47 +287,48 @@ public class PotionModule extends HudModule {
             int pc = low ? C_DANGER : mid ? C_WARN : base; // màu theo độ gấp
 
             GlStateManager.pushMatrix();
-            GlStateManager.translate(Math.round((1f - ap) * 16f), 0f, 0f); // trượt vào từ phải
+            GlStateManager.translate(Math.round((1f - ap) * 14f), 0f, 0f); // trượt vào từ phải
 
-            // thẻ nền (hiệu ứng xấu ửng đỏ, sắp hết thì nhấp nháy)
-            rr(cardX, ry, cardW, cardH, 3, e.bad ? withAlpha(C_DANGER, 0x22) : 0x14FFFFFF);
-            if (low && pulse > 0.01f) rr(cardX, ry, cardW, cardH, 3, withAlpha(C_DANGER, Math.round(pulse * 0x45)));
-            if (ap < 1f) rr(cardX, ry, cardW, cardH, 3, withAlpha(accent, Math.round((1f - ap) * 0x55)));
-            rr(cardX + 1, ry + 3, 2, Math.max(2, cardH - 6), 1, pc);
+            // thẻ nền
+            rr(cardX, ry, cardW, cardH, 4, e.bad ? withAlpha(C_DANGER, 0x22) : 0x14FFFFFF);
+            if (low && pulse > 0.01f) rr(cardX, ry, cardW, cardH, 4, withAlpha(C_DANGER, Math.round(pulse * 0x45)));
+            if (ap < 1f) rr(cardX, ry, cardW, cardH, 4, withAlpha(accent, Math.round((1f - ap) * 0x55)));
 
-            int cx = cardX + 6;
+            int cx = cardX + 4;
             if (showIcon.value) {
-                drawIcon(e, cx, ry + (cardH - 18) / 2, base);
-                cx += 22;
+                drawIcon(fr, e, cx, ry + (cardH - TILE) / 2, base, low, pulse);
+                cx += TILE + 4;
             }
-            int ty = showBar.value ? ry + 5 : ry + (cardH - 8) / 2;
+            int ty = showBar.value ? ry + 3 : ry + (cardH - 8) / 2;
             int right = cardX + cardW - 4;
 
             // thời gian trong viên thuốc màu
             int nameRight = right;
             if (showDuration.value) {
-                int pw = fr.getStringWidth(e.time) + 6;
+                int pw = e.timeW + 6;
                 int px = right - pw;
-                rr(px, ty - 1, pw, 10, 3, withAlpha(pc, 0x38));
+                rr(px, ty - 1, pw, 10, 4, withAlpha(pc, 0x38));
                 fr.drawString(e.time, px + 3, ty, pc, shadow.value);
                 nameRight = px - 4;
             }
 
             // tên + cấp
-            int lvW = fr.getStringWidth(e.level);
-            String nm = fr.trimStringToWidth(e.name, Math.max(10, nameRight - cx - lvW - 3));
+            String nm = e.name;
+            if (cx + e.nameW + 3 + e.levelW > nameRight) {
+                nm = fr.trimStringToWidth(e.name, Math.max(10, nameRight - cx - e.levelW - 3));
+            }
             fr.drawString(nm, cx, ty, textColor(x + ry) | 0xFF000000, shadow.value);
-            fr.drawString(e.level, cx + fr.getStringWidth(nm) + 3, ty, base, shadow.value);
+            fr.drawString(e.level, cx + (nm == e.name ? e.nameW : fr.getStringWidth(nm)) + 3, ty, base, shadow.value);
 
-            // thanh thời gian còn lại
+            // thanh thời gian mảnh
             if (showBar.value) {
-                Draw.hbar(cx, ry + 15, right - cx, 3, frac, pc | 0xFF000000, 0x66000000);
+                Draw.hbar(cx, ry + cardH - 5, right - cx, 2, frac, pc | 0xFF000000, 0x55000000);
             }
             GlStateManager.popMatrix();
         }
-        if (!preview) {
-            appear.keySet().retainAll(alive);
-            barAnim.keySet().retainAll(alive);
+        if (tracking) {
+            appear.keySet().retainAll(seen);
+            barAnim.keySet().retainAll(seen);
         }
     }
 }
