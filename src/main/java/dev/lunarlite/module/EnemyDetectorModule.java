@@ -64,16 +64,6 @@ public class EnemyDetectorModule extends HudModule {
     private final BoolSetting arrowOutRainbow = add(new BoolSetting("arrow_outline_rainbow", "Rainbow viền", false), "Arrow", showDir);
     private final BoolSetting arrowGlow = add(new BoolSetting("arrow_glow", "Hào quang mũi tên", false), "Arrow", showDir);
 
-    // ---- Tam giác đánh dấu trên đầu kẻ địch (vẽ trong thế giới, được LunarLite gọi qua renderMarkers)
-    private final BoolSetting markerOn = add(new BoolSetting("marker", "Tam giác trên đầu kẻ địch", true));
-    private final SliderSetting markerSize = add(new SliderSetting("marker_size", "Cỡ tam giác", 1.0, 0.5, 2.5, 0.1, "x"), "Marker", markerOn);
-    private final SliderSetting markerHeight = add(new SliderSetting("marker_height", "Độ cao (trên đầu)", 0.9, 0.3, 2.0, 0.05, " block"), "Marker", markerOn);
-    private final BoolSetting markerRainbow = add(new BoolSetting("marker_rainbow", "Rainbow tam giác", false), "Marker", markerOn);
-    private final BoolSetting markerOutline = add(new BoolSetting("marker_outline", "Viền (Outline)", true), "Marker", markerOn);
-    private final ColorSetting markerOutColor = add(new ColorSetting("marker_outline_color", "Màu viền", 0xFFFFFF), "Marker", markerOn);
-    private final SliderSetting markerOutWidth = add(new SliderSetting("marker_outline_width", "Độ dày viền", 2.0, 0.5, 6.0, 0.5, "px"), "Marker", markerOn);
-    private final BoolSetting markerOutRainbow = add(new BoolSetting("marker_outline_rainbow", "Rainbow viền", false), "Marker", markerOn);
-    private final BoolSetting markerWalls = add(new BoolSetting("marker_walls", "Nhìn xuyên tường", true), "Marker", markerOn);
     private final BoolSetting ignoreTeam = add(new BoolSetting("ignore_team", "Bỏ qua đồng đội (cùng team)", true));
     private final BoolSetting ignoreNpc = add(new BoolSetting("ignore_npc", "Bỏ qua NPC", true));
     private final BoolSetting alert = add(new BoolSetting("alert", "Báo âm thanh khi có người vào", true));
@@ -467,9 +457,7 @@ public class EnemyDetectorModule extends HudModule {
             fr.drawString(nm, cx, ty, textColor(x + ry), shadow.value);
 
             if (bar) {
-                String hs = String.valueOf(Math.round(e.hp));
-                float hsw = fr.getStringWidth(hs) * 0.7f;
-                int bx0 = cx, bx1 = (int) (cardX + cardW - 4 - hsw - 4), by = ry + 12, bw = bx1 - bx0;
+                int bx0 = cx, bx1 = cardX + cardW - 4, by = ry + 12, bw = bx1 - bx0;
                 rrect(bx0, by, bw, 3, 1, 0x66000000);
                 int fill = Math.round(bw * Math.max(0f, Math.min(1f, hpShow / 20f)));
                 if (fill > 0) {
@@ -477,11 +465,6 @@ public class EnemyDetectorModule extends HudModule {
                     rrect(bx0, by, fill, 3, 1, hc);
                     if (fill > 2) Gui.drawRect(bx0 + 1, by, bx0 + fill - 1, by + 1, 0x55FFFFFF); // ánh sáng mép trên
                 }
-                GlStateManager.pushMatrix();
-                GlStateManager.translate(cardX + cardW - 4 - hsw, ry + 10.5f, 0f);
-                GlStateManager.scale(0.7f, 0.7f, 1f);
-                fr.drawString(hs, 0, 0, hpColor(e.hp), false);
-                GlStateManager.popMatrix();
             }
             GlStateManager.popMatrix();
         }
@@ -489,85 +472,6 @@ public class EnemyDetectorModule extends HudModule {
             appear.keySet().retainAll(seen);
             hpAnim.keySet().retainAll(seen);
         }
-    }
-
-    // ======================================================================= tam giác trên đầu
-
-    /** Vẽ tam giác đánh dấu phía trên đầu (và name tag) của từng kẻ địch. Gọi từ sự kiện render thế giới. */
-    public void renderMarkers(float partialTicks) {
-        Minecraft mc = Minecraft.getMinecraft();
-        if (!enabled || !markerOn.value || mc.theWorld == null || mc.thePlayer == null || found.isEmpty()) return;
-        net.minecraft.client.renderer.entity.RenderManager rm = mc.getRenderManager();
-
-        boolean wasLight = GL11.glIsEnabled(GL11.GL_LIGHTING);
-        boolean wasFog = GL11.glIsEnabled(GL11.GL_FOG);
-        boolean wasCull = GL11.glIsEnabled(GL11.GL_CULL_FACE);
-        boolean wasSmooth = GL11.glIsEnabled(GL11.GL_LINE_SMOOTH);
-
-        GlStateManager.disableTexture2D();
-        GlStateManager.disableLighting();
-        GlStateManager.disableFog();
-        GlStateManager.disableCull();
-        GlStateManager.enableBlend();
-        GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0);
-        GlStateManager.depthMask(false);
-        if (markerWalls.value) GlStateManager.disableDepth(); else GlStateManager.enableDepth();
-        GL11.glEnable(GL11.GL_LINE_SMOOTH);
-        GL11.glHint(GL11.GL_LINE_SMOOTH_HINT, GL11.GL_NICEST);
-
-        // tam giác chỉ xuống: mũi ở dưới, khía lõm phía trên (trục y dương hướng xuống như name tag)
-        final float[] vx = {0f, 0.85f, 0f, -0.85f};
-        final float[] vy = {1.0f, -0.55f, -0.15f, -0.55f};
-        final float bob = (float) Math.sin(System.currentTimeMillis() / 300.0) * 0.06f;
-        final int limit = Math.min(found.size(), maxRows.getInt());
-
-        for (int i = 0; i < limit; i++) {
-            Entry e = found.get(i);
-            net.minecraft.entity.Entity ent = mc.theWorld.getEntityByID(e.id);
-            if (!(ent instanceof EntityPlayer)) continue;
-
-            float dist = mc.thePlayer.getDistanceToEntity(ent);
-            float sc = 0.3f * markerSize.getFloat() * Math.max(1f, dist / 8f);
-            double x = ent.lastTickPosX + (ent.posX - ent.lastTickPosX) * partialTicks - rm.viewerPosX;
-            double y = ent.lastTickPosY + (ent.posY - ent.lastTickPosY) * partialTicks - rm.viewerPosY
-                    + ent.height + markerHeight.getFloat() + sc + bob;
-            double z = ent.lastTickPosZ + (ent.posZ - ent.lastTickPosZ) * partialTicks - rm.viewerPosZ;
-
-            int fill = markerRainbow.value ? rainbowRgb(i * 45f) : (distColor(e.dist) & 0xFFFFFF);
-            int line = markerOutRainbow.value ? rainbowRgb(i * 45f + 90f) : (markerOutColor.rgb() & 0xFFFFFF);
-
-            GlStateManager.pushMatrix();
-            GlStateManager.translate(x, y, z);
-            GlStateManager.rotate(-rm.playerViewY, 0f, 1f, 0f);
-            GlStateManager.rotate(rm.playerViewX, 1f, 0f, 0f);
-            GlStateManager.scale(-sc, -sc, sc);
-
-            GlStateManager.color(((fill >> 16) & 255) / 255f, ((fill >> 8) & 255) / 255f, (fill & 255) / 255f, 0.95f);
-            GL11.glBegin(GL11.GL_TRIANGLES);
-            GL11.glVertex2f(vx[0], vy[0]); GL11.glVertex2f(vx[1], vy[1]); GL11.glVertex2f(vx[2], vy[2]);
-            GL11.glVertex2f(vx[0], vy[0]); GL11.glVertex2f(vx[2], vy[2]); GL11.glVertex2f(vx[3], vy[3]);
-            GL11.glEnd();
-
-            if (markerOutline.value) {
-                GlStateManager.color(((line >> 16) & 255) / 255f, ((line >> 8) & 255) / 255f, (line & 255) / 255f, 1f);
-                GL11.glLineWidth(Math.max(0.5f, markerOutWidth.getFloat()));
-                GL11.glBegin(GL11.GL_LINE_LOOP);
-                for (int k = 0; k < 4; k++) GL11.glVertex2f(vx[k], vy[k]);
-                GL11.glEnd();
-            }
-            GlStateManager.popMatrix();
-        }
-
-        GL11.glLineWidth(1f);
-        if (!wasSmooth) GL11.glDisable(GL11.GL_LINE_SMOOTH);
-        GlStateManager.enableDepth();
-        GlStateManager.depthMask(true);
-        GlStateManager.disableBlend();
-        GlStateManager.enableTexture2D();
-        if (wasCull) GlStateManager.enableCull();
-        if (wasFog) GlStateManager.enableFog();
-        if (wasLight) GlStateManager.enableLighting();
-        GlStateManager.color(1f, 1f, 1f, 1f);
     }
 
     // ======================================================================= chọn mục tiêu viền
