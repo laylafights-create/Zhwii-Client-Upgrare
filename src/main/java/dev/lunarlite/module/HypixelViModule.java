@@ -4,23 +4,29 @@ import dev.lunarlite.setting.BoolSetting;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.inventory.GuiChest;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.IChatComponent;
 import net.minecraft.util.StringUtils;
 import net.minecraftforge.client.event.ClientChatReceivedEvent;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.entity.player.ItemTooltipEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 
 /**
- * Việt hoá chat Hypixel (không HUD). Giữ nguyên màu, click và hover của tin nhắn.
+ * Việt hoá chat Hypixel (không HUD): lobby, party, guild, Bed Wars, SkyWars, Duels,
+ * Murder Mystery, TNT, Build Battle, Arcade, SkyBlock... Giữ nguyên màu, click và hover của tin nhắn.
  * Tin nhắn của người chơi khác KHÔNG bị dịch (chỉ dịch tin hệ thống).
  * Từ điển riêng: config/lunarlite/hypixel_vi.txt (UTF-8)
  *   English=Tiếng Việt     |     r:regex=thay thế ($1, $2)     |     # ghi chú
@@ -31,7 +37,16 @@ public class HypixelViModule extends Module {
     private final BoolSetting general = add(new BoolSetting("general", "Lobby & General", true));
     private final BoolSetting social = add(new BoolSetting("social", "Party & Friends", true));
     private final BoolSetting bedwars = add(new BoolSetting("bedwars", "Bed Wars", true));
+    private final BoolSetting guild = add(new BoolSetting("guild", "Guild", true));
+    private final BoolSetting skywars = add(new BoolSetting("skywars", "SkyWars", true));
+    private final BoolSetting duels = add(new BoolSetting("duels", "Duels", true));
+    private final BoolSetting murder = add(new BoolSetting("murder", "Murder Mystery", true));
+    private final BoolSetting minigames = add(new BoolSetting("minigames", "TNT / Build Battle / Arcade / UHC", true));
+    private final BoolSetting skyblock = add(new BoolSetting("skyblock", "SkyBlock", true));
+    private final BoolSetting menus = add(new BoolSetting("menus", "Menus & Tooltips", true));
     private final BoolSetting custom = add(new BoolSetting("custom", "Custom Dictionary", true));
+    /** Ghi các tin hệ thống CHƯA được dịch vào config/lunarlite/hypixel_untranslated.txt để bổ sung từ điển. */
+    private final BoolSetting logMissing = add(new BoolSetting("log_untranslated", "Log Untranslated", false));
 
     private static final class Dict {
         final Map<String, String> exact = new LinkedHashMap<String, String>();
@@ -57,18 +72,36 @@ public class HypixelViModule extends Module {
     private final Dict dGeneral = new Dict();
     private final Dict dSocial = new Dict();
     private final Dict dBedwars = new Dict();
+    private final Dict dGuild = new Dict();
+    private final Dict dSkywars = new Dict();
+    private final Dict dDuels = new Dict();
+    private final Dict dMurder = new Dict();
+    private final Dict dMini = new Dict();
+    private final Dict dSkyblock = new Dict();
+    private final Dict dMenu = new Dict();
     private final Dict dCustom = new Dict();
+
+    private final Set<String> seenMissing = new HashSet<String>();
+    private File missingFile;
 
     /** Tin chat của người chơi: [rank] Tên: nội dung (kể cả Party >, Guild >, From, To). */
     private static final Pattern PLAYER_CHAT = Pattern.compile(
             "^(?:(?:Party|Guild|Officer|Co-op) > )?(?:(?:From|To) )?(?:\\[[^\\]]+\\]\\s*)*\\w{3,16}: .*", Pattern.DOTALL);
 
     public HypixelViModule() {
-        super("hypixelvi", "Vietsub Hypixel", "Việt hoá tin nhắn hệ thống của Hypixel (lobby, party, Bed Wars).",
+        super("hypixelvi", "Vietsub Hypixel", "Việt hoá tin nhắn hệ thống của Hypixel (lobby, party, guild, Bed Wars, SkyWars, Duels, Murder Mystery, minigames, SkyBlock).",
                 Category.UTILITY, false);
         buildGeneral();
         buildSocial();
         buildBedwars();
+        buildGuild();
+        buildSkywars();
+        buildDuels();
+        buildMurder();
+        buildMini();
+        buildSkyblock();
+        buildMenu();
+        missingFile = new File(Minecraft.getMinecraft().mcDataDir, "config/lunarlite/hypixel_untranslated.txt");
         loadCustom(new File(Minecraft.getMinecraft().mcDataDir, "config/lunarlite/hypixel_vi.txt"));
         MinecraftForge.EVENT_BUS.register(this);
     }
@@ -81,7 +114,45 @@ public class HypixelViModule extends Module {
         if (onlyHypixel.value && !HypixelUtil.isHypixel()) return;
         String plain = StringUtils.stripControlCodes(e.message.getUnformattedText());
         if (plain == null || plain.isEmpty() || PLAYER_CHAT.matcher(plain).matches()) return;
-        e.message = translate(e.message);
+        IChatComponent t = translate(e.message);
+        if (logMissing.value && !SEPARATOR.matcher(plain).matches()) {
+            String after = StringUtils.stripControlCodes(t.getUnformattedText());
+            if (plain.equals(after)) logUntranslated(plain);
+        }
+        e.message = t;
+    }
+
+    private static final Pattern SEPARATOR = Pattern.compile("^[\\-=_\u25AC\\s]*$");
+
+    private void logUntranslated(String line) {
+        line = line.replace("\n", " ").trim();
+        if (line.isEmpty() || seenMissing.size() > 3000 || !seenMissing.add(line)) return;
+        FileOutputStream fos = null;
+        try {
+            missingFile.getParentFile().mkdirs();
+            fos = new FileOutputStream(missingFile, true);
+            fos.write((line + "\n").getBytes(StandardCharsets.UTF_8));
+        } catch (Exception ignored) {
+        } finally {
+            try { if (fos != null) fos.close(); } catch (Exception ignored) { }
+        }
+    }
+
+    /** Việt hoá tooltip item trong menu server (GUI rương: My Profile, Achievements...). */
+    @SubscribeEvent
+    public void onTooltip(ItemTooltipEvent e) {
+        if (!enabled || !menus.value || e.toolTip == null) return;
+        if (!(Minecraft.getMinecraft().currentScreen instanceof GuiChest)) return;
+        if (onlyHypixel.value && !HypixelUtil.isHypixel()) return;
+        for (int i = 0; i < e.toolTip.size(); i++) {
+            String line = e.toolTip.get(i);
+            String out = dMenu.apply(tr(line));
+            e.toolTip.set(i, out);
+            if (logMissing.value && out.equals(line)) {
+                String plain = StringUtils.stripControlCodes(line);
+                if (plain != null && !SEPARATOR.matcher(plain).matches()) logUntranslated("[menu] " + plain);
+            }
+        }
     }
 
     private IChatComponent translate(IChatComponent src) {
@@ -101,7 +172,13 @@ public class HypixelViModule extends Module {
         if (s == null || s.length() < 2) return s;
         if (custom.value) s = dCustom.apply(s);
         if (bedwars.value) s = dBedwars.apply(s);
+        if (skywars.value) s = dSkywars.apply(s);
+        if (duels.value) s = dDuels.apply(s);
+        if (murder.value) s = dMurder.apply(s);
+        if (minigames.value) s = dMini.apply(s);
+        if (skyblock.value) s = dSkyblock.apply(s);
         if (social.value) s = dSocial.apply(s);
+        if (guild.value) s = dGuild.apply(s);
         if (general.value) s = dGeneral.apply(s);
         return s;
     }
@@ -134,6 +211,37 @@ public class HypixelViModule extends Module {
             .a("GAME OVER!", "KẾT THÚC TRẬN!")
             .a("Winners", "Những người thắng")
             .a("Winner", "Người thắng")
+            .a("spooked into the lobby!", "đã xuất hiện ma quái trong sảnh!")
+            .a("[WATCHDOG ANNOUNCEMENT]", "[THÔNG BÁO WATCHDOG]")
+            .a("Watchdog has banned", "Watchdog đã cấm")
+            .a("players in the last 7 days.", "người chơi trong 7 ngày qua.")
+            .a("Staff have banned an additional", "Staff đã cấm thêm")
+            .a("Blacklisted modifications are a bannable offense!", "Dùng mod bị cấm sẽ bị ban!")
+            .a("You were spawned in Limbo.", "Bạn bị đưa vào Limbo.")
+            .a("You are currently in Limbo", "Bạn đang ở Limbo")
+            .a("You do not have permission to execute this command!", "Bạn không có quyền dùng lệnh này!")
+            .a("You can't do that right now.", "Bạn không thể làm điều đó lúc này.")
+            .a("Please wait before doing that again!", "Vui lòng chờ trước khi làm lại!")
+            .a("This server will restart soon:", "Máy chủ này sắp khởi động lại:")
+            .a("The server is restarting", "Máy chủ đang khởi động lại")
+            .a("You were kicked while joining that server!", "Bạn bị đá khi đang vào máy chủ đó!")
+            .a("That server is full!", "Máy chủ đó đã đầy!")
+            .a("Lobby is full", "Sảnh đã đầy")
+            .a("You have been eliminated", "Bạn đã bị loại")
+            .a("QUEST COMPLETE", "HOÀN THÀNH NHIỆM VỤ")
+            .a("Quest Complete", "Hoàn thành nhiệm vụ")
+            .a("Daily Quest", "Nhiệm vụ hằng ngày")
+            .a("Weekly Quest", "Nhiệm vụ hằng tuần")
+            .a("LEVEL UP!", "LÊN CẤP!")
+            .a("Hypixel Level", "Cấp Hypixel")
+            .a("DEFEAT!", "THẤT BẠI!")
+            .a("Experience", "Kinh nghiệm")
+            .a("Coins", "Xu")
+            .a("Kills", "Số lần hạ gục")
+            .a("Deaths", "Số lần chết")
+            .a("Click to", "Bấm để")
+            .a("Click here", "Bấm vào đây")
+            .r("(?i)\\+(\\d+) coins", "+$1 xu")
             .r("(\\d+) seconds?", "$1 giây")
             .r("(\\d+) minutes?", "$1 phút")
             .r("\\+(\\d+) coins", "+$1 xu");
@@ -209,6 +317,183 @@ public class HypixelViModule extends Module {
             .a("2nd Killer", "Hạ gục nhiều nhất #2")
             .a("3rd Killer", "Hạ gục nhiều nhất #3")
             .a("Teaming is not allowed", "Không được phép lập team");
+    }
+
+
+    private void buildGuild() {
+        dGuild
+            .a("has invited you to join their guild!", "đã mời bạn vào guild của họ!")
+            .a("Click here to accept or type", "Bấm vào đây để chấp nhận hoặc gõ")
+            .a("GUILD QUEST COMPLETED!", "HOÀN THÀNH NHIỆM VỤ GUILD!")
+            .a("GUILD QUEST TIER", "NHIỆM VỤ GUILD CẤP")
+            .a("Guild Quest", "Nhiệm vụ Guild")
+            .a("Guild Level", "Cấp Guild")
+            .a("Guild Master", "Chủ Guild")
+            .a("You joined the guild", "Bạn đã vào guild")
+            .a("You left the guild", "Bạn đã rời guild")
+            .a("was kicked from the guild", "đã bị đuổi khỏi guild")
+            .a("has joined the guild!", "đã vào guild!")
+            .a("has left the guild!", "đã rời guild!");
+    }
+
+    private void buildSkywars() {
+        dSkywars
+            .a("Cages open in", "Lồng sẽ mở sau")
+            .a("Cages opened! FIGHT!", "Lồng đã mở! CHIẾN!")
+            .a("All chests have been refilled!", "Tất cả rương đã được làm đầy lại!")
+            .a("Chests will refill in", "Rương sẽ được làm đầy lại sau")
+            .a("Players Left:", "Người chơi còn lại:")
+            .a("was shot and killed by", "bị bắn chết bởi")
+            .a("was thrown into the void by", "bị ném xuống hư không bởi")
+            .a("was slain by", "bị chém chết bởi")
+            .a("was struck down by", "bị hạ gục bởi")
+            .a("fell to their death", "ngã chết")
+            .a("died.", "đã chết.")
+            .a("Sky Wars", "SkyWars")
+            .a("Solo Insane", "Solo Cực Khó")
+            .a("Solo Normal", "Solo Thường")
+            .a("Doubles Insane", "Đôi Cực Khó")
+            .a("Doubles Normal", "Đôi Thường")
+            .a("Lab Mode", "Chế độ Lab")
+            .a("Soul Well", "Giếng Linh Hồn");
+    }
+
+    private void buildDuels() {
+        dDuels
+            .a("The duel starts in", "Trận duel bắt đầu sau")
+            .a("Your opponent", "Đối thủ của bạn")
+            .a("Opponent:", "Đối thủ:")
+            .a("Current Winstreak", "Chuỗi thắng hiện tại")
+            .a("Best Winstreak", "Chuỗi thắng cao nhất")
+            .a("Winstreak", "Chuỗi thắng")
+            .a("Damage Dealt", "Sát thương gây ra")
+            .a("Health Regenerated", "Máu hồi lại")
+            .a("Melee Accuracy", "Độ chính xác cận chiến")
+            .a("Bow Accuracy", "Độ chính xác cung")
+            .a("Rematch", "Đấu lại")
+            .a("Duel Request", "Lời mời Duel")
+            .a("has sent you a duel request", "đã gửi lời mời duel cho bạn")
+            .a("You are now in the Duels queue", "Bạn đang trong hàng chờ Duels")
+            .a("Classic Duel", "Duel Cổ Điển")
+            .a("UHC Duel", "Duel UHC")
+            .a("SkyWars Duel", "Duel SkyWars")
+            .a("Bridge Duel", "Duel Bridge")
+            .a("Sumo Duel", "Duel Sumo")
+            .a("OP Duel", "Duel OP")
+            .a("Bow Duel", "Duel Cung");
+    }
+
+    private void buildMurder() {
+        dMurder
+            .a("INNOCENTS WIN!", "DÂN THƯỜNG THẮNG!")
+            .a("MURDERER WINS!", "SÁT NHÂN THẮNG!")
+            .a("Innocents Win", "Dân thường thắng")
+            .a("Murderer Wins", "Sát nhân thắng")
+            .a("The Murderer has been eliminated", "Sát nhân đã bị hạ")
+            .a("You are the MURDERER", "Bạn là SÁT NHÂN")
+            .a("You are a DETECTIVE", "Bạn là THÁM TỬ")
+            .a("You are an INNOCENT", "Bạn là DÂN THƯỜNG")
+            .a("You picked up a Bow", "Bạn đã nhặt cây cung")
+            .a("The Detective has died", "Thám tử đã chết")
+            .a("Murderer", "Sát nhân")
+            .a("Detective", "Thám tử")
+            .a("Innocent", "Dân thường")
+            .a("Assassins", "Sát thủ")
+            .a("Infection", "Lây nhiễm")
+            .a("Showdown", "Đối đầu");
+    }
+
+    private void buildMini() {
+        dMini
+            // TNT Games
+            .a("You have been eliminated!", "Bạn đã bị loại!")
+            .a("Double Jump", "Nhảy đôi")
+            .a("Double Jumps", "Nhảy đôi")
+            .a("You are IT!", "Bạn là NGƯỜI BỊ TNT!")
+            .a("is IT!", "là NGƯỜI BỊ TNT!")
+            // Build Battle
+            .a("Theme:", "Chủ đề:")
+            .a("The theme is", "Chủ đề là")
+            .a("Voting Phase", "Giai đoạn bình chọn")
+            .a("Time's up!", "Hết giờ!")
+            .a("Rate this build", "Chấm điểm công trình này")
+            .a("Super Poor", "Rất tệ")
+            .a("Glorious", "Xuất sắc")
+            // Arcade / Party Games
+            .a("Hole in the Wall", "Xuyên Tường")
+            .a("Capture The Wool", "Cướp Len")
+            // UHC / Speed UHC
+            .a("Final Heal", "Hồi máu lần cuối")
+            .a("PvP is now enabled!", "PvP đã được bật!")
+            .a("Border will shrink", "Biên giới sẽ thu hẹp")
+            .a("The border is shrinking", "Biên giới đang thu hẹp")
+            .a("Pvp will be enabled in", "PvP sẽ bật sau")
+            .a("Grace Period", "Thời gian ân hạn")
+            // Housing / Lobby chung
+            .a("Welcome to", "Chào mừng đến")
+            .r("\\bhas won the game\\b", "đã thắng trận")
+            .r("\\bwins the game\\b", "thắng trận");
+    }
+
+    private void buildSkyblock() {
+        dSkyblock
+            .a("Welcome to Hypixel SkyBlock!", "Chào mừng đến Hypixel SkyBlock!")
+            .a("Latest update:", "Cập nhật mới nhất:")
+            .a("Your profile was loaded", "Hồ sơ của bạn đã được tải")
+            .a("You are playing on profile:", "Bạn đang chơi trên hồ sơ:")
+            .a("Profile ID:", "ID hồ sơ:")
+            .a("Warping you to your SkyBlock island...", "Đang dịch chuyển bạn tới đảo SkyBlock của bạn...")
+            .a("Warping...", "Đang dịch chuyển...")
+            .a("Sending to server", "Đang chuyển tới máy chủ")
+            .a("RARE DROP!", "VẬT PHẨM HIẾM RƠI RA!")
+            .a("VERY RARE DROP!", "VẬT PHẨM RẤT HIẾM RƠI RA!")
+            .a("CRAZY RARE DROP!", "VẬT PHẨM CỰC HIẾM RƠI RA!")
+            .a("PET DROP!", "THÚ CƯNG RƠI RA!")
+            .a("SKILL LEVEL UP", "LÊN CẤP KỸ NĂNG")
+            .a("You don't have enough coins!", "Bạn không đủ xu!")
+            .a("You can't afford this", "Bạn không đủ tiền mua")
+            .a("Your inventory is full!", "Túi đồ của bạn đã đầy!")
+            .a("Your Island", "Đảo của bạn")
+            .a("Auction House", "Nhà đấu giá");
+    }
+
+    private void buildMenu() {
+        dMenu
+            .a("Track your progress as you unlock", "Theo dõi tiến trình khi bạn mở khoá")
+            .a("Achievements and rack up points.", "thành tựu và tích điểm.")
+            .a("Click to view your achievements!", "Bấm để xem thành tựu của bạn!")
+            .a("Achievements", "Thành tựu")
+            .a("My Profile", "Hồ sơ của tôi")
+            .a("Click to view!", "Bấm để xem!")
+            .a("Click to open!", "Bấm để mở!")
+            .a("Click to select!", "Bấm để chọn!")
+            .a("Click to browse!", "Bấm để duyệt!")
+            .a("Click to claim!", "Bấm để nhận!")
+            .a("Click to toggle!", "Bấm để bật/tắt!")
+            .a("Click to purchase!", "Bấm để mua!")
+            .a("Click to teleport!", "Bấm để dịch chuyển!")
+            .a("Click to play!", "Bấm để chơi!")
+            .a("Click to go back!", "Bấm để quay lại!")
+            .a("Left-click to", "Chuột trái để")
+            .a("Right-click to", "Chuột phải để")
+            .a("Go Back", "Quay lại")
+            .a("Close", "Đóng")
+            .a("Next Page", "Trang sau")
+            .a("Previous Page", "Trang trước")
+            .a("Page", "Trang")
+            .a("Quests & Challenges", "Nhiệm vụ & Thử thách")
+            .a("Settings & Visibility", "Cài đặt & Hiển thị")
+            .a("Social Menu", "Menu xã hội")
+            .a("Game Menu", "Menu trò chơi")
+            .a("Lobby Selector", "Chọn sảnh")
+            .a("Cosmetics", "Trang trí")
+            .a("Rewards", "Phần thưởng")
+            .a("Shop", "Cửa hàng")
+            .a("Unlocked", "Đã mở khoá")
+            .a("Locked", "Đã khoá")
+            .a("Selected", "Đã chọn")
+            .a("Enabled", "Đã bật")
+            .a("Disabled", "Đã tắt");
     }
 
     private void loadCustom(File f) {
