@@ -333,7 +333,7 @@ public class KillBoardModule extends HudModule {
     private int selfW(P p) {
         int w = 3;
         if (showHeads.value) w += HEAD + 3;
-        return w + pillW("K", p.ks) + 2 + bedPillW(p.bs) + 3;
+        return w + bedPillW(p.ks) + 2 + bedPillW(p.bs) + 3;
     }
 
     private int stripW(boolean preview) {
@@ -406,6 +406,19 @@ public class KillBoardModule extends HudModule {
         Gui.drawRect(x + 9, y + 6, x + 10, y + 7, frame);
     }
 
+    /** Thanh kiếm pixel 8x8 (lưỡi bạc chéo lên phải, chắn tay vàng, cán nâu). */
+    private static void swordIcon(int x, int y) {
+        int blade = 0xFFE8E8E8, edge = 0xFFA8A8A8, guard = 0xFFD9A93A, grip = 0xFF8B5A2B;
+        int[][] b = {{7, 0}, {6, 1}, {5, 2}, {4, 3}};
+        int[][] e = {{6, 0}, {5, 1}, {4, 2}, {3, 3}};
+        int[][] g = {{1, 3}, {2, 4}, {3, 5}, {2, 3}, {3, 4}};
+        int[][] h = {{1, 5}, {0, 6}, {0, 7}};
+        for (int[] c : e) Gui.drawRect(x + c[0], y + c[1], x + c[0] + 1, y + c[1] + 1, edge);
+        for (int[] c : b) Gui.drawRect(x + c[0], y + c[1], x + c[0] + 1, y + c[1] + 1, blade);
+        for (int[] c : g) Gui.drawRect(x + c[0], y + c[1], x + c[0] + 1, y + c[1] + 1, guard);
+        for (int[] c : h) Gui.drawRect(x + c[0], y + c[1], x + c[0] + 1, y + c[1] + 1, grip);
+    }
+
     private static void fillRound(int x1, int y1, int x2, int y2, int color) {
         if (x2 - x1 >= 2) Draw.rrect(x1, y1, x2, y2, 1, color);
         else if (x2 > x1) Gui.drawRect(x1, y1, x2, y2, color);
@@ -446,8 +459,10 @@ public class KillBoardModule extends HudModule {
             cx += HEAD + 3;
         }
         int py = y + (SH - 10) / 2;
-        int kw = pillW("K", p.ks);
-        tagPill(cx, py, kw, KILL_ACCENT, "K", p.ks, 0xFFFFFFFF);
+        int kw = bedPillW(p.ks);
+        Draw.rrect(cx, py, cx + kw, py + 10, 4, Draw.withAlpha(KILL_ACCENT, 0x38));
+        swordIcon(cx + 3, py + 1);
+        fr().drawString(p.ks, cx + 16, py + 1, 0xFFFFFFFF, false);
         cx += kw + 2;
         int bw = bedPillW(p.bs);
         Draw.rrect(cx, py, cx + bw, py + 10, 4, Draw.withAlpha(BED_ACCENT, 0x38));
