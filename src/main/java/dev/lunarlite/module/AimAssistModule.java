@@ -17,7 +17,7 @@ public class AimAssistModule extends Module {
     private final BoolSetting ignoreInvisible = add(new BoolSetting("aim_ignore_invisible", "Ignore Invisible", true));
 
     public AimAssistModule() {
-        super("aimassist", "Aim Assist", "Tự động aim vào người chơi gần nhất.", Category.PVP, false);
+        super("aimassist", "Aim Assist", "Tự động aim vào kẻ địch gần nhất (bỏ qua đồng đội).", Category.PVP, false);
     }
 
     private long lastNano;
@@ -86,17 +86,20 @@ public class AimAssistModule extends Module {
         for (EntityPlayer p : mc.theWorld.playerEntities) {
             if (p == mc.thePlayer || p.isDead || p.getHealth() <= 0.0F || p.deathTime > 0) continue;
             if (ignoreInvisible.value && p.isInvisible()) continue;
-            // Hypixel: bỏ NPC / bot (không có trong tab list, UUID không phải v4) và người xem (spectator)
-            if (!HypixelUtil.isRealPlayer(p)) continue;
-            if (p.isSpectator()) continue;
-            if (ignoreTeam.value && TeamUtil.isTeammate(mc.thePlayer, p)) continue;
 
+            // Kiểm tra rẻ trước (khoảng cách, FOV), kiểm tra đắt sau (tab list, team).
             double dist = mc.thePlayer.getDistanceToEntity(p);
             if (dist > bestDist) continue;
 
             float yaw = yawTo(p.posX - mc.thePlayer.posX, p.posZ - mc.thePlayer.posZ);
             float diff = Math.abs(MathHelper.wrapAngleTo180_float(yaw - mc.thePlayer.rotationYaw));
             if (diff > fov.getFloat() / 2.0F) continue;
+
+            if (p.isSpectator()) continue;
+            // NPC / bot Hypixel (không có trong tab list, UUID không phải v4)
+            if (!HypixelUtil.isRealPlayer(p)) continue;
+            // Đồng đội: TeamUtil (giáp da nhuộm -> ký hiệu team ngắn -> scoreboard team)
+            if (ignoreTeam.value && TeamUtil.isTeammate(mc.thePlayer, p)) continue;
 
             bestDist = dist;
             best = p;

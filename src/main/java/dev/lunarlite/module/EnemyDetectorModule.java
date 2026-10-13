@@ -109,6 +109,7 @@ public class EnemyDetectorModule extends HudModule {
     private final Set<Integer> inside = new HashSet<Integer>();
     /** Người được viền (tính 1 lần mỗi tick, tối đa "Max Players" người gần nhất) để khỏi lọc lại mỗi khung hình. */
     private final Set<Integer> outlineIds = new HashSet<Integer>();
+    private final Map<Integer, Integer> listMiss = new HashMap<Integer, Integer>(); // id -> số tick liên tiếp trượt lọc (danh sách)
     private int cooldown;
     private int flash; // tick còn lại của hiệu ứng nháy khi có người mới vào
     private final Map<Integer, Float> appear = new HashMap<Integer, Float>(); // tiến độ hiện ra của từng hàng
@@ -127,6 +128,7 @@ public class EnemyDetectorModule extends HudModule {
         if (!enabled || mc.theWorld == null || mc.thePlayer == null) {
             found = new ArrayList<Entry>();
             inside.clear();
+            listMiss.clear();
             outlineIds.clear();
             miss.clear();
             lobbyTicks = 0;
@@ -143,11 +145,26 @@ public class EnemyDetectorModule extends HudModule {
         boolean newcomer = false;
 
         for (EntityPlayer p : mc.theWorld.playerEntities) {
-            if (p == mc.thePlayer || p.isDead || p.getHealth() <= 0f || p.isSpectator()) continue;
+            if (p == mc.thePlayer || !alive(p) || p.isSpectator()) continue;
+            int id = p.getEntityId();
+            boolean was = inside.contains(id);
             float d = mc.thePlayer.getDistanceToEntity(p);
-            if (d > r) continue;
-            if (ignoreNpc.value && !HypixelUtil.isRealPlayer(p)) continue;
-            if (ignoreTeam.value && TeamUtil.isTeammate(mc.thePlayer, p)) continue;
+            // Đang trong danh sách thì được lố bán kính thêm một chút để khỏi nháy ở ranh giới.
+            if (d > r + (was ? STICKY_RANGE : 0.0)) continue;
+            if (isEnemy(mc, p)) {
+                listMiss.remove(id);
+            } else if (was) {
+                // Trượt điều kiện NPC / team tạm thời (tab list nháy...) => giữ thêm vài tick.
+                Integer m = listMiss.get(id);
+                int n = m == null ? 1 : m + 1;
+                if (n > GRACE_TICKS) {
+                    listMiss.remove(id);
+                    continue;
+                }
+                listMiss.put(id, n);
+            } else {
+                continue;
+            }
 
             float bearing = (float) (Math.atan2(-(p.posX - mc.thePlayer.posX), p.posZ - mc.thePlayer.posZ) * 180.0 / Math.PI);
             ResourceLocation skin = p instanceof AbstractClientPlayer ? ((AbstractClientPlayer) p).getLocationSkin() : null;
@@ -164,6 +181,7 @@ public class EnemyDetectorModule extends HudModule {
         found = list;
         inside.clear();
         inside.addAll(now);
+        listMiss.keySet().retainAll(now);
 
         if (newcomer) flash = 24;
         if (alert.value && newcomer && cooldown == 0) {
@@ -511,13 +529,23 @@ public class EnemyDetectorModule extends HudModule {
     private int dbgTick, dbgPre, dbgArmed, dbgDrawn, dbgOff, dbgErr;
     private String dbgLastErr = "";
 
-    private boolean passes(Minecraft mc, EntityPlayer p, float dist, boolean sticky) {
-        if (p.getHealth() <= 0f) return false;
-        if (p.isInvisible() && !outInvisible.value) return false;
-        if (dist > radius.value + (sticky ? STICKY_RANGE : 0.0)) return false;
-        if (ignoreNpc.value && !HypixelUtil.isRealPlayer(p)) return false; // Bỏ NPC / bot (không có trong tab list)
+    /** Còn sống: không dựa vào getHealth() vì Hypixel đôi khi báo máu 0 khi entity vừa spawn / chưa đồng bộ. */
+    private static boolean alive(EntityPlayer p) {
+        return !p.isDead && p.deathTime <= 0;
+    }
+
+    /** Lọc NPC / bot và đồng đội, dùng chung cho danh sách và viền. */
+    private boolean isEnemy(Minecraft mc, EntityPlayer p) {
+        if (ignoreNpc.value && !HypixelUtil.isRealPlayer(p)) return false; // NPC / bot (không có trong tab list)
         if (ignoreTeam.value && TeamUtil.isTeammate(mc.thePlayer, p)) return false; // Chỉ kẻ địch
         return true;
+    }
+
+    private boolean passes(Minecraft mc, EntityPlayer p, float dist, boolean sticky) {
+        if (!alive(p)) return false;
+        if (p.isInvisible() && !outInvisible.value) return false;
+        if (dist > radius.value + (sticky ? STICKY_RANGE : 0.0)) return false;
+        return isEnemy(mc, p);
     }
 
     private void updateOutlineTargets(Minecraft mc) {
@@ -541,7 +569,7 @@ public class EnemyDetectorModule extends HudModule {
             float d = me.getDistanceToEntity(p);
             if (passes(mc, p, d, was)) {
                 miss.remove(id);
-            } else if (was && p.getHealth() > 0f) {
+            } else if (was && alive(p)) {
                 Integer m = miss.get(id);
                 int n = m == null ? 1 : m + 1;
                 if (n > GRACE_TICKS) {
