@@ -76,8 +76,11 @@ public class EnemyDetectorModule extends HudModule {
     private final SliderSetting outWidth = add(new SliderSetting("outline_width", "Line Width", 3.0, 1.0, 10.0, 0.5, "px"), "Outline", outline);
     private final SliderSetting outSmooth = add(new SliderSetting("outline_smooth", "Smoothness", 8, 8, 32, 2, ""), "Outline", outline);
     private final BoolSetting outGlow = add(new BoolSetting("outline_glow", "Glow", true), "Outline", outline);
-    private final SliderSetting outMax = add(new SliderSetting("outline_max", "Max Players", 4, 1, 10, 1, ""), "Outline", outline);
+    private final SliderSetting outMax = add(new SliderSetting("outline_max", "Max Players", 3, 1, 10, 1, ""), "Outline", outline);
     private final BoolSetting throughWalls = add(new BoolSetting("outline_walls", "Through Walls", true), "Outline", outline);
+    private final BoolSetting outNearHi = add(new BoolSetting("outline_near_hi", "Highlight Nearest", false), "Outline", outline);
+    private final ColorSetting outNearColor = add(new ColorSetting("outline_near_color", "Nearest Color", 0xFF3B3B), "Outline", outline);
+    private final BoolSetting outNearestOnly = add(new BoolSetting("outline_nearest_only", "Nearest Only", false), "Outline", outline);
     private final BoolSetting outInvisible = add(new BoolSetting("outline_invisible", "Show Invisible", true), "Outline", outline);
     private final BoolSetting outRainbow = add(new BoolSetting("outline_rainbow", "Rainbow Outline", true), "Outline", outline);
     private final BoolSetting outDebug = add(new BoolSetting("outline_debug", "Debug (chat)", false), "Outline", outline);
@@ -130,6 +133,7 @@ public class EnemyDetectorModule extends HudModule {
             inside.clear();
             listMiss.clear();
             outlineIds.clear();
+            nearestId = -1;
             miss.clear();
             lobbyTicks = 0;
             releaseSilhouette();
@@ -194,6 +198,7 @@ public class EnemyDetectorModule extends HudModule {
             updateOutlineTargets(mc);
         } else {
             outlineIds.clear();
+            nearestId = -1;
             miss.clear();
             lobbyTicks = 0;
             releaseSilhouette();
@@ -502,7 +507,15 @@ public class EnemyDetectorModule extends HudModule {
     private static final int GRACE_TICKS = 10;
     private static final int LOBBY_TICKS = 40;
     private static final double STICKY_RANGE = 3.0;
-    private static final float STICKY_BONUS = 4f;
+    /** Chỉ đủ để chống đảo thứ hạng khi hai người cách nhau gần bằng nhau; kẻ địch gần hơn rõ rệt luôn thắng. */
+    private static final float STICKY_BONUS = 0.25f;
+    /** Người đang trượt điều kiện (giữ chỗ tạm) luôn xếp sau mọi kẻ địch hợp lệ để không chiếm slot viền. */
+    private static final float GRACE_PENALTY = 1000f;
+    /** Đẩy kẻ địch gần nhất lên hạng 1 chắc chắn. */
+    private static final float NEAREST_BOOST = 10000f;
+    private final List<Cand> candBuf = new ArrayList<Cand>(); // dùng lại, khỏi cấp phát mỗi tick
+    /** Entity id của kẻ địch gần nhất đang được viền (-1 nếu không có). */
+    private int nearestId = -1;
 
     private static final class Cand {
         final EntityPlayer p;
@@ -541,10 +554,10 @@ public class EnemyDetectorModule extends HudModule {
         return true;
     }
 
-    private boolean passes(Minecraft mc, EntityPlayer p, float dist, boolean sticky) {
+    /** Hợp lệ để viền (còn sống, đúng điều kiện tàng hình, là kẻ địch thật) - KHÔNG xét bán kính. */
+    private boolean valid(Minecraft mc, EntityPlayer p) {
         if (!alive(p)) return false;
         if (p.isInvisible() && !outInvisible.value) return false;
-        if (dist > radius.value + (sticky ? STICKY_RANGE : 0.0)) return false;
         return isEnemy(mc, p);
     }
 
@@ -556,18 +569,30 @@ public class EnemyDetectorModule extends HudModule {
         }
         if (lobbyTicks > LOBBY_TICKS) {
             outlineIds.clear();
+            nearestId = -1;
             miss.clear();
             return;
         }
 
         EntityPlayer me = mc.thePlayer;
-        List<Cand> cand = new ArrayList<Cand>();
+        List<Cand> cand = candBuf;
+        cand.clear();
+        EntityPlayer nearest = null;
+        float nearestKey = Float.MAX_VALUE, nearestDist = 0f;
+        double rad = radius.value;
         for (EntityPlayer p : mc.theWorld.playerEntities) {
             if (p == me || p.isDead || p.isSpectator()) continue;
             int id = p.getEntityId();
             boolean was = outlineIds.contains(id);
             float d = me.getDistanceToEntity(p);
-            if (passes(mc, p, d, was)) {
+            boolean valid = valid(mc, p);
+            boolean ok = valid && d <= rad + (was ? STICKY_RANGE : 0.0);
+            // Kẻ địch gần nhất chỉ được chọn trong "Bán kính phát hiện" (đang có viền thì được lố thêm STICKY_RANGE).
+            if (ok) {
+                float nk = was ? d - STICKY_BONUS : d;
+                if (nk < nearestKey) { nearestKey = nk; nearest = p; nearestDist = d; }
+            }
+            if (ok) {
                 miss.remove(id);
             } else if (was && alive(p)) {
                 Integer m = miss.get(id);
@@ -580,12 +605,24 @@ public class EnemyDetectorModule extends HudModule {
             } else {
                 continue;
             }
-            cand.add(new Cand(p, was ? d - STICKY_BONUS : d));
+            // Xếp theo khoảng cách thật. Người đang giữ chỗ chỉ được lợi rất nhỏ; người trượt điều kiện xếp sau cùng.
+            float key = was ? d - STICKY_BONUS : d;
+            if (!valid) key += GRACE_PENALTY;
+            cand.add(new Cand(p, key));
+        }
+        // Ép kẻ địch gần nhất (đã nằm trong bán kính) lên đầu bảng
+        if (nearest != null) {
+            for (int i = cand.size() - 1; i >= 0; i--) {
+                if (cand.get(i).p == nearest) cand.remove(i);
+            }
+            cand.add(new Cand(nearest, nearestDist - NEAREST_BOOST));
+            miss.remove(nearest.getEntityId());
         }
         Collections.sort(cand, CAND_ORDER);
         outlineIds.clear();
-        int max = Math.min(cand.size(), outMax.getInt());
+        int max = Math.min(cand.size(), outNearestOnly.value ? 1 : outMax.getInt());
         for (int i = 0; i < max; i++) outlineIds.add(cand.get(i).p.getEntityId());
+        nearestId = nearest != null && max > 0 ? nearest.getEntityId() : -1;
         miss.keySet().retainAll(outlineIds);
 
         if (outDebug.value) {
@@ -914,12 +951,16 @@ public class EnemyDetectorModule extends HudModule {
             int fw = main.framebufferWidth, fh = main.framebufferHeight;
 
             float w = Math.max(1f, outWidth.getFloat());
+            final boolean near = p.getEntityId() == nearestId;
+            final boolean hi = near && outNearHi.value;
+            final boolean glow = outGlow.value && (near || !outNearHi.value);
+            if (hi) w *= 1.4f; // kẻ địch gần nhất: viền dày hơn
             int margin = (int) Math.ceil(w * 1.8f) + 3;
             // Người chơi nằm ngoài màn hình => khỏi làm gì cả
             if (!computeRect(margin, fw, fh)) { dbgOff++; return; }
             if (!ensureSilhouette(main, fw, fh)) return;
 
-            int rgb = outRainbow.value ? rainbowRgb((p.getEntityId() % 10) * 36f) : outColor.argb();
+            int rgb = hi ? outNearColor.argb() : outRainbow.value ? rainbowRgb((p.getEntityId() % 10) * 36f) : outColor.argb();
             float r = ((rgb >> 16) & 255) / 255f, g = ((rgb >> 8) & 255) / 255f, b = (rgb & 255) / 255f;
             boolean depthTest = !throughWalls.value && quadZValid; // "Through Walls" tắt: bị tường che thì ẩn viền
             float z = depthTest ? quadZ : 0f;
@@ -1007,7 +1048,7 @@ public class EnemyDetectorModule extends HudModule {
                 GL11.glEnd();
 
                 // 2c) Hào quang mềm bên ngoài viền
-                if (outGlow.value) {
+                if (glow) {
                     GL11.glStencilMask(BIT_GLOW);
                     GL11.glStencilFunc(GL11.GL_EQUAL, BIT_GLOW, BIT_BODY | BIT_OUTLINE);
                     GL11.glBegin(GL11.GL_QUADS);
@@ -1027,7 +1068,7 @@ public class EnemyDetectorModule extends HudModule {
 
                 GL11.glStencilFunc(GL11.GL_EQUAL, BIT_OUTLINE, BIT_BODY | BIT_OUTLINE);
                 fillQuad(r, g, b, 1f);
-                if (outGlow.value) {
+                if (glow) {
                     GL11.glStencilFunc(GL11.GL_EQUAL, BIT_GLOW, BIT_BODY | BIT_OUTLINE | BIT_GLOW);
                     fillQuad(r, g, b, 0.35f);
                 }
