@@ -109,6 +109,14 @@ public class EnemyDetectorModule extends HudModule {
     }
 
     private List<Entry> found = new ArrayList<Entry>();
+    private final List<Entry> listBuf = new ArrayList<Entry>(); // dùng lại mỗi tick, khỏi cấp phát
+    private final Set<Integer> nowBuf = new HashSet<Integer>();
+    private static final Comparator<Entry> BY_DIST = new Comparator<Entry>() {
+        @Override
+        public int compare(Entry a, Entry b) {
+            return Float.compare(a.dist, b.dist);
+        }
+    };
     private final Set<Integer> inside = new HashSet<Integer>();
     /** Người được viền (tính 1 lần mỗi tick, tối đa "Max Players" người gần nhất) để khỏi lọc lại mỗi khung hình. */
     private final Set<Integer> outlineIds = new HashSet<Integer>();
@@ -134,6 +142,7 @@ public class EnemyDetectorModule extends HudModule {
             listMiss.clear();
             outlineIds.clear();
             nearestId = -1;
+            eligibleN = 0;
             miss.clear();
             lobbyTicks = 0;
             releaseSilhouette();
@@ -144,8 +153,10 @@ public class EnemyDetectorModule extends HudModule {
         if (flash > 0) flash--;
 
         float r = radius.getInt();
-        List<Entry> list = new ArrayList<Entry>();
-        Set<Integer> now = new HashSet<Integer>();
+        listBuf.clear();
+        nowBuf.clear();
+        List<Entry> list = listBuf;
+        Set<Integer> now = nowBuf;
         boolean newcomer = false;
 
         for (EntityPlayer p : mc.theWorld.playerEntities) {
@@ -176,12 +187,7 @@ public class EnemyDetectorModule extends HudModule {
             now.add(p.getEntityId());
             if (!inside.contains(p.getEntityId())) newcomer = true;
         }
-        Collections.sort(list, new Comparator<Entry>() {
-            @Override
-            public int compare(Entry a, Entry b) {
-                return Float.compare(a.dist, b.dist);
-            }
-        });
+        Collections.sort(list, BY_DIST);
         found = list;
         inside.clear();
         inside.addAll(now);
@@ -199,6 +205,7 @@ public class EnemyDetectorModule extends HudModule {
         } else {
             outlineIds.clear();
             nearestId = -1;
+            eligibleN = 0;
             miss.clear();
             lobbyTicks = 0;
             releaseSilhouette();
@@ -570,6 +577,7 @@ public class EnemyDetectorModule extends HudModule {
         if (lobbyTicks > LOBBY_TICKS) {
             outlineIds.clear();
             nearestId = -1;
+            eligibleN = 0;
             miss.clear();
             return;
         }
@@ -580,6 +588,7 @@ public class EnemyDetectorModule extends HudModule {
         EntityPlayer nearest = null;
         float nearestKey = Float.MAX_VALUE, nearestDist = 0f;
         double rad = radius.value;
+        eligibleN = 0;
         for (EntityPlayer p : mc.theWorld.playerEntities) {
             if (p == me || p.isDead || p.isSpectator()) continue;
             int id = p.getEntityId();
@@ -587,11 +596,9 @@ public class EnemyDetectorModule extends HudModule {
             float d = me.getDistanceToEntity(p);
             boolean valid = valid(mc, p);
             boolean ok = valid && d <= rad + (was ? STICKY_RANGE : 0.0);
-            // Kẻ địch gần nhất chỉ được chọn trong "Bán kính phát hiện" (đang có viền thì được lố thêm STICKY_RANGE).
-            if (ok) {
-                float nk = was ? d - STICKY_BONUS : d;
-                if (nk < nearestKey) { nearestKey = nk; nearest = p; nearestDist = d; }
-            }
+            // Kẻ địch gần nhất: xét theo khoảng cách THẬT, cập nhật mỗi tick, không còn "giữ chỗ" (không hysteresis).
+            if (valid && d <= rad + STICKY_RANGE) addEligible(id);
+            if (valid && d <= rad && d < nearestKey) { nearestKey = d; nearest = p; nearestDist = d; }
             if (ok) {
                 miss.remove(id);
             } else if (was && alive(p)) {
@@ -775,6 +782,71 @@ public class EnemyDetectorModule extends HudModule {
         silFb = null;
     }
 
+    // ---- Quét "gần nhất" theo từng khung hình (CHỈ phục vụ viền, không đụng HUD)
+    /** Ứng viên hợp lệ do tick lọc sẵn (NPC / đồng đội / tàng hình đã xét): mỗi khung hình chỉ còn tính khoảng cách. */
+    private int[] eligible = new int[32];
+    private int eligibleN;
+    private long lastLiveNs;
+
+    private void addEligible(int id) {
+        if (eligibleN == eligible.length) eligible = java.util.Arrays.copyOf(eligible, eligibleN * 2);
+        eligible[eligibleN++] = id;
+    }
+
+    /** Bình phương khoảng cách (vị trí nội suy theo partialTicks) từ (mx,my,mz) tới entity. */
+    private static double distSq(net.minecraft.entity.Entity p, double mx, double my, double mz, float pt) {
+        double dx = p.lastTickPosX + (p.posX - p.lastTickPosX) * pt - mx;
+        double dy = p.lastTickPosY + (p.posY - p.lastTickPosY) * pt - my;
+        double dz = p.lastTickPosZ + (p.posZ - p.lastTickPosZ) * pt - mz;
+        return dx * dx + dy * dy + dz * dz;
+    }
+
+    /**
+     * Mỗi khung hình: tìm lại kẻ địch gần nhất trong số ứng viên và gắn viền cho người đó ngay,
+     * không đợi tick sau. Người xa nhất đang có viền sẽ nhường chỗ nếu đã đủ "Max Players".
+     */
+    private void refreshNearestLive(Minecraft mc, float pt) {
+        long now = System.nanoTime();
+        if (now - lastLiveNs < 500000L) return; // chỉ 1 lần mỗi khung hình (nhiều người cùng gọi onPre)
+        lastLiveNs = now;
+        EntityPlayer me = mc.thePlayer;
+        if (me == null || mc.theWorld == null || eligibleN == 0) return;
+        double rad = radius.value, rsq = rad * rad;
+        double mx = me.lastTickPosX + (me.posX - me.lastTickPosX) * pt;
+        double my = me.lastTickPosY + (me.posY - me.lastTickPosY) * pt;
+        double mz = me.lastTickPosZ + (me.posZ - me.lastTickPosZ) * pt;
+        int best = -1;
+        double bestSq = Double.MAX_VALUE;
+        for (int i = 0; i < eligibleN; i++) {
+            net.minecraft.entity.Entity ent = mc.theWorld.getEntityByID(eligible[i]);
+            if (!(ent instanceof EntityPlayer) || ent.isDead) continue;
+            double sq = distSq(ent, mx, my, mz, pt);
+            if (sq <= rsq && sq < bestSq) { bestSq = sq; best = eligible[i]; }
+        }
+        if (best == -1) return;
+        nearestId = best;
+        miss.remove(best);
+        if (outNearestOnly.value) {
+            if (outlineIds.size() != 1 || !outlineIds.contains(best)) {
+                outlineIds.clear();
+                outlineIds.add(best);
+            }
+            return;
+        }
+        if (outlineIds.contains(best)) return;
+        if (outlineIds.size() >= outMax.getInt()) {
+            int far = -1;
+            double farSq = -1.0;
+            for (int id : outlineIds) {
+                net.minecraft.entity.Entity e2 = mc.theWorld.getEntityByID(id);
+                double sq = e2 == null ? Double.MAX_VALUE : distSq(e2, mx, my, mz, pt);
+                if (sq > farSq) { farSq = sq; far = id; }
+            }
+            if (far != -1) outlineIds.remove(far);
+        }
+        outlineIds.add(best);
+    }
+
     /** LunarLite gọi mỗi khung hình ở RenderWorldLast. Hiện chưa vẽ gì. */
     public void renderMarkers(float partialTicks) {
     }
@@ -783,6 +855,7 @@ public class EnemyDetectorModule extends HudModule {
         armed = false;
         target = null;
         if (!enabled || !outline.value) return;
+        refreshNearestLive(Minecraft.getMinecraft(), e.partialRenderTick);
         install(e.renderer);
         if (layersField == null || !outlineIds.contains(e.entityPlayer.getEntityId())) return;
         dbgPre++;
