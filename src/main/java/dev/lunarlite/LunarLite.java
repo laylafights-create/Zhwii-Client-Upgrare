@@ -78,9 +78,7 @@ public class LunarLite {
         MODULES.add(AIM);
         MODULES.add(new ArmorModule());
         MODULES.add(new PotionModule());
-        MODULES.add(new ResourceCounterModule());
         MODULES.add(new ItemPickupModule());
-        MODULES.add(new SpeedModule());
         MODULES.add(new PingModule());
         MODULES.add(new ServerIpModule());
         MODULES.add(SCOREBOARD);
@@ -88,7 +86,6 @@ public class LunarLite {
         MODULES.add(new ToggleSprintModule());
         MODULES.add(ZOOM);
         MODULES.add(new FullbrightModule());
-        MODULES.add(new TimeChangerModule());
         MODULES.add(BLOCK_OUTLINE);
         MODULES.add(new ItemPhysicsModule());
         MODULES.add(ANIM);
