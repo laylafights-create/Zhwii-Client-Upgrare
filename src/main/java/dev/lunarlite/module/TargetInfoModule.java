@@ -34,8 +34,8 @@ public class TargetInfoModule extends HudModule {
 
     private static final int AVATAR = 30;
     private static final int PAD = 6;
-    private static final int ROW = 11;      // name row
-    private static final int TEXT_ROW = 10; // hp text row
+    private static final int ROW = 12;      // name row
+    private static final int TEXT_ROW = 11; // hp text row
     private static final int GAP = 2;       // gap above the bar
 
     /** True only while the avatar model is being drawn, so its name tag can be cancelled. */
@@ -97,21 +97,57 @@ public class TargetInfoModule extends HudModule {
         else Gui.drawRect(x1, y1, x2, y2, color);
     }
 
-    /** Health bar: dark track, lagging "damage" trail, main fill, quarter ticks. */
+    /** Health bar: dark track, lagging "damage" trail, shaded main fill with a bright end cap, quarter ticks. */
     private static void healthBar(int x, int y, int w, int h, float fill, float trail, int color) {
-        seg(x, y, x + w, y + h, 0x80000000);
+        seg(x - 1, y - 1, x + w + 1, y + h + 1, 0x40000000);     // soft outer frame
+        seg(x, y, x + w, y + h, 0x90000000);                       // track
         int tx = x + Math.round(w * trail);
         int fx = x + Math.round(w * fill);
         if (tx > fx) seg(x, y, tx, y + h, 0x66FFFFFF);
         seg(x, y, fx, y + h, color);
-        // soft highlight on the top half of the fill
-        if (h >= 4 && fx - x > 2) Gui.drawRect(x + 1, y + 1, fx - 1, y + 2, 0x30FFFFFF);
+        if (h >= 4 && fx - x > 3) {
+            Gui.drawRect(x + 1, y + 1, fx - 1, y + 2, 0x48FFFFFF);               // top shine
+            Gui.drawRect(x + 1, y + h - 2, fx - 1, y + h - 1, 0x30000000);       // bottom shade
+            Gui.drawRect(fx - 1, y + 1, fx, y + h - 1, 0x60FFFFFF);              // bright end cap
+        }
         if (h >= 4) {
             for (int i = 1; i < 4; i++) {
                 int tickX = x + w * i / 4;
-                Gui.drawRect(tickX, y + 1, tickX + 1, y + h - 1, 0x40000000);
+                Gui.drawRect(tickX, y + 1, tickX + 1, y + h - 1, 0x30000000);
             }
         }
+    }
+
+    /** Small rounded pill with centred text, tinted by {@code tint}. */
+    private void pill(int x, int y, String text, int tint, int textColor) {
+        int pw = fr().getStringWidth(text) + 8;
+        Draw.rrect(x, y, x + pw, y + 10, 4, Draw.withAlpha(tint, 0x40));
+        fr().drawString(text, x + 4, y + 1, textColor, false);
+    }
+
+    /** Card frame: soft coloured glow, base box, health-tinted border + inner hairline, top sheen, corner brackets. */
+    private void drawFrame(int x, int y, int w, int h, int accent) {
+        int c = accent & 0xFFFFFF;
+        // outer glow (two soft layers outside the box)
+        Draw.rrect(x - 2, y - 2, x + w + 2, y + h + 2, 7, Draw.withAlpha(c, 0x14));
+        Draw.rrect(x - 1, y - 1, x + w + 1, y + h + 1, 6, Draw.withAlpha(c, 0x22));
+        drawBox(x, y, w, h);
+        // top sheen + bottom shade give the panel depth
+        Draw.rrect(x + 2, y + 2, x + w - 2, y + h / 2, 4, 0x10FFFFFF);
+        Draw.rrect(x + 2, y + h - h / 4, x + w - 2, y + h - 2, 4, 0x14000000);
+        // border (health colour) + inner hairline
+        Draw.ring(x, y, x + w, y + h, Draw.withAlpha(c, 0x99));
+        Draw.ring(x + 1, y + 1, x + w - 1, y + h - 1, 0x16FFFFFF);
+        // corner brackets
+        int b = Draw.withAlpha(c, 0xE0), L = 6;
+        Gui.drawRect(x + 3, y + 3, x + 3 + L, y + 4, b);
+        Gui.drawRect(x + 3, y + 3, x + 4, y + 3 + L, b);
+        Gui.drawRect(x + w - 3 - L, y + 3, x + w - 3, y + 4, b);
+        Gui.drawRect(x + w - 4, y + 3, x + w - 3, y + 3 + L, b);
+        Gui.drawRect(x + 3, y + h - 4, x + 3 + L, y + h - 3, b);
+        Gui.drawRect(x + 3, y + h - 3 - L, x + 4, y + h - 3, b);
+        Gui.drawRect(x + w - 3 - L, y + h - 4, x + w - 3, y + h - 3, b);
+        Gui.drawRect(x + w - 4, y + h - 3 - L, x + w - 3, y + h - 3, b);
     }
 
     private void drawAvatar(EntityLivingBase e, int ax, int ay, boolean preview) {
@@ -168,7 +204,6 @@ public class TargetInfoModule extends HudModule {
             return;
         }
         int w = getWidth(preview), h = getHeight(preview);
-        drawBox(x, y, w, h);
 
         float hp = preview || e == null ? 8.2f : Math.max(0f, e.getHealth());
         float maxHp = preview || e == null ? 20f : Math.max(1f, e.getMaxHealth());
@@ -189,13 +224,17 @@ public class TargetInfoModule extends HudModule {
         else if (healthMode.is("Tùy chỉnh")) hc = 0xFF000000 | healthColor.rgb();
         else hc = Draw.lerp(0xFFFF5C5C, 0xFF5CE08A, shownRatio);
 
+        drawFrame(x, y, w, h, hc);
+
         int avX = x + PAD, avY = y + (h - AVATAR) / 2;
         int textX = showAvatar.value ? avX + AVATAR + 8 : x + 8;
         int right = x + w - PAD;
         if (showAvatar.value) {
             // dark rounded plate + thin ring tinted by the health colour
-            Draw.rrect(avX - 1, avY - 1, avX + AVATAR + 1, avY + AVATAR + 1, 4, 0x80000000);
-            Draw.ring(avX - 1, avY - 1, avX + AVATAR + 1, avY + AVATAR + 1, Draw.withAlpha(hc, 0xAA));
+            Draw.rrect(avX - 2, avY - 2, avX + AVATAR + 2, avY + AVATAR + 2, 5, Draw.withAlpha(hc, 0x30));   // soft glow
+            Draw.rrect(avX - 1, avY - 1, avX + AVATAR + 1, avY + AVATAR + 1, 4, 0xA0000000);
+            Draw.rrect(avX, avY, avX + AVATAR, avY + AVATAR / 2, 3, 0x14FFFFFF);                                // top sheen
+            Draw.ring(avX - 1, avY - 1, avX + AVATAR + 1, avY + AVATAR + 1, Draw.withAlpha(hc, 0xCC));
         }
 
         // text column is vertically centred in the card
@@ -215,18 +254,17 @@ public class TargetInfoModule extends HudModule {
         }
         if (ds != null) {
             int px = right - pillW;
-            Draw.rrect(px, lineY, px + pillW, lineY + 10, 4, 0x38FFFFFF);
-            fr().drawString(ds, px + 4, lineY + 1, 0xFFC8C8C8, false);
+            pill(px, lineY, ds, 0xFFFFFF, 0xFFD8D8D8);
         }
         if (!nameMode.is("Ẩn") || ds != null) lineY += ROW;
 
         if (showHealth.value) {
             if (showHeartText.value) {
                 String pct = Math.round(ratio * 100f) + "%";
-                fr().drawString(pct, textX, lineY, hc, shadow.value);
+                pill(textX, lineY, pct, hc & 0xFFFFFF, hc);
                 if (showMaxHealth.value) {
                     String hpTxt = String.format(java.util.Locale.ROOT, "%.1f/%d", hp, (int) maxHp);
-                    fr().drawString(hpTxt, right - fr().getStringWidth(hpTxt), lineY, 0xFFB8B8B8, false);
+                    fr().drawString(hpTxt, right - fr().getStringWidth(hpTxt), lineY + 1, 0xFFC0C0C0, false);
                 }
                 lineY += TEXT_ROW;
             }
