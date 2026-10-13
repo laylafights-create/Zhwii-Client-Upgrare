@@ -406,17 +406,19 @@ public class KillBoardModule extends HudModule {
         Gui.drawRect(x + 9, y + 6, x + 10, y + 7, frame);
     }
 
-    /** Thanh kiếm pixel 8x8 (lưỡi bạc chéo lên phải, chắn tay vàng, cán nâu). */
+    private static void px(int x, int y, int[][] cells, int color) {
+        for (int[] c : cells) Gui.drawRect(x + c[0], y + c[1], x + c[0] + 1, y + c[1] + 1, color);
+    }
+
+    /** Kiếm sắt pixel 9x9 (vẽ tay, na ná kiếm sắt Minecraft): mũi chỉ lên trái, cán nâu ở dưới phải. */
     private static void swordIcon(int x, int y) {
-        int blade = 0xFFE8E8E8, edge = 0xFFA8A8A8, guard = 0xFFD9A93A, grip = 0xFF8B5A2B;
-        int[][] b = {{7, 0}, {6, 1}, {5, 2}, {4, 3}};
-        int[][] e = {{6, 0}, {5, 1}, {4, 2}, {3, 3}};
-        int[][] g = {{1, 3}, {2, 4}, {3, 5}, {2, 3}, {3, 4}};
-        int[][] h = {{1, 5}, {0, 6}, {0, 7}};
-        for (int[] c : e) Gui.drawRect(x + c[0], y + c[1], x + c[0] + 1, y + c[1] + 1, edge);
-        for (int[] c : b) Gui.drawRect(x + c[0], y + c[1], x + c[0] + 1, y + c[1] + 1, blade);
-        for (int[] c : g) Gui.drawRect(x + c[0], y + c[1], x + c[0] + 1, y + c[1] + 1, guard);
-        for (int[] c : h) Gui.drawRect(x + c[0], y + c[1], x + c[0] + 1, y + c[1] + 1, grip);
+        px(x, y, new int[][] {{0, 1}, {1, 2}, {2, 3}, {3, 4}, {2, 0}, {3, 1}, {4, 2}, {5, 3}}, 0xFF2E2E2E);   // viền tối
+        px(x, y, new int[][] {{0, 0}, {1, 1}, {2, 2}, {3, 3}}, 0xFFEDEDED);                                      // lưỡi sáng
+        px(x, y, new int[][] {{1, 0}, {2, 1}, {3, 2}, {4, 3}}, 0xFFB4B4B4);                                      // cạnh lưỡi
+        px(x, y, new int[][] {{6, 2}, {5, 3}, {4, 4}, {3, 5}, {2, 6}}, 0xFF6E6E6E);                              // chắn tay
+        px(x, y, new int[][] {{5, 5}, {6, 6}, {7, 7}}, 0xFF7A4A1E);                                              // cán
+        px(x, y, new int[][] {{5, 6}, {6, 7}}, 0xFF4F2E0F);                                                      // bóng cán
+        px(x, y, new int[][] {{8, 8}}, 0xFF9A9A9A);                                                              // núm
     }
 
     private static void fillRound(int x1, int y1, int x2, int y2, int color) {
