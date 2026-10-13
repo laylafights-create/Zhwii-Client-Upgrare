@@ -86,6 +86,7 @@ public class LunarLite {
         MODULES.add(SCOREBOARD);
         // Utility / Visual
         MODULES.add(new ToggleSprintModule());
+        MODULES.add(new HypixelViModule());
         MODULES.add(ZOOM);
         MODULES.add(new FullbrightModule());
         MODULES.add(new TimeChangerModule());
