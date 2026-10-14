@@ -697,13 +697,15 @@ public class ChatBarModule extends Module {
         return new int[]{x1, y2 - h, x1 + w, y2};
     }
 
+    static final int BAR_H = 16, BAR_BASE = 18; // cao thanh nhập / mốc mặc định cách đáy màn hình
+
     /** Thanh nhập: {x1, y1, x2, y2}, đã kẹp trong màn hình. */
     static int[] barRect(int sw, int sh) {
         int bw = BAR_WIDTH.getInt() > 0 ? BAR_WIDTH.getInt() : sw - 4 - Math.max(0, barX);
         bw = Math.max(60, Math.min(sw - 4, bw));
         int x1 = Math.max(0, Math.min(sw - bw - 2, 2 + barX));
-        int y1 = Math.max(0, Math.min(sh - 13, sh - 15 + barY));
-        return new int[]{x1, y1, x1 + bw, y1 + 13};
+        int y1 = Math.max(0, Math.min(sh - BAR_H, sh - BAR_BASE + barY));
+        return new int[]{x1, y1, x1 + bw, y1 + BAR_H};
     }
 
     /** Tọa độ chuột thô đã bù vị trí khung chat, để click/hover link đúng chỗ. */
@@ -968,7 +970,7 @@ public class ChatBarModule extends Module {
                 barX = nx; barY = ny;
                 int[] r = barRect(width, height);
                 barX = r[0] - 2;
-                barY = r[1] - (height - 15);
+                barY = r[1] - (height - BAR_BASE);
             }
         }
 
@@ -996,7 +998,7 @@ public class ChatBarModule extends Module {
 
             int[] bar = barRect(width, height);
             drawBarBox(bar, 1f);
-            fontRendererObj.drawStringWithShadow("Thanh nhập", bar[0] + 4, bar[1] + 3, 0x99FFFFFF);
+            fontRendererObj.drawStringWithShadow("Thanh nhập", bar[0] + 18, bar[1] + 4, 0x99FFFFFF);
 
             super.drawScreen(mouseX, mouseY, partialTicks);
         }
@@ -1029,21 +1031,46 @@ public class ChatBarModule extends Module {
         drawBarBox(r, p, 0f);
     }
 
+    static int lerpColor(int c1, int c2, float t) {
+        int r = (int) (((c1 >> 16) & 255) + (((c2 >> 16) & 255) - ((c1 >> 16) & 255)) * t);
+        int g = (int) (((c1 >> 8) & 255) + (((c2 >> 8) & 255) - ((c1 >> 8) & 255)) * t);
+        int b = (int) ((c1 & 255) + ((c2 & 255) - (c1 & 255)) * t);
+        return (r << 16) | (g << 8) | b;
+    }
+
+    /** Tô khối bo góc 2px với gradient dọc top -> bottom (RGB), alpha 0..1. */
+    static void fillGradient(int x1, int y1, int x2, int y2, int top, int bottom, float alpha) {
+        int h = y2 - y1;
+        for (int i = 0; i < h; i++) {
+            int inset = (i == 0 || i == h - 1) ? 2 : (i == 1 || i == h - 2) ? 1 : 0;
+            int rgb = lerpColor(top, bottom, h <= 1 ? 0f : i / (float) (h - 1));
+            Gui.drawRect(x1 + inset, y1 + i, x2 - inset, y1 + i + 1, mulA(0xFF000000 | rgb, alpha));
+        }
+    }
+
     static void drawBarBox(int[] r, float p, float glow) {
         int x1 = r[0], y1 = r[1], x2 = r[2], y2 = r[3];
         float op = BAR_OPACITY.getInt() / 100f;
-        ring(x1 - 1, y1 - 1, x2 + 1, y2 + 1, mulA(0xFF000000, 0.22f * p));               // bóng
-        if (BAR_BORDER.value) {
-            ring(x1, y1, x2, y2, mulA(accent | 0xFF000000, (0.55f + 0.40f * glow) * p));                  // viền
-            roundRect(x1 + 1, y1 + 1, x2 - 1, y2 - 1, mulA(0xFF0A0F1C, op * p));         // nền
-        } else {
-            roundRect(x1, y1, x2, y2, mulA(0xFF0A0F1C, op * p));
+        int acc = accent | 0xFF000000;
+        // bóng đổ mềm 2 lớp (đậm hơn khi đang gõ)
+        ring(x1 - 2, y1 - 2, x2 + 2, y2 + 2, mulA(0xFF000000, (0.10f + 0.05f * glow) * p));
+        ring(x1 - 1, y1 - 1, x2 + 1, y2 + 1, mulA(0xFF000000, 0.24f * p));
+        // quầng sáng màu accent khi đang gõ
+        if (glow > 0.02f && BAR_BORDER.value) ring(x1 - 1, y1 - 1, x2 + 1, y2 + 1, mulA(acc, 0.22f * glow * p));
+        // nền kính: gradient xanh đen từ trên xuống
+        if (BAR_BORDER.value) fillGradient(x1 + 1, y1 + 1, x2 - 1, y2 - 1, 0x182038, 0x070A14, op * p);
+        else fillGradient(x1, y1, x2, y2, 0x182038, 0x070A14, op * p);
+        // viền mảnh: dịu khi nghỉ, sáng khi đang gõ
+        if (BAR_BORDER.value) ring(x1, y1, x2, y2, mulA(acc, (0.40f + 0.55f * glow) * p));
+        // vệt sáng mép trên
+        Gui.drawRect(x1 + 4, y1 + 1, x2 - 4, y1 + 2, mulA(0xFFFFFFFF, 0.13f * p));
+        // biểu tượng ">" (prompt) bên trái: vẽ bằng pixel cho nét sắc, sáng + nhích sang phải khi đang gõ
+        int cx = x1 + 7 + Math.round(glow), cy = y1 + (y2 - y1 - 7) / 2;
+        int[] off = {0, 1, 2, 3, 2, 1, 0};
+        for (int i = 0; i < 7; i++) {
+            Gui.drawRect(cx + off[i] + 1, cy + i + 1, cx + off[i] + 3, cy + i + 2, mulA(0xFF000000, 0.35f * p)); // bóng
+            Gui.drawRect(cx + off[i], cy + i, cx + off[i] + 2, cy + i + 1, mulA(acc, (0.75f + 0.25f * glow) * p));
         }
-        // lớp nền sáng nhẹ nửa trên -> cảm giác kính / chiều sâu
-        Gui.drawRect(x1 + 2, y1 + 1, x2 - 2, y1 + 1 + (y2 - y1) / 2, mulA(0xFFFFFFFF, 0.045f * p));
-        Gui.drawRect(x1 + 3, y1 + 1, x2 - 3, y1 + 2, mulA(0xFFFFFFFF, 0.12f * p));       // vệt sáng mép trên
-        // dải nhấn bên trái, sáng lên khi đang gõ
-        Gui.drawRect(x1 + 3, y1 + 3, x1 + 5, y2 - 3, mulA(accent | 0xFF000000, (0.55f + 0.45f * glow) * p));
     }
 
     static void roundRect(int x1, int y1, int x2, int y2, int color) {
@@ -1066,8 +1093,8 @@ public class ChatBarModule extends Module {
             // dựng lại ô nhập theo vị trí/độ rộng người dùng chọn
             String t = inputField.getText();
             int[] r = barRect(width, height);
-            inputField = new GuiTextField(0, fontRendererObj, r[0] + 9, r[1] + 3,
-                    r[2] - r[0] - 12 - (CHAR_COUNTER.value ? 40 : 0), 12);
+            inputField = new GuiTextField(0, fontRendererObj, r[0] + 18, r[1] + 4,
+                    r[2] - r[0] - 22 - (CHAR_COUNTER.value ? 48 : 0), 12);
             inputField.setMaxStringLength(100);
             inputField.setEnableBackgroundDrawing(false);
             inputField.setFocused(true);
@@ -1122,20 +1149,22 @@ public class ChatBarModule extends Module {
             // ô nhập (+ chữ gợi ý khi còn trống)
             inputField.drawTextBox();
             if (inputField.getText().isEmpty()) {
-                fontRendererObj.drawStringWithShadow("Nhập tin nhắn...", x1 + 10, y1 + 3, mulA(0xFFFFFFFF, 0.35f * p));
+                fontRendererObj.drawStringWithShadow("Nhập tin nhắn...", x1 + 18, y1 + 4, mulA(0xFFFFFFFF, 0.32f * p));
             }
 
-            // bộ đếm ký tự (viên thuốc nhỏ) + vạch tiến độ ở đáy thanh
+            // bộ đếm ký tự (viên thuốc màu theo mức) + vạch tiến độ ở đáy thanh
             if (CHAR_COUNTER.value) {
                 int len = inputField.getText().length();
                 String s = len + "/100";
-                int col = len >= 100 ? 0xFFFF5555 : len >= 80 ? 0xFFFFD866 : 0xCCFFFFFF;
+                int col = len >= 100 ? 0xFFFF5555 : len >= 80 ? 0xFFFFD866 : 0xFFB8C4DC;
                 int tw = fontRendererObj.getStringWidth(s);
-                int px2 = x2 - 4, px1 = px2 - tw - 6;
-                dev.lunarlite.gui.Draw.rrect(px1, y1 + 2, px2, y2 - 2, 3, mulA(0xFF000000, 0.35f * p));
-                fontRendererObj.drawStringWithShadow(s, px1 + 3, y1 + 3, mulA(col, p));
-                int fw = Math.round((x2 - x1 - 8) * Math.min(1f, len / 100f));
-                if (fw > 0) Gui.drawRect(x1 + 4, y2 - 2, x1 + 4 + fw, y2 - 1, mulA(col, 0.85f * p));
+                int px2 = x2 - 5, px1 = px2 - tw - 8;
+                dev.lunarlite.gui.Draw.rrect(px1, y1 + 3, px2, y2 - 3, 4, mulA(0xFF000000 | (col & 0xFFFFFF), 0.16f * p));
+                fontRendererObj.drawStringWithShadow(s, px1 + 4, y1 + 4, mulA(col, p));
+                int trackW = x2 - x1 - 12;
+                Gui.drawRect(x1 + 6, y2 - 3, x1 + 6 + trackW, y2 - 2, mulA(0xFFFFFFFF, 0.07f * p));
+                int fw = Math.round(trackW * Math.min(1f, len / 100f));
+                if (fw > 0) Gui.drawRect(x1 + 6, y2 - 3, x1 + 6 + fw, y2 - 2, mulA(col, 0.9f * p));
             }
 
             GlStateManager.popMatrix();
