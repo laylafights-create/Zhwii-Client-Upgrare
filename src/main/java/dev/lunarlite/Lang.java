@@ -107,6 +107,20 @@ public final class Lang {
         p("Appearance", "Giao diện"); p("Options", "Tùy chọn"); p("Loot Beam", "Tia sáng vật phẩm");
         p("Target Info", "Thông tin địch");
 
+        // ---- Hiệu ứng (Effect)
+        p("Sword Trail", "Vệt kiếm"); p("Hit Effect", "Hiệu ứng đánh trúng"); p("Kill Effect", "Hiệu ứng hạ gục");
+        p("Jump Circle", "Vòng sáng khi nhảy"); p("Particle Trail", "Vệt hạt");
+        p("Particle", "Loại hạt"); p("Effect", "Hiệu ứng"); p("Amount", "Số lượng"); p("Spread", "Độ tản");
+        p("Trail Length", "Độ dài vệt"); p("Blade Length", "Chiều dài lưỡi"); p("Max Radius", "Bán kính tối đa");
+        p("Duration", "Thời lượng"); p("Only When Moving", "Chỉ khi di chuyển");
+        p("Show In First Person", "Hiện ở góc nhìn thứ nhất"); p("Show With Empty Hand", "Hiện khi tay không");
+        p("Crit", "Chí mạng"); p("Magic Crit", "Chí mạng phép"); p("Flame", "Lửa"); p("Heart", "Tim"); p("Note", "Nốt nhạc");
+        p("Smoke", "Khói"); p("Portal", "Cổng"); p("Cloud", "Mây"); p("Blood", "Máu"); p("Slime", "Slime");
+        p("Happy Villager", "Dân làng vui"); p("Firework", "Pháo hoa");
+        p("Lightning", "Sét"); p("Explosion", "Nổ"); p("Fireworks", "Pháo hoa"); p("Soul Burst", "Linh hồn bay lên");
+        p("Hearts", "Trái tim"); p("Flames", "Ngọn lửa");
+        p("Vệt sáng theo đường vung tay / kiếm của bạn.", "Vệt sáng theo đường vung tay / kiếm của bạn, hỗ trợ cầu vồng.");
+
         p("Hiện đường bay và điểm rơi của mũi tên khi giương cung.", "Vẽ đường bay và điểm rơi dự đoán của mũi tên khi giương cung; đổi màu khi trúng người.");
     }
 

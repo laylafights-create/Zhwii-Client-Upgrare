@@ -48,6 +48,9 @@ public class LunarLite {
     public static AnimationsModule ANIM;
     public static HotbarAnimationModule HOTBAR;
     public static SwordTrailModule SWORD_TRAIL;
+    public static JumpCircleModule JUMP_CIRCLE;
+    public static HitEffectModule HIT_EFFECT;
+    public static KillEffectModule KILL_EFFECT;
 
     private static Configuration config;
 
@@ -67,6 +70,9 @@ public class LunarLite {
         ANIM = new AnimationsModule();
         HOTBAR = new HotbarAnimationModule();
         SWORD_TRAIL = new SwordTrailModule();
+        JUMP_CIRCLE = new JumpCircleModule();
+        HIT_EFFECT = new HitEffectModule();
+        KILL_EFFECT = new KillEffectModule();
 
         // PvP / HUD
         MODULES.add(new FpsModule());
@@ -89,10 +95,15 @@ public class LunarLite {
         MODULES.add(ZOOM);
         MODULES.add(new FullbrightModule());
         MODULES.add(BLOCK_OUTLINE);
-        MODULES.add(SWORD_TRAIL);
         MODULES.add(new ItemPhysicsModule());
         MODULES.add(ANIM);
         MODULES.add(HOTBAR);
+        // Hiệu ứng
+        MODULES.add(SWORD_TRAIL);
+        MODULES.add(HIT_EFFECT);
+        MODULES.add(KILL_EFFECT);
+        MODULES.add(JUMP_CIRCLE);
+        MODULES.add(new ParticleTrailModule());
         MODULES.add(new ThemeModule());
 
         config.load();
@@ -147,6 +158,8 @@ public class LunarLite {
     public void onAttack(AttackEntityEvent e) {
         if (e.entityPlayer == Minecraft.getMinecraft().thePlayer && e.target instanceof EntityLivingBase) {
             ComboModule.onAttack();
+            if (HIT_EFFECT != null) HIT_EFFECT.onAttack(e.target);
+            if (KILL_EFFECT != null) KILL_EFFECT.onAttack(e.target);
         }
     }
 
@@ -186,6 +199,7 @@ public class LunarLite {
         if (BOW_TRAJECTORY != null) BOW_TRAJECTORY.render(e.partialTicks);
         if (ENEMY_DETECTOR != null) ENEMY_DETECTOR.renderMarkers(e.partialTicks);
         if (SWORD_TRAIL != null) SWORD_TRAIL.render(e.partialTicks);
+        if (JUMP_CIRCLE != null) JUMP_CIRCLE.render(e.partialTicks);
     }
 
     @SubscribeEvent
