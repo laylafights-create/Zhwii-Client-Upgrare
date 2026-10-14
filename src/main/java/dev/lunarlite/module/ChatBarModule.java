@@ -98,6 +98,7 @@ public class ChatBarModule extends Module {
     public static final BoolSetting ANIM_BAR = new BoolSetting("animBar", "Animation thanh nhập", true);
     public static final BoolSetting BAR_BORDER = new BoolSetting("barBorder", "Viền màu thanh nhập", true);
     public static final BoolSetting HIDE_BAR_BACKGROUND = new BoolSetting("hideBarBackground", "Ẩn nền thanh nhập", false);
+    public static final BoolSetting HIDE_CHAT_BACKGROUND = new BoolSetting("hideChatBackground", "Ẩn nền khung chat", false);
 
     public static String translateTo = "vi";
     public static int accent = 0xFF55AAFF;     // ARGB
@@ -121,6 +122,7 @@ public class ChatBarModule extends Module {
         add(HIDE_BAR_BACKGROUND, SEC_BAR);
         add(ANIM_BAR, SEC_BAR);
         add(ANIM_MESSAGES, SEC_CHAT);
+        add(HIDE_CHAT_BACKGROUND, SEC_CHAT);
         add(BAR_OPACITY, SEC_BAR);
         add(PLAYER_HEADS, SEC_ICON);
         add(ICON_SIZE, SEC_ICON, PLAYER_HEADS);
@@ -673,6 +675,84 @@ public class ChatBarModule extends Module {
         else { slideY = 0f; curSlide = 0; }
         e.posX += windowX;
         e.posY += windowY + curSlide;
+        if (HIDE_CHAT_BACKGROUND.value) {
+            e.setCanceled(true);          // chặn cách vẽ gốc (có nền đen)
+            drawChatNoBackground(e);      // tự vẽ lại chữ + icon, không có nền
+        }
+    }
+
+    /** Vẽ chat giống vanilla nhưng KHÔNG có nền đen mờ sau mỗi dòng. */
+    private void drawChatNoBackground(RenderGameOverlayEvent.Chat e) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.gameSettings.chatVisibility == EntityPlayer.EnumChatVisibility.HIDDEN) return;
+        GuiNewChat chat = mc.ingameGUI.getChatGUI();
+        List<ChatLine> lines;
+        int scroll;
+        try {
+            if (F_LINES == null) {
+                F_LINES = ReflectionHelper.findField(GuiNewChat.class, "drawnChatLines", "field_146253_i");
+                F_SCROLL = ReflectionHelper.findField(GuiNewChat.class, "scrollPos", "field_146250_j");
+            }
+            lines = (List<ChatLine>) F_LINES.get(chat);
+            scroll = F_SCROLL.getInt(chat);
+        } catch (Exception ex) {
+            return;
+        }
+        if (lines == null || lines.isEmpty()) return;
+
+        boolean open = chat.getChatOpen();
+        float opacity = mc.gameSettings.chatOpacity * 0.9f + 0.1f;
+        int tick = mc.ingameGUI.getUpdateCounter();
+        float sc = chat.getChatScale();
+        int max = chat.getLineCount();
+        int visible = 0;
+
+        GlStateManager.pushMatrix();
+        GlStateManager.translate(e.posX + 2f, e.posY + 20f, 0f);
+        GlStateManager.scale(sc, sc, 1f);
+        try {
+            for (int i = 0; i + scroll < lines.size() && i < max; i++) {
+                ChatLine line;
+                try { line = lines.get(i + scroll); } catch (IndexOutOfBoundsException ex) { break; }
+                if (line == null || line.getChatComponent() == null) continue;
+                int age = tick - line.getUpdatedCounter();
+                if (age >= 200 && !open) continue;
+                double d = Math.max(0.0, Math.min(1.0, (1.0 - age / 200.0) * 10.0));
+                int a = (int) ((open ? 255 : (int) (255 * d * d)) * opacity);
+                visible++;
+                if (a <= 3) continue;
+                GlStateManager.enableBlend();
+                mc.fontRendererObj.drawStringWithShadow(line.getChatComponent().getFormattedText(),
+                        0f, -i * 9 - 8, 0xFFFFFF + (a << 24));
+                GlStateManager.disableAlpha();
+                GlStateManager.disableBlend();
+            }
+
+            // thanh cuộn (chỉ khi đang mở chat)
+            if (open) {
+                int fh = mc.fontRendererObj.FONT_HEIGHT;
+                int total = lines.size();
+                int l2 = total * fh + total;
+                int i3 = visible * fh + visible;
+                if (l2 != i3) {
+                    int j3 = scroll * i3 / total;
+                    int k1 = i3 * i3 / l2;
+                    int k3 = j3 > 0 ? 170 : 96;
+                    int col = scroll > 0 ? 13382451 : 3355562;
+                    GlStateManager.translate(-3f, 0f, 0f);
+                    Gui.drawRect(0, -j3, 2, -j3 - k1, col + (k3 << 24));
+                    Gui.drawRect(2, -j3, 1, -j3 - k1, 13421772 + (k3 << 24));
+                }
+            }
+        } catch (RuntimeException ex) {
+            // lỗi vẽ không được làm sập game
+        } finally {
+            GlStateManager.enableTexture2D();
+            GlStateManager.color(1f, 1f, 1f, 1f);
+            GlStateManager.popMatrix();
+        }
+
+        if (PLAYER_HEADS.value) renderChatIcons(e.resolution);
     }
 
     /** Đặt độ rộng khung chat theo thanh trượt (px). Game cho phép > 320 px nếu gán thẳng giá trị float. */
@@ -723,6 +803,10 @@ public class ChatBarModule extends Module {
     @SubscribeEvent
     public void onRenderChat(RenderGameOverlayEvent.Post e) {
         if (!enabled || !PLAYER_HEADS.value || e.type != RenderGameOverlayEvent.ElementType.CHAT) return;
+        renderChatIcons(e.resolution);
+    }
+
+    private void renderChatIcons(ScaledResolution res) {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.gameSettings.chatVisibility == EntityPlayer.EnumChatVisibility.HIDDEN || mc.getNetHandler() == null) return;
 
@@ -768,7 +852,7 @@ public class ChatBarModule extends Module {
         float sc = chat.getChatScale();
 
         GlStateManager.pushMatrix();
-        GlStateManager.translate(2f + windowX, e.resolution.getScaledHeight() - 48 + 20f + windowY + curSlide, 0f);
+        GlStateManager.translate(2f + windowX, res.getScaledHeight() - 48 + 20f + windowY + curSlide, 0f);
         GlStateManager.scale(sc, sc, 1f);
         GlStateManager.enableBlend();
         try {
