@@ -2,6 +2,9 @@ package dev.lunarlite.module;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonParser;
+import dev.lunarlite.LunarLite;
+import dev.lunarlite.setting.BoolSetting;
+import dev.lunarlite.setting.SliderSetting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.ChatLine;
 import net.minecraft.command.CommandBase;
@@ -34,8 +37,6 @@ import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import net.minecraftforge.event.world.WorldEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.common.config.Configuration;
-import net.minecraftforge.fml.common.FMLCommonHandler;
-import net.minecraftforge.fml.common.gameevent.TickEvent;
 import net.minecraftforge.fml.common.eventhandler.EventPriority;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.relauncher.ReflectionHelper;
@@ -50,6 +51,7 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -71,131 +73,116 @@ import java.util.regex.Pattern;
  *
  * Đăng ký: new ChatBarModule().register();
  */
-public class ChatBarModule {
+public class ChatBarModule extends Module {
 
-    // ===== Cấu hình =====
-    public static boolean enabled = true;
-    public static boolean hideOriginal = false; // tự ẩn tin gốc khi đã có bản dịch (chỉ giữ bản dịch)
-    public static boolean showKills = true;    // tin giết người: [avt người giết] giết [avt người bị giết]
-    public static boolean bedwars = true;      // giữ tin sự kiện Bedwars (phá giường, final kill...) khi playerOnly
-    public static boolean charCounter = true;
-    public static boolean playerHeads = true;  // avatar + giường màu team trước tin nhắn
-    public static int iconSize = 8;            // kích thước avatar (px), 6..14
-    public static int iconX = 0;               // dịch icon ngang (px)
-    public static int iconY = 0;               // dịch icon dọc (px, âm = lên)
-    public static boolean autoTranslate = true; // tự dịch tin người chơi sang tiếng Việt
+    // ===== Tùy chỉnh: hiện trong menu Zhwii Client -> Tiện ích -> Chat Bar (lưu chung config của client) =====
+    private static final String SEC_CHAT = "Chat", SEC_ICON = "Avatar", SEC_POS = "Vị trí";
+
+    public static final BoolSetting PLAYER_ONLY = new BoolSetting("playerOnly", "Chỉ tin người chơi", true);
+    public static final BoolSetting BEDWARS = new BoolSetting("bedwars", "Giữ tin sự kiện Bedwars", true);
+    public static final BoolSetting SHOW_KILLS = new BoolSetting("kills", "Tin giết người có avatar", true);
+    public static final BoolSetting AUTO_TRANSLATE = new BoolSetting("translate", "Dịch sang tiếng Việt", true);
+    public static final BoolSetting HIDE_ORIGINAL = new BoolSetting("hideOriginal", "Tự ẩn tin gốc", false);
+    public static final BoolSetting CHAR_COUNTER = new BoolSetting("charCounter", "Bộ đếm ký tự", true);
+    public static final BoolSetting PLAYER_HEADS = new BoolSetting("heads", "Avatar + giường team", true);
+    public static final SliderSetting ICON_SIZE = new SliderSetting("iconSize", "Cỡ avatar", 8, 6, 14, 1, " px");
+    public static final SliderSetting ICON_X = new SliderSetting("iconX", "Avatar lệch ngang", 0, -20, 20, 1, " px");
+    public static final SliderSetting ICON_Y = new SliderSetting("iconY", "Avatar lệch dọc", 0, -10, 10, 1, " px");
+    public static final SliderSetting BAR_WIDTH = new SliderSetting("barW", "Rộng thanh nhập (0 = tự động)", 0, 0, 600, 5, " px");
+
     public static String translateTo = "vi";
-    public static boolean playerOnly = true;   // chỉ hiện tin người chơi, chặn tin hệ thống
-    // Vị trí tùy ý (px GUI, tính từ vị trí mặc định; x phải +, y xuống +)
-    public static int windowX = 0, windowY = 0; // khung hiển thị tin nhắn
-    public static int barX = 0, barY = 0;       // thanh nhập chat
-    public static int barW = 0;                 // độ rộng thanh nhập, 0 = tự động tới mép phải
     public static int accent = 0xFF55AAFF;     // ARGB
     public static int background = 0x90000000; // ARGB
 
-    // ===== Lưu / tải cấu hình (config/lunarlite_chatbar.cfg) =====
-    private static Configuration cfg;
-    private static boolean openRequested;
+    // Vị trí tùy ý (px GUI, tính từ vị trí mặc định; x phải +, y xuống +). Đặt bằng kéo thả, không phải thanh trượt.
+    public static int windowX = 0, windowY = 0; // khung hiển thị tin nhắn
+    public static int barX = 0, barY = 0;       // thanh nhập chat
 
-    private static void load() {
-        cfg = new Configuration(new File(Minecraft.getMinecraft().mcDataDir, "config/lunarlite_chatbar.cfg"));
-        cfg.load();
-        enabled = cfg.get("chatbar", "enabled", enabled).getBoolean();
-        playerHeads = cfg.get("chatbar", "heads", playerHeads).getBoolean();
-        autoTranslate = cfg.get("chatbar", "translate", autoTranslate).getBoolean();
-        showKills = cfg.get("chatbar", "kills", showKills).getBoolean();
-        hideOriginal = cfg.get("chatbar", "hideOriginal", hideOriginal).getBoolean();
-        playerOnly = cfg.get("chatbar", "playerOnly", playerOnly).getBoolean();
-        bedwars = cfg.get("chatbar", "bedwars", bedwars).getBoolean();
-        iconSize = cfg.getInt("iconSize", "chatbar", iconSize, 6, 14, "Kích thước avatar (px)");
-        iconX = cfg.getInt("iconX", "chatbar", iconX, -20, 20, "Lệch ngang");
-        iconY = cfg.getInt("iconY", "chatbar", iconY, -10, 10, "Lệch dọc");
-        windowX = cfg.getInt("windowX", "chatbar", windowX, -2000, 2000, "Vị trí ngang khung chat");
-        windowY = cfg.getInt("windowY", "chatbar", windowY, -2000, 2000, "Vị trí dọc khung chat");
-        barX = cfg.getInt("barX", "chatbar", barX, -2000, 2000, "Vị trí ngang thanh nhập");
-        barY = cfg.getInt("barY", "chatbar", barY, -2000, 2000, "Vị trí dọc thanh nhập");
-        barW = cfg.getInt("barW", "chatbar", barW, 0, 2000, "Độ rộng thanh nhập (0 = tự động)");
-        if (cfg.hasChanged()) cfg.save();
+    public ChatBarModule() {
+        super("chatbar", "Chat Bar",
+                "Thanh chat bo góc, avatar + giường team, tự dịch tiếng Việt; kéo thả khung chat tới vị trí tùy ý.",
+                Category.UTILITY, true);
+        add(PLAYER_ONLY, SEC_CHAT);
+        add(BEDWARS, SEC_CHAT, PLAYER_ONLY);
+        add(SHOW_KILLS, SEC_CHAT);
+        add(AUTO_TRANSLATE, SEC_CHAT);
+        add(HIDE_ORIGINAL, SEC_CHAT, AUTO_TRANSLATE);
+        add(CHAR_COUNTER, SEC_CHAT);
+        add(PLAYER_HEADS, SEC_ICON);
+        add(ICON_SIZE, SEC_ICON, PLAYER_HEADS);
+        add(ICON_X, SEC_ICON, PLAYER_HEADS);
+        add(ICON_Y, SEC_ICON, PLAYER_HEADS);
+        add(BAR_WIDTH, SEC_POS);
     }
 
-    public static void save() {
-        if (cfg == null) return;
-        cfg.get("chatbar", "enabled", true).set(enabled);
-        cfg.get("chatbar", "heads", true).set(playerHeads);
-        cfg.get("chatbar", "translate", true).set(autoTranslate);
-        cfg.get("chatbar", "kills", true).set(showKills);
-        cfg.get("chatbar", "hideOriginal", false).set(hideOriginal);
-        cfg.get("chatbar", "playerOnly", true).set(playerOnly);
-        cfg.get("chatbar", "bedwars", true).set(bedwars);
-        cfg.get("chatbar", "iconSize", 8).set(iconSize);
-        cfg.get("chatbar", "iconX", 0).set(iconX);
-        cfg.get("chatbar", "iconY", 0).set(iconY);
-        cfg.get("chatbar", "windowX", 0).set(windowX);
-        cfg.get("chatbar", "windowY", 0).set(windowY);
-        cfg.get("chatbar", "barX", 0).set(barX);
-        cfg.get("chatbar", "barY", 0).set(barY);
-        cfg.get("chatbar", "barW", 0).set(barW);
-        cfg.save();
+    /** Nút "Kéo thả vị trí chat…" trong bảng tuỳ chỉnh của menu. */
+    @Override
+    public List<Action> actions() {
+        List<Action> l = new ArrayList<Action>();
+        l.add(new Action("Kéo thả vị trí chat…", new Runnable() {
+            @Override public void run() { openPositionEditor(); }
+        }, null));
+        return l;
     }
 
-    /** Mở cài đặt sau 1 tick (dùng cho lệnh /chatbar, vì lúc đó màn hình chat đang đóng lại). */
-    public static void openSettings() {
-        openRequested = true;
-    }
-
-    /** Mở cài đặt ngay từ MenuScreen: nút "Xong"/Esc sẽ quay lại menu (parent). */
-    public static void openSettings(GuiScreen parent) {
-        Minecraft.getMinecraft().displayGuiScreen(new SettingsScreen(parent));
-    }
-
-    /** Đặt lại toàn bộ vị trí chat về mặc định. */
-    public static void resetPositions() {
-        windowX = windowY = barX = barY = barW = 0;
-    }
-
-    @SubscribeEvent
-    public void onTick(TickEvent.ClientTickEvent e) {
-        if (e.phase != TickEvent.Phase.END || !openRequested) return;
+    /** Mở màn hình kéo thả; Xong / Esc quay lại màn hình đang mở (menu). */
+    public static void openPositionEditor() {
         Minecraft mc = Minecraft.getMinecraft();
-        if (mc.thePlayer != null && mc.currentScreen == null) {
-            openRequested = false;
-            mc.displayGuiScreen(new SettingsScreen());
-        }
+        mc.displayGuiScreen(new PositionScreen(mc.currentScreen));
+    }
+
+    // Vị trí kéo thả nằm ngoài danh sách Setting nên lưu / tải thêm ở đây
+    @Override
+    public void load(Configuration c) {
+        super.load(c);
+        windowX = c.getInt("windowX", id, 0, -4000, 4000, "Vị trí ngang khung tin nhắn");
+        windowY = c.getInt("windowY", id, 0, -4000, 4000, "Vị trí dọc khung tin nhắn");
+        barX = c.getInt("barX", id, 0, -4000, 4000, "Vị trí ngang thanh nhập");
+        barY = c.getInt("barY", id, 0, -4000, 4000, "Vị trí dọc thanh nhập");
+    }
+
+    @Override
+    public void save(Configuration c) {
+        super.save(c);
+        c.get(id, "windowX", 0).set(windowX);
+        c.get(id, "windowY", 0).set(windowY);
+        c.get(id, "barX", 0).set(barX);
+        c.get(id, "barY", 0).set(barY);
+    }
+
+    /** "Đặt lại tuỳ chỉnh" trong menu cũng đưa khung chat về vị trí mặc định. */
+    @Override
+    public void resetSettings() {
+        super.resetSettings();
+        resetPositions();
+    }
+
+    public static void resetPositions() {
+        windowX = windowY = barX = barY = 0;
+    }
+
+    static void saveNow() {
+        LunarLite.saveConfig();
     }
 
     public void register() {
-        load();
         MinecraftForge.EVENT_BUS.register(this);
-        FMLCommonHandler.instance().bus().register(this);
+        // Lệnh nội bộ cho nút [Ẩn gốc] trong chat. Cài đặt nằm trong menu, không còn lệnh mở GUI.
         ClientCommandHandler.instance.registerCommand(new CommandBase() {
             @Override public String getCommandName() { return "chatbar"; }
-            @Override public String getCommandUsage(ICommandSender s) { return "/chatbar (mở cài đặt) | /chatbar <size|x|y> <số> | reset"; }
+            @Override public String getCommandUsage(ICommandSender s) { return "/chatbar hide <id>"; }
             @Override public int getRequiredPermissionLevel() { return 0; }
             @Override public boolean canCommandSenderUseCommand(ICommandSender s) { return true; }
             @Override public void processCommand(ICommandSender s, String[] a) throws CommandException {
-                String msg;
                 try {
-                    if (a.length == 0) { openSettings(); return; }
-                    if (a.length == 2 && a[0].equalsIgnoreCase("hide")) { hideOriginalLine(Integer.parseInt(a[1])); return; }
-                    if (a.length == 1 && a[0].equalsIgnoreCase("reset")) {
-                        iconSize = 8; iconX = 0; iconY = 0;
-                        resetPositions();
-                        msg = "Đã reset icon và vị trí chat.";
-                    } else if (a.length == 2) {
-                        int v = Integer.parseInt(a[1]);
-                        if (a[0].equalsIgnoreCase("size")) iconSize = Math.max(6, Math.min(14, v));
-                        else if (a[0].equalsIgnoreCase("x")) iconX = Math.max(-20, Math.min(20, v));
-                        else if (a[0].equalsIgnoreCase("y")) iconY = Math.max(-10, Math.min(10, v));
-                        else { s.addChatMessage(new ChatComponentText(getCommandUsage(s))); return; }
-                        msg = "size=" + iconSize + " x=" + iconX + " y=" + iconY + " (áp dụng cho tin mới)";
-                    } else {
-                        msg = getCommandUsage(s);
+                    if (a.length == 2 && a[0].equalsIgnoreCase("hide")) {
+                        hideOriginalLine(Integer.parseInt(a[1]));
+                        return;
                     }
-                } catch (NumberFormatException ex) {
-                    msg = getCommandUsage(s);
+                } catch (NumberFormatException ignored) {
                 }
-                save();
-                s.addChatMessage(new ChatComponentText(EnumChatFormatting.AQUA + msg));
+                s.addChatMessage(new ChatComponentText(EnumChatFormatting.AQUA
+                        + "Cài đặt Chat Bar: mở menu Zhwii Client -> Tiện ích -> Chat Bar."));
             }
         });
     }
@@ -330,10 +317,10 @@ public class ChatBarModule {
                         @Override public void run() {
                             if (m.thePlayer == null) return;
                             // dòng dịch tự mang avatar + tên để vẫn đọc được khi tin gốc bị ẩn
-                            String head = playerHeads ? makeMarker(name, plain, true) : "";
+                            String head = PLAYER_HEADS.value ? makeMarker(name, plain, true) : "";
                             IChatComponent line = new ChatComponentText(head + EnumChatFormatting.AQUA + "[VI] "
                                     + teamColorOf(name) + name + EnumChatFormatting.GRAY + ": " + r[0]);
-                            if (!hideOriginal) {
+                            if (!HIDE_ORIGINAL.value) {
                                 ChatComponentText btn = new ChatComponentText(" " + EnumChatFormatting.RED + "[Ẩn gốc]");
                                 btn.setChatStyle(new ChatStyle()
                                         .setChatClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/chatbar hide " + id))
@@ -342,7 +329,7 @@ public class ChatBarModule {
                                 line.appendSibling(btn);
                             }
                             m.thePlayer.addChatMessage(line);
-                            if (hideOriginal) hideOriginalLine(id);
+                            if (HIDE_ORIGINAL.value) hideOriginalLine(id);
                         }
                     });
                 } catch (Exception ignored) {
@@ -355,7 +342,7 @@ public class ChatBarModule {
     // ===== Bedwars =====
     private static final Pattern BED_BROKEN = Pattern.compile("BED DESTRUCTION\\s*>\\s*(\\w+) Bed");
     private static final Pattern TEAM_TAG = Pattern.compile("\\[(RED|BLUE|GREEN|YELLOW|AQUA|WHITE|PINK|GRAY)\\]");
-    /** Tin hệ thống được giữ lại khi playerOnly bật. Thêm/bớt từ khóa tại đây. */
+    /** Tin hệ thống được giữ lại khi "Chỉ tin người chơi" bật. Thêm/bớt từ khóa tại đây. */
     private static final Pattern BW_EVENT = Pattern.compile(
             "BED DESTRUCTION|FINAL KILL|TEAM ELIMINATED|has been eliminated|You have been eliminated"
                     + "|Protect your bed|The game starts in|Victory|Your bed was");
@@ -432,8 +419,8 @@ public class ChatBarModule {
 
     /** [avt người giết] Tên giết [avt người bị giết] Tên */
     private static IChatComponent buildKill(String victim, String killer, boolean fin, String plain) {
-        String mk = playerHeads ? makeMarker(killer, plain, false) : "";
-        String mv = playerHeads ? makeMarker(victim, plain, false) : "";
+        String mk = PLAYER_HEADS.value ? makeMarker(killer, plain, false) : "";
+        String mv = PLAYER_HEADS.value ? makeMarker(victim, plain, false) : "";
         StringBuilder sb = new StringBuilder();
         sb.append(mk).append(teamColorOf(killer)).append(killer);
         sb.append(S).append("c giết ");
@@ -451,7 +438,7 @@ public class ChatBarModule {
 
     /** Chừa chỗ cho icon: đầu (+ giường) + khoảng cách, mỗi dấu cách rộng 4px. */
     private static String iconSpace(boolean bed) {
-        int w = iconSize + 2 + (bed ? (int) Math.ceil(9 * iconSize / 8f) + 1 : 0);
+        int w = ICON_SIZE.getInt() + 2 + (bed ? (int) Math.ceil(9 * ICON_SIZE.getInt() / 8f) + 1 : 0);
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < (w + 3) / 4; i++) sb.append(' ');
         return sb.toString();
@@ -524,21 +511,21 @@ public class ChatBarModule {
 
     private static void drawIcon(Minecraft mc, Icon ic, int y, int a, int x0) {
         NetworkPlayerInfo info = mc.getNetHandler().getPlayerInfo(ic.name);
-        int sz = iconSize;
-        int top = y - 8 + (8 - sz) / 2 + iconY;
+        int sz = ICON_SIZE.getInt();
+        int top = y - 8 + (8 - sz) / 2 + ICON_Y.getInt();
         GlStateManager.enableTexture2D();
         GlStateManager.color(1f, 1f, 1f, a / 255f);
         if (info != null) {
             mc.getTextureManager().bindTexture(info.getLocationSkin());
-            Gui.drawScaledCustomSizeModalRect(x0 + iconX, top, 8f, 8f, 8, 8, sz, sz, 64f, 64f);   // mặt
-            Gui.drawScaledCustomSizeModalRect(x0 + iconX, top, 40f, 8f, 8, 8, sz, sz, 64f, 64f);  // lớp mũ
+            Gui.drawScaledCustomSizeModalRect(x0 + ICON_X.getInt(), top, 8f, 8f, 8, 8, sz, sz, 64f, 64f);   // mặt
+            Gui.drawScaledCustomSizeModalRect(x0 + ICON_X.getInt(), top, 40f, 8f, 8, 8, sz, sz, 64f, 64f);  // lớp mũ
         }
         if (ic.bed && ic.color != -1) {
             float k = sz / 8f;
             int al = a << 24;
             boolean dead = DEAD_BEDS.contains(ic.color);
             GlStateManager.pushMatrix();
-            GlStateManager.translate(x0 + iconX + sz + 2, top + sz / 2f - 3f * k, 0f);
+            GlStateManager.translate(x0 + ICON_X.getInt() + sz + 2, top + sz / 2f - 3f * k, 0f);
             GlStateManager.scale(k, k, 1f);
             Gui.drawRect(0, 2, 9, 6, al | (dead ? 0x444444 : 0x8B5A2B));   // khung gỗ
             Gui.drawRect(3, 1, 9, 4, al | (dead ? 0x777777 : ic.color));   // chăn: xám nếu mất giường
@@ -572,7 +559,7 @@ public class ChatBarModule {
 
     /** Thanh nhập: {x1, y1, x2, y2}, đã kẹp trong màn hình. */
     static int[] barRect(int sw, int sh) {
-        int bw = barW > 0 ? barW : sw - 4 - Math.max(0, barX);
+        int bw = BAR_WIDTH.getInt() > 0 ? BAR_WIDTH.getInt() : sw - 4 - Math.max(0, barX);
         bw = Math.max(60, Math.min(sw - 4, bw));
         int x1 = Math.max(0, Math.min(sw - bw - 2, 2 + barX));
         int y1 = Math.max(0, Math.min(sh - 13, sh - 15 + barY));
@@ -591,7 +578,7 @@ public class ChatBarModule {
     // Vẽ icon lên từng dòng chat có marker
     @SubscribeEvent
     public void onRenderChat(RenderGameOverlayEvent.Post e) {
-        if (!enabled || !playerHeads || e.type != RenderGameOverlayEvent.ElementType.CHAT) return;
+        if (!enabled || !PLAYER_HEADS.value || e.type != RenderGameOverlayEvent.ElementType.CHAT) return;
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.gameSettings.chatVisibility == EntityPlayer.EnumChatVisibility.HIDDEN || mc.getNetHandler() == null) return;
 
@@ -635,18 +622,18 @@ public class ChatBarModule {
 
         String plain = EnumChatFormatting.getTextWithoutFormattingCodes(e.message.getUnformattedText());
         if (plain == null) plain = "";
-        if (bedwars) trackBeds(plain);
+        if (BEDWARS.value) trackBeds(plain);
 
         String[] pc = parsePlayerChat(e);
         String name = pc == null ? null : pc[0];
 
         // tin giết người: viết lại thành [avt] Người giết giết [avt] Người bị giết
-        if (showKills && name == null) {
+        if (SHOW_KILLS.value && name == null) {
             String[] k = parseKill(plain);
             if (k != null) {
                 if (k[1] != null) {
                     e.message = buildKill(k[0], k[1], plain.contains("FINAL KILL"), plain);
-                } else if (playerHeads) { // tự chết (rơi hố, cháy...): giữ nguyên tin, thêm avt người chết
+                } else if (PLAYER_HEADS.value) { // tự chết (rơi hố, cháy...): giữ nguyên tin, thêm avt người chết
                     IChatComponent r = new ChatComponentText(makeMarker(k[0], plain, false));
                     r.appendSibling(e.message);
                     e.message = r;
@@ -654,12 +641,12 @@ public class ChatBarModule {
                 return;
             }
         }
-        if (playerOnly && name == null && !(bedwars && BW_EVENT.matcher(plain).find())) {
+        if (PLAYER_ONLY.value && name == null && !(BEDWARS.value && BW_EVENT.matcher(plain).find())) {
             e.setCanceled(true);
             return;
         }
 
-        String marker = (playerHeads && name != null) ? makeMarker(name, plain, true) : "";
+        String marker = (PLAYER_HEADS.value && name != null) ? makeMarker(name, plain, true) : "";
         if (!marker.isEmpty()) {
             IChatComponent root = new ChatComponentText(marker);
             root.appendSibling(e.message);
@@ -667,178 +654,7 @@ public class ChatBarModule {
         }
 
         // e.message lúc này chính là đối tượng sẽ được in -> dùng để tìm lại và ẩn khi bấm [Ẩn gốc]
-        if (autoTranslate && pc != null) requestTranslate(pc[0], pc[1], plain, e.message);
-    }
-
-    // ===== Màn hình cài đặt =====
-    /** Thanh kéo số nguyên. */
-    public static class ValueSlider extends GuiButton {
-        public interface Setter { void set(int v); }
-
-        private final String label;
-        private final int min, max;
-        private final Setter setter;
-        private float frac;
-        private boolean dragging;
-
-        ValueSlider(int id, int x, int y, int w, String label, int min, int max, int value, Setter setter) {
-            super(id, x, y, w, 20, label + ": " + value);
-            this.label = label; this.min = min; this.max = max; this.setter = setter;
-            this.frac = (value - min) / (float) (max - min);
-        }
-
-        @Override
-        protected int getHoverState(boolean mouseOver) {
-            return 0;
-        }
-
-        @Override
-        protected void mouseDragged(Minecraft mc, int mouseX, int mouseY) {
-            if (!visible) return;
-            if (dragging) update(mouseX);
-            mc.getTextureManager().bindTexture(buttonTextures);
-            GlStateManager.color(1f, 1f, 1f, 1f);
-            int hx = xPosition + (int) (frac * (width - 8));
-            drawTexturedModalRect(hx, yPosition, 0, 66, 4, 20);
-            drawTexturedModalRect(hx + 4, yPosition, 196, 66, 4, 20);
-        }
-
-        @Override
-        public boolean mousePressed(Minecraft mc, int mouseX, int mouseY) {
-            if (!super.mousePressed(mc, mouseX, mouseY)) return false;
-            dragging = true;
-            update(mouseX);
-            return true;
-        }
-
-        @Override
-        public void mouseReleased(int mouseX, int mouseY) {
-            dragging = false;
-            save();
-        }
-
-        private void update(int mouseX) {
-            float f = Math.max(0f, Math.min(1f, (mouseX - (xPosition + 4)) / (float) (width - 8)));
-            int v = min + Math.round(f * (max - min));
-            frac = (v - min) / (float) (max - min);
-            setter.set(v);
-            displayString = label + ": " + v;
-        }
-    }
-
-    public static class SettingsScreen extends GuiScreen {
-        private final GuiScreen parent;
-
-        public SettingsScreen() { this(null); }
-
-        public SettingsScreen(GuiScreen parent) { this.parent = parent; }
-
-        @Override
-        protected void keyTyped(char c, int key) throws IOException {
-            if (key == Keyboard.KEY_ESCAPE) {
-                save();
-                mc.displayGuiScreen(parent);
-            }
-        }
-
-        private static final String[] LABELS = {"Chat bar", "Avatar + giường", "Dịch tiếng Việt",
-                "Tin giết người", "Chỉ tin người chơi", "Tối ưu Bedwars", "Tự ẩn tin gốc"};
-
-        private static boolean get(int i) {
-            switch (i) {
-                case 0: return enabled;
-                case 1: return playerHeads;
-                case 2: return autoTranslate;
-                case 3: return showKills;
-                case 4: return playerOnly;
-                case 5: return bedwars;
-                default: return hideOriginal;
-            }
-        }
-
-        private static void flip(int i) {
-            switch (i) {
-                case 0: enabled = !enabled; break;
-                case 1: playerHeads = !playerHeads; break;
-                case 2: autoTranslate = !autoTranslate; break;
-                case 3: showKills = !showKills; break;
-                case 4: playerOnly = !playerOnly; break;
-                case 5: bedwars = !bedwars; break;
-                default: hideOriginal = !hideOriginal; break;
-            }
-        }
-
-        private int top() {
-            return Math.max(24, (height - 206) / 2);
-        }
-
-        @Override
-        public void initGui() {
-            buttonList.clear();
-            int lx = width / 2 - 156, rx = width / 2 + 6, y = top();
-
-            // Cột trái: công tắc bật/tắt
-            for (int i = 0; i < LABELS.length; i++) {
-                buttonList.add(new GuiButton(i, lx, y + i * 22, 150, 20,
-                        LABELS[i] + ": " + (get(i) ? EnumChatFormatting.GREEN + "BẬT" : EnumChatFormatting.RED + "TẮT")));
-            }
-
-            // Cột phải: thanh kéo kích thước / vị trí
-            buttonList.add(new ValueSlider(10, rx, y, 150, "Cỡ avatar", 6, 14, iconSize,
-                    new ValueSlider.Setter() { public void set(int v) { iconSize = v; } }));
-            buttonList.add(new ValueSlider(11, rx, y + 22, 150, "Avatar ngang", -20, 20, iconX,
-                    new ValueSlider.Setter() { public void set(int v) { iconX = v; } }));
-            buttonList.add(new ValueSlider(12, rx, y + 44, 150, "Avatar dọc", -10, 10, iconY,
-                    new ValueSlider.Setter() { public void set(int v) { iconY = v; } }));
-            // Kích thước khung chat (thanh kéo gốc của game)
-            buttonList.add(new GuiOptionSlider(20, rx, y + 66, GameSettings.Options.CHAT_SCALE));
-            buttonList.add(new GuiOptionSlider(21, rx, y + 88, GameSettings.Options.CHAT_WIDTH));
-            buttonList.add(new GuiOptionSlider(22, rx, y + 110, GameSettings.Options.CHAT_HEIGHT_FOCUSED));
-            buttonList.add(new GuiOptionSlider(23, rx, y + 132, GameSettings.Options.CHAT_OPACITY));
-
-            // Hàng cuối: đặt vị trí bằng kéo thả + độ rộng thanh nhập
-            buttonList.add(new GuiButton(30, lx, y + 154, 150, 20, "Kéo thả vị trí chat..."));
-            buttonList.add(new ValueSlider(13, rx, y + 154, 150, "Rộng thanh (0=auto)", 0, 600, barW,
-                    new ValueSlider.Setter() { public void set(int v) { barW = v; } }));
-
-            buttonList.add(new GuiButton(98, lx, y + 182, 150, 20, "Mặc định"));
-            buttonList.add(new GuiButton(99, rx, y + 182, 150, 20, parent == null ? "Xong" : "Quay lại"));
-        }
-
-        @Override
-        protected void actionPerformed(GuiButton b) throws IOException {
-            if (b instanceof ValueSlider || b instanceof GuiOptionSlider) return; // không dựng lại màn hình khi đang kéo
-            if (b.id < LABELS.length) {
-                flip(b.id);
-            } else if (b.id == 98) {
-                enabled = playerHeads = autoTranslate = showKills = playerOnly = bedwars = true;
-                hideOriginal = false;
-                iconSize = 8; iconX = 0; iconY = 0;
-                resetPositions();
-            } else if (b.id == 30) {
-                save();
-                mc.displayGuiScreen(new PositionScreen(this));
-                return;
-            } else if (b.id == 99) {
-                save();
-                mc.displayGuiScreen(parent);
-                return;
-            }
-            save();
-            initGui();
-        }
-
-        @Override
-        public void drawScreen(int mouseX, int mouseY, float partialTicks) {
-            drawDefaultBackground();
-            drawCenteredString(fontRendererObj, "Chat Bar", width / 2, top() - 14, 0xFFFFFF);
-            super.drawScreen(mouseX, mouseY, partialTicks);
-        }
-
-        @Override
-        public boolean doesGuiPauseGame() {
-            return false;
-        }
+        if (AUTO_TRANSLATE.value && pc != null) requestTranslate(pc[0], pc[1], plain, e.message);
     }
 
     /** Màn hình kéo thả: kéo khung tin nhắn và thanh nhập tới bất kỳ đâu. */
@@ -854,15 +670,27 @@ public class ChatBarModule {
             buttonList.clear();
             buttonList.add(new GuiButton(1, width / 2 - 102, height / 2 + 20, 100, 20, "Mặc định"));
             buttonList.add(new GuiButton(0, width / 2 + 2, height / 2 + 20, 100, 20, "Xong"));
+            // Kích thước khung chat: thanh kéo gốc của game (lưu vào options.txt khi thoát)
+            int lx = width / 2 - 156, rx = width / 2 + 6, y = height / 2 + 46;
+            buttonList.add(new GuiOptionSlider(20, lx, y, GameSettings.Options.CHAT_SCALE));
+            buttonList.add(new GuiOptionSlider(21, rx, y, GameSettings.Options.CHAT_WIDTH));
+            buttonList.add(new GuiOptionSlider(22, lx, y + 22, GameSettings.Options.CHAT_HEIGHT_FOCUSED));
+            buttonList.add(new GuiOptionSlider(23, rx, y + 22, GameSettings.Options.CHAT_OPACITY));
+        }
+
+        @Override
+        public void onGuiClosed() {
+            mc.gameSettings.saveOptions();
+            saveNow();
         }
 
         @Override
         protected void actionPerformed(GuiButton b) throws IOException {
             if (b.id == 1) {
                 resetPositions();
-                save();
+                saveNow();
             } else if (b.id == 0) {
-                save();
+                saveNow();
                 mc.displayGuiScreen(parent);
             }
         }
@@ -870,7 +698,7 @@ public class ChatBarModule {
         @Override
         protected void keyTyped(char c, int key) throws IOException {
             if (key == Keyboard.KEY_ESCAPE) {
-                save();
+                saveNow();
                 mc.displayGuiScreen(parent);
             }
         }
@@ -882,6 +710,14 @@ public class ChatBarModule {
         @Override
         protected void mouseClicked(int mx, int my, int btn) throws IOException {
             if (btn == 0) {
+                // nút / thanh kéo nằm trên cùng: ưu tiên chúng trước khi kéo khung chat bên dưới
+                for (Object o : buttonList) {
+                    GuiButton b = (GuiButton) o;
+                    if (mx >= b.xPosition && my >= b.yPosition && mx < b.xPosition + b.width && my < b.yPosition + b.height) {
+                        super.mouseClicked(mx, my, btn);
+                        return;
+                    }
+                }
                 int[] bar = barRect(width, height);
                 int[] win = windowRect(width, height);
                 if (in(bar, mx, my)) { drag = 2; startX = barX; startY = barY; }
@@ -910,7 +746,7 @@ public class ChatBarModule {
 
         @Override
         protected void mouseReleased(int mx, int my, int state) {
-            if (drag != 0) save();
+            if (drag != 0) saveNow();
             drag = 0;
             super.mouseReleased(mx, my, state);
         }
@@ -964,7 +800,7 @@ public class ChatBarModule {
             String t = inputField.getText();
             int[] r = barRect(width, height);
             inputField = new GuiTextField(0, fontRendererObj, r[0] + 3, r[1] + 3,
-                    r[2] - r[0] - 6 - (charCounter ? 36 : 0), 12);
+                    r[2] - r[0] - 6 - (CHAR_COUNTER.value ? 36 : 0), 12);
             inputField.setMaxStringLength(100);
             inputField.setEnableBackgroundDrawing(false);
             inputField.setFocused(true);
@@ -1018,7 +854,7 @@ public class ChatBarModule {
             inputField.drawTextBox();
 
             // bộ đếm ký tự
-            if (charCounter) {
+            if (CHAR_COUNTER.value) {
                 int len = inputField.getText().length();
                 String s = len + "/100";
                 int col = len >= 100 ? 0xFFFF5555 : 0xFFAAAAAA;
