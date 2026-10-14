@@ -4,7 +4,6 @@ import dev.lunarlite.gui.HudEditorScreen;
 import dev.lunarlite.gui.MenuScreen;
 import dev.lunarlite.module.*;
 import dev.lunarlite.module.Module;
-import dev.lunarlite.modules.ChatBarModule;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.Minecraft;
