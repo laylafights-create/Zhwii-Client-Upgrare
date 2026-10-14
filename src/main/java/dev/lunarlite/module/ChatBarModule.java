@@ -99,6 +99,7 @@ public class ChatBarModule extends Module {
     public static final BoolSetting BAR_BORDER = new BoolSetting("barBorder", "Viền màu thanh nhập", true);
     public static final BoolSetting HIDE_BAR_BACKGROUND = new BoolSetting("hideBarBackground", "Ẩn nền thanh nhập", false);
     public static final BoolSetting HIDE_CHAT_BACKGROUND = new BoolSetting("hideChatBackground", "Ẩn nền khung chat", false);
+    public static final BoolSetting FIT_CHAT_BACKGROUND = new BoolSetting("fitChatBackground", "Nền chat vừa chiều dài chữ", false);
 
     public static String translateTo = "vi";
     public static int accent = 0xFF55AAFF;     // ARGB
@@ -123,6 +124,7 @@ public class ChatBarModule extends Module {
         add(ANIM_BAR, SEC_BAR);
         add(ANIM_MESSAGES, SEC_CHAT);
         add(HIDE_CHAT_BACKGROUND, SEC_CHAT);
+        add(FIT_CHAT_BACKGROUND, SEC_CHAT);
         add(BAR_OPACITY, SEC_BAR);
         add(PLAYER_HEADS, SEC_ICON);
         add(ICON_SIZE, SEC_ICON, PLAYER_HEADS);
@@ -675,7 +677,7 @@ public class ChatBarModule extends Module {
         else { slideY = 0f; curSlide = 0; }
         e.posX += windowX;
         e.posY += windowY + curSlide;
-        if (HIDE_CHAT_BACKGROUND.value) {
+        if (HIDE_CHAT_BACKGROUND.value || FIT_CHAT_BACKGROUND.value) {
             e.setCanceled(true);          // chặn cách vẽ gốc (có nền đen)
             drawChatNoBackground(e);      // tự vẽ lại chữ + icon, không có nền
         }
@@ -721,9 +723,14 @@ public class ChatBarModule extends Module {
                 int a = (int) ((open ? 255 : (int) (255 * d * d)) * opacity);
                 visible++;
                 if (a <= 3) continue;
+                String text = line.getChatComponent().getFormattedText();
+                if (!HIDE_CHAT_BACKGROUND.value && FIT_CHAT_BACKGROUND.value && !text.isEmpty()) {
+                    // nền ôm sát chữ của từng dòng (bỏ qua dòng đệm rỗng)
+                    int tw = mc.fontRendererObj.getStringWidth(text);
+                    roundRect(-1, -i * 9 - 9, tw + 3, -i * 9, (a / 2) << 24);
+                }
                 GlStateManager.enableBlend();
-                mc.fontRendererObj.drawStringWithShadow(line.getChatComponent().getFormattedText(),
-                        0f, -i * 9 - 8, 0xFFFFFF + (a << 24));
+                mc.fontRendererObj.drawStringWithShadow(text, 0f, -i * 9 - 8, 0xFFFFFF + (a << 24));
                 GlStateManager.disableAlpha();
                 GlStateManager.disableBlend();
             }
