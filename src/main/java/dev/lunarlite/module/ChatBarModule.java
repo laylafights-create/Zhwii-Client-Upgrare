@@ -635,6 +635,29 @@ public class ChatBarModule extends Module {
     private static boolean isGap(ChatLine l) { return l instanceof GapLine; }
     private static boolean spacingApplied;
 
+    // ===== Tối ưu: cache chữ + độ rộng từng dòng (trước đây tính lại mỗi khung hình) =====
+    private static final class LineCache {
+        final String text;
+        final int width;
+        LineCache(String text, int width) { this.text = text; this.width = width; }
+    }
+    private static final Map<ChatLine, LineCache> LINE_CACHE = new java.util.WeakHashMap<ChatLine, LineCache>();
+
+    private static LineCache cached(Minecraft mc, ChatLine line) {
+        LineCache c = LINE_CACHE.get(line);
+        if (c == null) {
+            String t = line.getChatComponent().getFormattedText();
+            c = new LineCache(t, measure(mc, t)); // đo bằng đúng FontRenderer vẽ chữ, getStringWidth bị lệch với font tuỳ chỉnh
+            LINE_CACHE.put(line, c);
+        }
+        return c;
+    }
+
+    // Chữ ký danh sách chat lần dựng dòng đệm gần nhất: không đổi thì khỏi dựng lại
+    private static List<ChatLine> gapList;
+    private static int gapSize = -1, gapCount = -1;
+    private static Object gapFirst;
+
     /** Có dòng mới ở cuối thì đẩy cả khung xuống đúng số dòng đó, rồi cho trượt lên về vị trí cũ. */
     private static void updateSlide() {
         Minecraft mc = Minecraft.getMinecraft();
@@ -723,11 +746,11 @@ public class ChatBarModule extends Module {
                 int a = (int) ((open ? 255 : (int) (255 * d * d)) * opacity);
                 visible++;
                 if (a <= 3) continue;
-                String text = line.getChatComponent().getFormattedText();
+                LineCache lc = cached(mc, line);
+                String text = lc.text;
                 if (!HIDE_CHAT_BACKGROUND.value && FIT_CHAT_BACKGROUND.value && !text.isEmpty()) {
                     // nền ôm sát chữ của từng dòng (bỏ qua dòng đệm rỗng)
-                    int tw = mc.fontRendererObj.getStringWidth(text);
-                    roundRect(-1, -i * 9 - 9, tw + 3, -i * 9, (a / 2) << 24);
+                    roundRect(-1, -i * 9 - 9, lc.width + 4, -i * 9, (a / 2) << 24);
                 }
                 GlStateManager.enableBlend();
                 mc.fontRendererObj.drawStringWithShadow(text, 0f, -i * 9 - 8, 0xFFFFFF + (a << 24));
@@ -834,22 +857,31 @@ public class ChatBarModule extends Module {
 
         // Chèn dòng đệm (nội dung rỗng, nhận diện bằng class GapLine) để tạo khoảng cách giữa các tin nhắn.
         int gap = CHAT_GAP.getInt();
-        try {
+        boolean unchanged = lines == gapList && gap == gapCount
+                && lines.size() == gapSize && lines.get(0) == gapFirst;
+        if (!unchanged) try {
             List<ChatLine> mutable = lines;
             // xoá hết dòng đệm cũ rồi chèn lại theo số dòng hiện tại
             for (Iterator<ChatLine> it = mutable.iterator(); it.hasNext();) {
                 if (isGap(it.next())) it.remove();
             }
             if (gap > 0) {
-                for (int i = mutable.size() - 1; i >= 0; i--) {
-                    ChatLine line = mutable.get(i);
+                // dựng danh sách mới một lượt (nhanh hơn chèn giữa ArrayList từng dòng)
+                List<ChatLine> rebuilt = new ArrayList<ChatLine>(mutable.size() * (gap + 1));
+                for (ChatLine line : mutable) {
+                    rebuilt.add(line);
                     if (line == null) continue;
-                    for (int g = 0; g < gap; g++) {
-                        mutable.add(i + 1, new GapLine(line.getUpdatedCounter()));
-                    }
+                    for (int g = 0; g < gap; g++) rebuilt.add(new GapLine(line.getUpdatedCounter()));
                 }
+                mutable.clear();
+                mutable.addAll(rebuilt);
             }
+            gapList = mutable;
+            gapCount = gap;
+            gapSize = mutable.size();
+            gapFirst = mutable.isEmpty() ? null : mutable.get(0);
         } catch (RuntimeException ignored) {
+            gapSize = -1; // lỗi: lần sau thử dựng lại
             // Không để tùy chỉnh khoảng cách làm gián đoạn render chat.
         }
 
@@ -863,7 +895,8 @@ public class ChatBarModule extends Module {
         GlStateManager.scale(sc, sc, 1f);
         GlStateManager.enableBlend();
         try {
-        for (int i = 0; i + scroll < lines.size() && i < chat.getLineCount(); i++) {
+        final int maxLines = chat.getLineCount();
+        for (int i = 0; i + scroll < lines.size() && i < maxLines; i++) {
             ChatLine line;
             try { line = lines.get(i + scroll); } catch (IndexOutOfBoundsException ex) { break; } // chat đổi giữa chừng
             if (line == null || line.getChatComponent() == null) continue;
@@ -872,7 +905,7 @@ public class ChatBarModule extends Module {
             double d = Math.max(0.0, Math.min(1.0, (1.0 - age / 200.0) * 10.0));
             int a = (int) ((open ? 255 : (int) (255 * d * d)) * opacity);
             if (a <= 3) continue;
-            drawIcons(mc, line.getChatComponent().getFormattedText(), -i * 9, a);
+            drawIcons(mc, cached(mc, line).text, -i * 9, a);
         }
         } catch (RuntimeException ex) {
             // lỗi vẽ icon không được làm sập game / hỏng chat
