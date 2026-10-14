@@ -92,6 +92,7 @@ public class ChatBarModule extends Module {
     public static final SliderSetting ICON_Y = new SliderSetting("iconY", "Avatar lệch dọc", 0, -10, 10, 1, " px");
     public static final SliderSetting BAR_WIDTH = new SliderSetting("barW", "Rộng thanh nhập (0 = tự động)", 0, 0, 600, 5, " px");
     public static final SliderSetting CHAT_WIDTH = new SliderSetting("chatWidth", "Rộng mỗi dòng chat", 320, 120, 900, 10, " px");
+    public static final SliderSetting CHAT_GAP = new SliderSetting("chatGap", "Khoảng cách dòng chat", 0, 0, 4, 1, " dòng");
     public static final SliderSetting BAR_OPACITY = new SliderSetting("barOpacity", "Độ mờ thanh nhập", 45, 10, 100, 5, "%");
     public static final BoolSetting ANIM_MESSAGES = new BoolSetting("animMessages", "Animation tin nhắn mới", true);
     public static final BoolSetting ANIM_BAR = new BoolSetting("animBar", "Animation thanh nhập", true);
@@ -125,6 +126,7 @@ public class ChatBarModule extends Module {
         add(ICON_Y, SEC_ICON, PLAYER_HEADS);
         add(BAR_WIDTH, SEC_POS);
         add(CHAT_WIDTH, SEC_POS);
+        add(CHAT_GAP, SEC_POS);
     }
 
     /** Nút "Kéo thả vị trí chat…" trong bảng tuỳ chỉnh của menu. */
@@ -331,7 +333,7 @@ public class ChatBarModule extends Module {
                         @Override public void run() {
                             if (m.thePlayer == null) return;
                             // dòng dịch tự mang avatar + tên để vẫn đọc được khi tin gốc bị ẩn
-                            String head = PLAYER_HEADS.value ? makeMarker(name, plain, true) : "";
+                            String head = PLAYER_HEADS.value ? makeMarker(name, plain, false) : "";
                             IChatComponent line = new ChatComponentText(head + EnumChatFormatting.AQUA + "[VI] "
                                     + teamColorOf(name) + name + EnumChatFormatting.GRAY + ": " + r[0]);
                             if (!HIDE_ORIGINAL.value) {
@@ -432,6 +434,25 @@ public class ChatBarModule extends Module {
         return c == -1 ? S + "7" : colorCode(c);
     }
 
+    /** Áp màu đội lên toàn bộ component chat người chơi, giữ nguyên cấu trúc component/click events. */
+    private static void applyTeamChatColor(IChatComponent message, String name) {
+        if (message == null || name == null) return;
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.getNetHandler() == null) return;
+        NetworkPlayerInfo info = mc.getNetHandler().getPlayerInfo(name);
+        int rgb = info == null ? -1 : teamColor(info);
+        if (rgb == -1) return;
+        int idx = -1;
+        for (int i = 0; i < MC_COLORS.length; i++) if (MC_COLORS[i] == rgb) { idx = i; break; }
+        EnumChatFormatting[] colors = { EnumChatFormatting.BLACK, EnumChatFormatting.DARK_BLUE,
+                EnumChatFormatting.DARK_GREEN, EnumChatFormatting.DARK_AQUA, EnumChatFormatting.DARK_RED,
+                EnumChatFormatting.DARK_PURPLE, EnumChatFormatting.GOLD, EnumChatFormatting.GRAY,
+                EnumChatFormatting.DARK_GRAY, EnumChatFormatting.BLUE, EnumChatFormatting.GREEN,
+                EnumChatFormatting.AQUA, EnumChatFormatting.RED, EnumChatFormatting.LIGHT_PURPLE,
+                EnumChatFormatting.YELLOW, EnumChatFormatting.WHITE };
+        if (idx >= 0) message.setChatStyle(message.getChatStyle().setColor(colors[idx]));
+    }
+
     /** [avt người giết] Tên giết [avt người bị giết] Tên */
     private static IChatComponent buildKill(String victim, String killer, boolean fin, String plain) {
         String mk = PLAYER_HEADS.value ? makeMarker(killer, plain, false) : "";
@@ -453,7 +474,7 @@ public class ChatBarModule extends Module {
 
     /** Chừa chỗ cho icon: đầu (+ giường) + khoảng cách, mỗi dấu cách rộng 4px. */
     private static String iconSpace(boolean bed) {
-        int w = ICON_SIZE.getInt() + 2 + (bed ? (int) Math.ceil(9 * ICON_SIZE.getInt() / 8f) + 1 : 0);
+        int w = ICON_SIZE.getInt() + 2;
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < (w + 3) / 4; i++) sb.append(' ');
         return sb.toString();
@@ -592,18 +613,7 @@ public class ChatBarModule extends Module {
         mc.getTextureManager().bindTexture(info != null ? info.getLocationSkin() : ic.skin);
         Gui.drawScaledCustomSizeModalRect(x0 + ICON_X.getInt(), top, 8f, 8f, 8, 8, sz, sz, 64f, 64f);   // mặt
         Gui.drawScaledCustomSizeModalRect(x0 + ICON_X.getInt(), top, 40f, 8f, 8, 8, sz, sz, 64f, 64f);  // lớp mũ
-        if (ic.bed && ic.color != -1) {
-            float k = sz / 8f;
-            int al = a << 24;
-            boolean dead = DEAD_BEDS.contains(ic.color);
-            GlStateManager.pushMatrix();
-            GlStateManager.translate(x0 + ICON_X.getInt() + sz + 2, top + sz / 2f - 3f * k, 0f);
-            GlStateManager.scale(k, k, 1f);
-            Gui.drawRect(0, 2, 9, 6, al | (dead ? 0x444444 : 0x8B5A2B));   // khung gỗ
-            Gui.drawRect(3, 1, 9, 4, al | (dead ? 0x777777 : ic.color));   // chăn: xám nếu mất giường
-            Gui.drawRect(0, 1, 3, 3, al | (dead ? 0x999999 : 0xFFFFFF));   // gối
-            GlStateManager.popMatrix();
-        }
+        
         GlStateManager.color(1f, 1f, 1f, 1f);
     }
 
@@ -613,6 +623,8 @@ public class ChatBarModule extends Module {
     private static float slideY;      // độ lệch dọc còn lại (px GUI), về 0 dần
     private static int curSlide;      // giá trị đã làm tròn của khung hình này (icon dùng chung)
     private static long lastFrame;
+    private static final String GAP_MARKER = "\\u200B";
+    private static boolean spacingApplied;
 
     /** Có dòng mới ở cuối thì đẩy cả khung xuống đúng số dòng đó, rồi cho trượt lên về vị trí cũ. */
     private static void updateSlide() {
@@ -722,6 +734,51 @@ public class ChatBarModule extends Module {
         }
         if (lines == null || lines.isEmpty()) return;
 
+        // Chèn các dòng đệm vào danh sách render để tạo khoảng cách thật giữa tin nhắn.
+        // Dòng đệm có marker zero-width để không hiện chữ và không bị chèn lặp.
+        if (CHAT_GAP.getInt() <= 0) {
+            try {
+                List<ChatLine> mutable = (List<ChatLine>) lines;
+                for (Iterator<ChatLine> it = mutable.iterator(); it.hasNext();) {
+                    ChatLine line = it.next();
+                    if (line != null && line.getChatComponent() != null
+                            && GAP_MARKER.equals(line.getChatComponent().getUnformattedText())) it.remove();
+                }
+            } catch (RuntimeException ignored) {}
+        }
+        if (CHAT_GAP.getInt() > 0) {
+            try {
+                List<ChatLine> mutable = (List<ChatLine>) lines;
+                int gap = CHAT_GAP.getInt();
+                for (int i = mutable.size() - 1; i >= 0; i--) {
+                    ChatLine line = mutable.get(i);
+                    if (line == null || line.getChatComponent() == null) continue;
+                    if (GAP_MARKER.equals(line.getChatComponent().getUnformattedText())) continue;
+                    int insertAt = i + 1;
+                    int found = 0;
+                    while (insertAt < mutable.size()
+                            && mutable.get(insertAt) != null
+                            && mutable.get(insertAt).getChatComponent() != null
+                            && GAP_MARKER.equals(mutable.get(insertAt).getChatComponent().getUnformattedText())) {
+                        found++;
+                        insertAt++;
+                    }
+                    for (int g = found; g < gap; g++) {
+                        mutable.add(insertAt, new ChatLine(line.getUpdatedCounter(),
+                                new ChatComponentText(GAP_MARKER), -1));
+                        insertAt++;
+                    }
+                    while (found > gap && insertAt > i + 1) {
+                        mutable.remove(i + 1);
+                        found--;
+                        insertAt--;
+                    }
+                }
+            } catch (RuntimeException ignored) {
+                // Không để tùy chỉnh khoảng cách làm gián đoạn render chat.
+            }
+        }
+
         boolean open = chat.getChatOpen();
         float opacity = mc.gameSettings.chatOpacity * 0.9f + 0.1f;
         int tick = mc.ingameGUI.getUpdateCounter();
@@ -792,7 +849,9 @@ public class ChatBarModule extends Module {
             return;
         }
 
-        String marker = (PLAYER_HEADS.value && name != null) ? makeMarker(name, plain, true) : "";
+        // Tô màu nội dung chat theo team của người gửi; bỏ biểu tượng giường, chỉ giữ avatar.
+        if (name != null) applyTeamChatColor(e.message, name);
+        String marker = (PLAYER_HEADS.value && name != null) ? makeMarker(name, plain, false) : "";
         if (!marker.isEmpty()) {
             IChatComponent root = new ChatComponentText(marker);
             root.appendSibling(e.message);
