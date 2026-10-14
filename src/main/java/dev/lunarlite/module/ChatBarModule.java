@@ -751,10 +751,11 @@ public class ChatBarModule extends Module {
                 if (a <= 3) continue;
                 LineCache lc = cached(mc, line);
                 String text = lc.text;
-                if (!HIDE_CHAT_BACKGROUND.value && FIT_CHAT_BACKGROUND.value && !text.isEmpty()) {
+                if (!HIDE_CHAT_BACKGROUND.value && FIT_CHAT_BACKGROUND.value && !isGap(line)
+                        && !EnumChatFormatting.getTextWithoutFormattingCodes(text).trim().isEmpty()) {
                     // nền ôm sát chữ của từng dòng (bỏ qua dòng đệm rỗng)
-                    roundRect(-1, -i * 9 - 9, lc.width + 4, -i * 9, (a / 2) << 24);
-                } else if (!HIDE_CHAT_BACKGROUND.value && !FIT_CHAT_BACKGROUND.value) {
+                    roundRect(-3, -i * 9 - 9, lc.width + 3, -i * 9, (a / 2) << 24); // đệm 3px hai bên, avatar nằm gọn trong nền
+                } else if (!HIDE_CHAT_BACKGROUND.value && !FIT_CHAT_BACKGROUND.value && !isGap(line)) {
                     // chỉ ẩn thanh cuộn: giữ nền vanilla dài hết khung
                     Gui.drawRect(0, -i * 9 - 9, fullW, -i * 9, (a / 2) << 24);
                 }
