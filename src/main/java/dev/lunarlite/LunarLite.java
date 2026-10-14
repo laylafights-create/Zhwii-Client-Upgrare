@@ -47,6 +47,7 @@ public class LunarLite {
     public static BowTrajectoryModule BOW_TRAJECTORY;
     public static AnimationsModule ANIM;
     public static HotbarAnimationModule HOTBAR;
+    public static SwordTrailModule SWORD_TRAIL;
 
     private static Configuration config;
 
@@ -65,6 +66,7 @@ public class LunarLite {
         BOW_TRAJECTORY = new BowTrajectoryModule();
         ANIM = new AnimationsModule();
         HOTBAR = new HotbarAnimationModule();
+        SWORD_TRAIL = new SwordTrailModule();
 
         // PvP / HUD
         MODULES.add(new FpsModule());
@@ -87,6 +89,7 @@ public class LunarLite {
         MODULES.add(ZOOM);
         MODULES.add(new FullbrightModule());
         MODULES.add(BLOCK_OUTLINE);
+        MODULES.add(SWORD_TRAIL);
         MODULES.add(new ItemPhysicsModule());
         MODULES.add(ANIM);
         MODULES.add(HOTBAR);
@@ -182,6 +185,7 @@ public class LunarLite {
     public void onWorldLast(RenderWorldLastEvent e) {
         if (BOW_TRAJECTORY != null) BOW_TRAJECTORY.render(e.partialTicks);
         if (ENEMY_DETECTOR != null) ENEMY_DETECTOR.renderMarkers(e.partialTicks);
+        if (SWORD_TRAIL != null) SWORD_TRAIL.render(e.partialTicks);
     }
 
     @SubscribeEvent
