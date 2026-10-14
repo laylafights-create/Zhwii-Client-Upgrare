@@ -29,7 +29,6 @@ public class SwordTrailModule extends Module {
     private final SliderSetting length = add(new SliderSetting("length", "Trail Length", 380, 100, 1500, 50, " ms"));
     private final SliderSetting opacity = add(new SliderSetting("opacity", "Opacity", 90, 10, 100, 5, "%"));
     private final SliderSetting size = add(new SliderSetting("size", "Slash Size", 1.1, 0.4, 2.5, 0.1, "x"));
-    private final SliderSetting count = add(new SliderSetting("count", "Slashes Per Hit", 2, 1, 4, 1, ""));
     private final BoolSetting glow = add(new BoolSetting("glow", "Glow", true));
     private final SliderSetting reach = add(new SliderSetting("reach", "Blade Length", 2.6, 1.0, 4.0, 0.1, ""));
     private final BoolSetting sparks = add(new BoolSetting("sparks", "Hit Sparks", true));
@@ -115,24 +114,36 @@ public class SwordTrailModule extends Module {
 
         long nowMs = System.currentTimeMillis();
         flashes.add(new Flash(cx, cy, cz, rng.nextDouble() * Math.PI, nowMs));
-        double base = (rng.nextBoolean() ? 1 : -1) * (25 + rng.nextInt(30));
+        double base = pickAngle();
         if (sparks.value) {
             double ba = Math.toRadians(base), bca = Math.cos(ba), bsa = Math.sin(ba);
             spawnSparks(cx, cy, cz, rx * bca + ux * bsa, uy * bsa, rz * bca + uz * bsa, -vx, -vy, -vz);
         }
         if (!trigger.is("On Hit")) return;
-        int n = count.getInt();
-        for (int i = 0; i < n; i++) {
-            // các vệt cùng một cú chém tỏa ra nhiều góc, nhìn như chém chéo liên tiếp
-            double ang = Math.toRadians(base + (i - (n - 1) / 2.0) * (50.0 / Math.max(1, n - 1)) * (i % 2 == 0 ? 1 : -1) + rng.nextInt(16) - 8);
-            double ca = Math.cos(ang), sa = Math.sin(ang);
-            double dx = rx * ca + ux * sa, dy = uy * sa, dz = rz * ca + uz * sa;
-            double nx = -rx * sa + ux * ca, ny = uy * ca, nz = -rz * sa + uz * ca;
-            double off = (rng.nextDouble() - 0.5) * 0.25;
-            slashes.add(new Slash(cx + nx * off, cy + ny * off, cz + nz * off, dx, dy, dz, nx, ny, nz,
-                    (rng.nextBoolean() ? 1 : -1) * (0.25 + rng.nextDouble() * 0.2),
-                    size.get() * (0.85 + rng.nextDouble() * 0.3), System.currentTimeMillis() + i * 25L, i * 40f));
-        }
+        // một vệt chém THẲNG mỗi lần đánh, góc ngẫu nhiên nhưng hợp lý
+        double ang = Math.toRadians(base);
+        double ca = Math.cos(ang), sa = Math.sin(ang);
+        double dx = rx * ca + ux * sa, dy = uy * sa, dz = rz * ca + uz * sa;
+        double nx = -rx * sa + ux * ca, ny = uy * ca, nz = -rz * sa + uz * ca;
+        double off = (rng.nextDouble() - 0.5) * 0.2;
+        slashes.add(new Slash(cx + nx * off, cy + ny * off, cz + nz * off, dx, dy, dz, nx, ny, nz,
+                0.0, size.get() * (0.9 + rng.nextDouble() * 0.2), nowMs, 0f));
+    }
+
+    private int lastSign = 1;
+
+    /**
+     * Góc chém (độ, 0 = ngang, 90 = dọc). Phần lớn là chém chéo 30-60 độ, đôi khi ngang hoặc gần dọc;
+     * thường đổi chiều so với lần trước để các nhát liên tiếp trông như chém qua chém lại.
+     */
+    private double pickAngle() {
+        double roll = rng.nextDouble(), mag;
+        if (roll < 0.6) mag = 30 + rng.nextDouble() * 30;
+        else if (roll < 0.85) mag = rng.nextDouble() * 14;
+        else mag = 62 + rng.nextDouble() * 18;
+        int sign = rng.nextDouble() < 0.75 ? -lastSign : lastSign;
+        lastSign = sign;
+        return sign * mag;
     }
 
     /** Bắn hạt: một nửa chạy dọc đường chém, nửa còn lại tỏa theo mọi hướng, hơi dội về phía người đánh. */
