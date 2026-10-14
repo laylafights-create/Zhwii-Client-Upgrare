@@ -48,6 +48,7 @@ public class LunarLite {
     public static AnimationsModule ANIM;
     public static HotbarAnimationModule HOTBAR;
     public static SwordTrailModule SWORD_TRAIL;
+    public static BowEffectModule BOW_EFFECT;
     public static JumpCircleModule JUMP_CIRCLE;
     public static HitEffectModule HIT_EFFECT;
     public static KillEffectModule KILL_EFFECT;
@@ -70,6 +71,7 @@ public class LunarLite {
         ANIM = new AnimationsModule();
         HOTBAR = new HotbarAnimationModule();
         SWORD_TRAIL = new SwordTrailModule();
+        BOW_EFFECT = new BowEffectModule();
         JUMP_CIRCLE = new JumpCircleModule();
         HIT_EFFECT = new HitEffectModule();
         KILL_EFFECT = new KillEffectModule();
@@ -100,6 +102,7 @@ public class LunarLite {
         MODULES.add(HOTBAR);
         // Hiệu ứng
         MODULES.add(SWORD_TRAIL);
+        MODULES.add(BOW_EFFECT);
         MODULES.add(HIT_EFFECT);
         MODULES.add(KILL_EFFECT);
         MODULES.add(JUMP_CIRCLE);
@@ -200,6 +203,7 @@ public class LunarLite {
         if (BOW_TRAJECTORY != null) BOW_TRAJECTORY.render(e.partialTicks);
         if (ENEMY_DETECTOR != null) ENEMY_DETECTOR.renderMarkers(e.partialTicks);
         if (SWORD_TRAIL != null) SWORD_TRAIL.render(e.partialTicks);
+        if (BOW_EFFECT != null) BOW_EFFECT.render(e.partialTicks);
         if (JUMP_CIRCLE != null) JUMP_CIRCLE.render(e.partialTicks);
     }
 
