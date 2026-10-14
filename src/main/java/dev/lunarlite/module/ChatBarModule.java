@@ -85,6 +85,7 @@ public class ChatBarModule extends Module {
     public static final BoolSetting SHOW_KILLS = new BoolSetting("kills", "Tin giết người có avatar", true);
     public static final BoolSetting AUTO_TRANSLATE = new BoolSetting("translate", "Dịch sang tiếng Việt", true);
     public static final BoolSetting TRANSLATE_OUT = new BoolSetting("translateOut", "Dịch tin gửi sang tiếng Anh", true);
+    public static final BoolSetting SHOW_OUT_ECHO = new BoolSetting("showOutEcho", "Hiện bản dịch đã gửi", true);
     public static final BoolSetting HIDE_ORIGINAL = new BoolSetting("hideOriginal", "Tự ẩn tin gốc", false);
     public static final BoolSetting CHAR_COUNTER = new BoolSetting("charCounter", "Bộ đếm ký tự", true);
     public static final BoolSetting PLAYER_HEADS = new BoolSetting("heads", "Avatar + giường team", true);
@@ -114,13 +115,14 @@ public class ChatBarModule extends Module {
 
     public ChatBarModule() {
         super("chatbar", "Chat Bar",
-                "Thanh chat bo góc, avatar + giường team, tự dịch tiếng Việt; kéo thả khung chat tới vị trí tùy ý.",
+                "Thanh chat bo góc, avatar + giường team, tự dịch tin nhận sang tiếng Việt và tin gửi sang tiếng Anh; kéo thả khung chat tới vị trí tùy ý.",
                 Category.UTILITY, true);
         add(PLAYER_ONLY, SEC_CHAT);
         add(BEDWARS, SEC_CHAT, PLAYER_ONLY);
         add(SHOW_KILLS, SEC_CHAT);
         add(AUTO_TRANSLATE, SEC_CHAT);
         add(TRANSLATE_OUT, SEC_CHAT);
+        add(SHOW_OUT_ECHO, SEC_CHAT, TRANSLATE_OUT);
         add(HIDE_ORIGINAL, SEC_CHAT, AUTO_TRANSLATE);
         add(CHAR_COUNTER, SEC_BAR);
         add(BAR_BORDER, SEC_BAR);
@@ -281,16 +283,25 @@ public class ChatBarModule extends Module {
 
     /** Dịch sang ngôn ngữ đích tuỳ chọn (vd "en" cho tin gửi đi). */
     private static String[] translate(String text, String target) throws IOException {
-        final String key = target + "\u0000" + text;
+        return translate(text, target, 4000);
+    }
+
+    private static String[] translate(String text, String target, int timeoutMs) throws IOException {
+        return translate(text, "auto", target, timeoutMs);
+    }
+
+    /** src = "auto" (tự nhận diện) hoặc mã ngôn ngữ cố định như "vi". */
+    private static String[] translate(String text, String src, String target, int timeoutMs) throws IOException {
+        final String key = src + ">" + target + "\u0000" + text;
         synchronized (CACHE) {
             String[] hit = CACHE.get(key);
             if (hit != null) return hit;
         }
-        String url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl="
+        String url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=" + src + "&tl="
                 + target + "&dt=t&q=" + URLEncoder.encode(text, "UTF-8");
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
-        c.setConnectTimeout(4000);
-        c.setReadTimeout(4000);
+        c.setConnectTimeout(timeoutMs);
+        c.setReadTimeout(timeoutMs);
         c.setRequestProperty("User-Agent", "Mozilla/5.0");
         InputStream in = c.getInputStream();
         ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -311,35 +322,73 @@ public class ChatBarModule extends Module {
     }
 
     /** Dịch tin bạn gõ sang tiếng Anh rồi gửi. Lỗi/timeout thì gửi nguyên văn, không nuốt tin. */
+    // Hàng đợi riêng, 1 luồng: nhiều tin gõ liên tiếp luôn được gửi đúng thứ tự gõ
+    // (dùng chung pool dịch 2 luồng thì tin nào dịch xong trước sẽ chen lên trước).
+    private static final ExecutorService OUT_SENDER = Executors.newSingleThreadExecutor(new ThreadFactory() {
+        @Override public Thread newThread(Runnable r) {
+            Thread t = new Thread(r, "ChatTranslateOut");
+            t.setDaemon(true);
+            return t;
+        }
+    });
+
+    /** Cắt bản dịch thành tối đa 3 tin <= 100 ký tự, ưu tiên cắt ở dấu cách để không đứt giữa từ. */
+    private static List<String> splitChat(String s) {
+        List<String> parts = new ArrayList<String>();
+        s = s.trim();
+        while (s.length() > 100 && parts.size() < 2) {
+            int cut = s.lastIndexOf(' ', 100);
+            if (cut < 40) cut = 100;
+            parts.add(s.substring(0, cut).trim());
+            s = s.substring(cut).trim();
+        }
+        if (s.length() > 100) s = s.substring(0, 100);
+        if (!s.isEmpty()) parts.add(s);
+        return parts;
+    }
+
+    /** Dịch Việt -> tiếng đích (thử tối đa 2 lần) -> bản dịch, hoặc null nếu lỗi. */
+    private static String translateOut(String text) {
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try {
+                // ép nguồn là tiếng Việt: tin ngắn / không dấu không bị nhận nhầm thành tiếng Anh
+                String[] r = translate(text, "vi", outLang, 3000);
+                String t = r[0].trim();
+                if (!t.isEmpty()) return t;
+            } catch (Exception ignored) {
+                // mạng chập chờn: thử lại 1 lần rồi bỏ cuộc
+            }
+        }
+        return null;
+    }
+
+    /** Dịch tin bạn gõ sang tiếng Anh rồi gửi. Lỗi/timeout thì gửi nguyên văn, không nuốt tin. */
     static void sendTranslated(final String text) {
-        TRANSLATOR.submit(new Runnable() {
+        OUT_SENDER.submit(new Runnable() {
             @Override public void run() {
-                String out = text;
-                boolean changed = false;
-                try {
-                    String[] r = translate(text, outLang);
-                    String t = r[0].trim();
-                    if (!t.isEmpty()) {
-                        if (t.length() > 100) t = t.substring(0, 100); // giới hạn chat 100 ký tự
-                        changed = !t.equalsIgnoreCase(text);
-                        out = t;
-                    }
-                } catch (Exception ignored) {
-                    // lỗi mạng: gửi nguyên văn
-                }
-                final String send = out;
-                final boolean show = changed;
+                final String translated = translateOut(text);
+                final boolean ok = translated != null;
+                final List<String> parts = splitChat(ok ? translated : text);
+                final boolean echo = ok && SHOW_OUT_ECHO.value && !translated.equalsIgnoreCase(text);
                 final Minecraft m = Minecraft.getMinecraft();
-                m.addScheduledTask(new Runnable() {
-                    @Override public void run() {
-                        if (m.thePlayer == null) return;
-                        m.thePlayer.sendChatMessage(send);
-                        if (show) {
-                            m.thePlayer.addChatMessage(new ChatComponentText(EnumChatFormatting.AQUA + "[EN] "
-                                    + EnumChatFormatting.GRAY + "Đã gửi: " + EnumChatFormatting.WHITE + send));
+                for (int i = 0; i < parts.size(); i++) {
+                    final String send = parts.get(i);
+                    final boolean last = i == parts.size() - 1;
+                    m.addScheduledTask(new Runnable() {
+                        @Override public void run() {
+                            if (m.thePlayer == null) return;
+                            m.thePlayer.sendChatMessage(send);
+                            if (echo && last) {
+                                m.thePlayer.addChatMessage(new ChatComponentText(EnumChatFormatting.AQUA + "[EN] "
+                                        + EnumChatFormatting.GRAY + "Đã gửi: " + EnumChatFormatting.WHITE
+                                        + (translated.length() > 300 ? translated.substring(0, 300) : translated)));
+                            }
                         }
+                    });
+                    if (!last) {
+                        try { Thread.sleep(700); } catch (InterruptedException e) { return; } // tránh bị server coi là spam
                     }
-                });
+                }
             }
         });
     }
@@ -1270,7 +1319,7 @@ public class ChatBarModule extends Module {
             String t = inputField.getText();
             int[] r = barRect(width, height);
             inputField = new GuiTextField(0, fontRendererObj, r[0] + 18, r[1] + 4,
-                    r[2] - r[0] - 22 - (CHAR_COUNTER.value ? 48 : 0), 12);
+                    r[2] - r[0] - 22 - (CHAR_COUNTER.value ? 48 : 0) - togW() - 4, 12);
             inputField.setMaxStringLength(100);
             inputField.setEnableBackgroundDrawing(false);
             inputField.setFocused(true);
@@ -1294,9 +1343,26 @@ public class ChatBarModule extends Module {
             super.keyTyped(c, key);
         }
 
+        // Nút bật/tắt dịch tin gửi đi, nằm ngay trên thanh nhập (bên trái bộ đếm ký tự)
+        private static final String TOG_LABEL = "VI>EN";
+
+        private int togW() { return fontRendererObj.getStringWidth(TOG_LABEL) + 8; }
+
+        private int[] toggleRect() {
+            int[] r = barRect(width, height);
+            int right = r[2] - 5 - (CHAR_COUNTER.value ? fontRendererObj.getStringWidth("100/100") + 8 + 3 : 0);
+            return new int[]{right - togW(), r[1] + 3, right, r[3] - 3};
+        }
+
         @Override
         protected void mouseClicked(int mx, int my, int btn) throws IOException {
             if (btn == 0) {
+                int[] t = toggleRect();
+                if (mx >= t[0] && mx < t[2] && my >= t[1] && my < t[3]) {
+                    TRANSLATE_OUT.value = !TRANSLATE_OUT.value;
+                    saveNow();
+                    return;
+                }
                 IChatComponent c = mc.ingameGUI.getChatGUI().getChatComponent(rawMouseX(mc), rawMouseY(mc));
                 if (handleComponentClick(c)) return;
             }
@@ -1340,8 +1406,17 @@ public class ChatBarModule extends Module {
             // ô nhập (+ chữ gợi ý khi còn trống)
             inputField.drawTextBox();
             if (inputField.getText().isEmpty()) {
-                fontRendererObj.drawStringWithShadow("Nhập tin nhắn...", x1 + 18, y1 + 4, mulA(0xFFFFFFFF, 0.32f * p));
+                fontRendererObj.drawStringWithShadow(TRANSLATE_OUT.value ? "Gõ tiếng Việt, tự dịch sang tiếng Anh..." : "Nhập tin nhắn...",
+                        x1 + 18, y1 + 4, mulA(0xFFFFFFFF, 0.32f * p));
             }
+
+            // nút VI>EN: xanh = đang dịch tin gửi, xám = tắt
+            int[] tg = toggleRect();
+            boolean on = TRANSLATE_OUT.value;
+            boolean hov = mouseX >= tg[0] && mouseX < tg[2] && mouseY >= tg[1] && mouseY < tg[3];
+            int tcol = on ? 0xFF55FF88 : 0xFF7A8499;
+            dev.lunarlite.gui.Draw.rrect(tg[0], tg[1], tg[2], tg[3], 4, mulA(0xFF000000 | (tcol & 0xFFFFFF), (hov ? 0.30f : 0.16f) * p));
+            fontRendererObj.drawStringWithShadow(TOG_LABEL, tg[0] + 4, tg[1] + 1, mulA(tcol, p));
 
             // bộ đếm ký tự (viên thuốc màu theo mức) + vạch tiến độ ở đáy thanh
             if (CHAR_COUNTER.value) {
@@ -1359,6 +1434,13 @@ public class ChatBarModule extends Module {
             }
 
             GlStateManager.popMatrix();
+
+            if (hov) {
+                List<String> tip = new ArrayList<String>();
+                tip.add("Dịch tin gửi sang tiếng Anh: " + (on ? EnumChatFormatting.GREEN + "BẬT" : EnumChatFormatting.RED + "TẮT"));
+                tip.add(EnumChatFormatting.GRAY + "Bấm để " + (on ? "tắt" : "bật"));
+                drawHoveringText(tip, mouseX, mouseY);
+            }
 
             // hover component (link, item...)
             IChatComponent comp = mc.ingameGUI.getChatGUI().getChatComponent(rawMouseX(mc), rawMouseY(mc));
