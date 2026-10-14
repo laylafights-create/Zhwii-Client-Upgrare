@@ -6,9 +6,24 @@ import dev.lunarlite.module.*;
 import dev.lunarlite.module.Module;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
+import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.particle.EffectRenderer;
+import net.minecraft.client.renderer.GlStateManager;
+import net.minecraft.client.renderer.RenderHelper;
+import net.minecraft.client.renderer.Tessellator;
+import net.minecraft.client.renderer.WorldRenderer;
+import net.minecraft.client.renderer.texture.TextureManager;
+import net.minecraft.client.renderer.texture.TextureMap;
+import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
 import net.minecraft.client.settings.KeyBinding;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityLivingBase;
+import net.minecraft.util.BlockPos;
+import net.minecraft.util.EnumFacing;
+import net.minecraft.util.MovingObjectPosition;
+import net.minecraft.world.World;
 import net.minecraftforge.client.event.DrawBlockHighlightEvent;
 import net.minecraftforge.client.event.GuiOpenEvent;
 import net.minecraftforge.client.event.GuiScreenEvent;
@@ -37,7 +52,12 @@ public class LunarLite {
     public static final String VERSION = "2.0.0";
 
     public static final List<Module> MODULES = new ArrayList<Module>();
-    public static KeyBinding keyMenu, keyZoom, keyAim;
+    public static KeyBinding keyMenu, keyZoom, keyAim, keyShake;
+
+    // Rung block khi đào + tắt hạt vỡ block
+    public static boolean blockShake = true;
+    private static final float SHAKE = 0.05f; // độ rung, tăng/giảm tuỳ ý
+    private final Random shakeRand = new Random();
 
     public static ZoomModule ZOOM;
     public static AimAssistModule AIM;
@@ -97,6 +117,7 @@ public class LunarLite {
 
         config.load();
         for (Module m : MODULES) m.load(config);
+        blockShake = config.getBoolean("blockShake", "general", true, "Rung block khi đào và tắt hạt vỡ block");
         config.save();
 
         keyMenu = new KeyBinding("Mở menu Zhwii Client", Keyboard.KEY_RSHIFT, "Zhwii Client");
@@ -105,6 +126,8 @@ public class LunarLite {
         keyAim = new KeyBinding("Bật/tắt Aim Assist", Keyboard.KEY_R, "Zhwii Client");
         ClientRegistry.registerKeyBinding(keyZoom);
         ClientRegistry.registerKeyBinding(keyAim);
+        keyShake = new KeyBinding("Bật/tắt rung block", Keyboard.KEY_NONE, "Zhwii Client");
+        ClientRegistry.registerKeyBinding(keyShake);
 
         // Chat bar: chỉ tin người chơi + avatar/giường team + tự dịch tiếng Việt (cài đặt nằm trong menu)
         CHAT_BAR.register();
@@ -116,6 +139,7 @@ public class LunarLite {
     public static void saveConfig() {
         if (config == null) return;
         for (Module m : MODULES) m.save(config);
+        config.get("general", "blockShake", true).set(blockShake);
         config.save();
     }
 
@@ -131,6 +155,14 @@ public class LunarLite {
         if (keyAim.isPressed() && mc.currentScreen == null) {
             AIM.toggle();
             saveConfig();
+        }
+        if (keyShake.isPressed() && mc.currentScreen == null) {
+            blockShake = !blockShake;
+            saveConfig();
+        }
+        // thay EffectRenderer bằng bản có thể chặn hạt vỡ block
+        if (mc.theWorld != null && mc.effectRenderer != null && !(mc.effectRenderer instanceof QuietEffects)) {
+            mc.effectRenderer = new QuietEffects(mc.theWorld, mc.getTextureManager());
         }
         for (Module m : MODULES) m.onTick();
     }
@@ -188,6 +220,70 @@ public class LunarLite {
     public void onWorldLast(RenderWorldLastEvent e) {
         if (BOW_TRAJECTORY != null) BOW_TRAJECTORY.render(e.partialTicks);
         if (ENEMY_DETECTOR != null) ENEMY_DETECTOR.renderMarkers(e.partialTicks);
+        renderShake(e.partialTicks);
+    }
+
+    /** Vẽ bản sao của block đang đào, rung ngẫu nhiên quanh vị trí gốc. */
+    private void renderShake(float partialTicks) {
+        if (!blockShake) return;
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.theWorld == null || mc.thePlayer == null) return;
+        if (!mc.gameSettings.keyBindAttack.isKeyDown()) return;
+        if (!mc.playerController.getIsHittingBlock()) return;
+
+        MovingObjectPosition mop = mc.objectMouseOver;
+        if (mop == null || mop.typeOfHit != MovingObjectPosition.MovingObjectType.BLOCK) return;
+
+        BlockPos pos = mop.getBlockPos();
+        IBlockState state = mc.theWorld.getBlockState(pos);
+        if (state.getBlock().getMaterial().isReplaceable()) return;
+
+        Entity v = mc.getRenderViewEntity();
+        double cx = v.lastTickPosX + (v.posX - v.lastTickPosX) * partialTicks;
+        double cy = v.lastTickPosY + (v.posY - v.lastTickPosY) * partialTicks;
+        double cz = v.lastTickPosZ + (v.posZ - v.lastTickPosZ) * partialTicks;
+
+        double dx = (shakeRand.nextFloat() - 0.5f) * SHAKE;
+        double dy = (shakeRand.nextFloat() - 0.5f) * SHAKE;
+        double dz = (shakeRand.nextFloat() - 0.5f) * SHAKE;
+
+        GlStateManager.pushMatrix();
+        GlStateManager.translate(pos.getX() - cx + dx, pos.getY() - cy + dy, pos.getZ() - cz + dz);
+        GlStateManager.enableBlend();
+        GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0);
+        RenderHelper.disableStandardItemLighting();
+        mc.getTextureManager().bindTexture(TextureMap.locationBlocksTexture);
+
+        Tessellator tess = Tessellator.getInstance();
+        WorldRenderer wr = tess.getWorldRenderer();
+        wr.begin(7, DefaultVertexFormats.BLOCK);
+        wr.setTranslation(-pos.getX(), -pos.getY(), -pos.getZ());
+        mc.getBlockRendererDispatcher().renderBlock(state, pos, mc.theWorld, wr);
+        wr.setTranslation(0, 0, 0);
+        tess.draw();
+
+        GlStateManager.disableBlend();
+        GlStateManager.popMatrix();
+    }
+
+    /** EffectRenderer chặn hạt khi đập / phá block (khi blockShake đang bật). */
+    public static class QuietEffects extends EffectRenderer {
+        public QuietEffects(World w, TextureManager t) { super(w, t); }
+
+        @Override
+        public void addBlockDestroyEffects(BlockPos pos, IBlockState state) {
+            if (!blockShake) super.addBlockDestroyEffects(pos, state);
+        }
+
+        @Override
+        public void addBlockHitEffects(BlockPos pos, EnumFacing side) {
+            if (!blockShake) super.addBlockHitEffects(pos, side);
+        }
+
+        @Override
+        public void addBlockHitEffects(BlockPos pos, MovingObjectPosition target) {
+            if (!blockShake) super.addBlockHitEffects(pos, target);
+        }
     }
 
     @SubscribeEvent
