@@ -1,7 +1,9 @@
 package dev.lunarlite.module;
 
+import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonParser;
+import com.google.gson.reflect.TypeToken;
 import dev.lunarlite.LunarLite;
 import dev.lunarlite.setting.BoolSetting;
 import dev.lunarlite.setting.SliderSetting;
@@ -48,8 +50,12 @@ import org.lwjgl.input.Mouse;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
@@ -264,16 +270,149 @@ public class ChatBarModule extends Module {
     }
 
     // ===== Tự dịch tiếng Việt =====
-    private static final ExecutorService TRANSLATOR = Executors.newFixedThreadPool(2, new ThreadFactory() {
-        @Override public Thread newThread(Runnable r) {
-            Thread t = new Thread(r, "ChatTranslate");
-            t.setDaemon(true);
-            return t;
-        }
-    });
-    private static final Map<String, String[]> CACHE = new LinkedHashMap<String, String[]>() {
-        @Override protected boolean removeEldestEntry(Map.Entry<String, String[]> eldest) { return size() > 256; }
+    private static ExecutorService daemonPool(final String name, int threads) {
+        return Executors.newFixedThreadPool(threads, new ThreadFactory() {
+            @Override public Thread newThread(Runnable r) {
+                Thread t = new Thread(r, name);
+                t.setDaemon(true);
+                return t;
+            }
+        });
+    }
+
+    private static final ExecutorService TRANSLATOR = daemonPool("ChatTranslate", 2);
+    // Hàng đợi riêng, 1 luồng: nhiều tin gõ liên tiếp luôn được gửi đúng thứ tự gõ
+    // (dùng chung pool dịch 2 luồng thì tin nào dịch xong trước sẽ chen lên trước).
+    private static final ExecutorService OUT_SENDER = daemonPool("ChatTranslateOut", 1);
+
+    // ===== Cache dịch: LRU thật (accessOrder), lưu ra file để còn sau khi tắt game =====
+    private static final int CACHE_MAX = 1024;
+    private static final int SAVE_EVERY = 20; // số mục mới trước khi ghi file
+    private static final Map<String, String[]> CACHE = new LinkedHashMap<String, String[]>(256, 0.75f, true) {
+        @Override protected boolean removeEldestEntry(Map.Entry<String, String[]> eldest) { return size() > CACHE_MAX; }
     };
+    private static boolean cacheLoaded;
+    private static int unsaved;
+
+    private static File cacheFile() {
+        return new File(Minecraft.getMinecraft().mcDataDir, "config/lunarlite_translate_cache.json");
+    }
+
+    private static void loadCache() {
+        synchronized (CACHE) {
+            if (cacheLoaded) return;
+            cacheLoaded = true;
+            File f = cacheFile();
+            if (f.isFile()) {
+                try {
+                    InputStreamReader r = new InputStreamReader(new FileInputStream(f), "UTF-8");
+                    try {
+                        Map<String, String[]> m = new Gson().fromJson(r,
+                                new TypeToken<LinkedHashMap<String, String[]>>() {}.getType());
+                        if (m != null) {
+                            for (Map.Entry<String, String[]> en : m.entrySet()) {
+                                String[] v = en.getValue();
+                                if (v != null && v.length >= 2 && v[0] != null && v[1] != null) CACHE.put(en.getKey(), v);
+                            }
+                        }
+                    } finally {
+                        r.close();
+                    }
+                } catch (Exception ignored) {
+                    // file hỏng: bỏ qua, lần ghi sau sẽ tạo lại
+                }
+            }
+            Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
+                @Override public void run() { saveCache(); }
+            }, "ChatTranslateCacheSave"));
+        }
+    }
+
+    /** Ghi cache ra file (qua file tạm rồi đổi tên, game crash giữa chừng cũng không hỏng file). */
+    static void saveCache() {
+        String json;
+        synchronized (CACHE) {
+            if (!cacheLoaded || unsaved == 0) return;
+            json = new Gson().toJson(new LinkedHashMap<String, String[]>(CACHE));
+            unsaved = 0;
+        }
+        try {
+            File f = cacheFile();
+            File dir = f.getParentFile();
+            if (dir != null) dir.mkdirs();
+            File tmp = new File(f.getPath() + ".tmp");
+            OutputStreamWriter w = new OutputStreamWriter(new FileOutputStream(tmp), "UTF-8");
+            try {
+                w.write(json);
+            } finally {
+                w.close();
+            }
+            java.nio.file.Files.move(tmp.toPath(), f.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static String[] cacheGet(String key) {
+        synchronized (CACHE) { return CACHE.get(key); }
+    }
+
+    private static void cachePut(String key, String[] val) {
+        boolean save;
+        synchronized (CACHE) {
+            CACHE.put(key, val);
+            save = ++unsaved >= SAVE_EVERY;
+        }
+        if (save) {
+            TRANSLATOR.submit(new Runnable() {
+                @Override public void run() { saveCache(); }
+            });
+        }
+    }
+
+    // ===== HTTP + cooldown khi lỗi mạng / bị giới hạn =====
+    private static final class HttpStatusException extends IOException {
+        final int code;
+        HttpStatusException(int code) { super("HTTP " + code); this.code = code; }
+    }
+
+    private static volatile long translateFailUntil; // Google Translate tạm nghỉ đến mốc này
+    private static volatile long restoreFailUntil;   // Google Input Tools tạm nghỉ đến mốc này
+    private static int translateFails;                // số lần lỗi liên tiếp (1 lần lỗi lẻ chưa nghỉ)
+
+    private static String httpGet(String url, int timeoutMs) throws IOException {
+        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        try {
+            c.setConnectTimeout(timeoutMs);
+            c.setReadTimeout(timeoutMs);
+            c.setRequestProperty("User-Agent", "Mozilla/5.0");
+            int code = c.getResponseCode();
+            if (code != HttpURLConnection.HTTP_OK) throw new HttpStatusException(code);
+            InputStream in = c.getInputStream();
+            try {
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                byte[] buf = new byte[4096];
+                int n;
+                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                return new String(out.toByteArray(), "UTF-8");
+            } finally {
+                in.close();
+            }
+        } finally {
+            c.disconnect();
+        }
+    }
+
+    private static void noteTranslateFailure(IOException ex) {
+        boolean limited = ex instanceof HttpStatusException
+                && (((HttpStatusException) ex).code == 429 || ((HttpStatusException) ex).code == 403);
+        synchronized (CACHE) {
+            translateFails++;
+            if (limited || translateFails >= 2) {
+                translateFailUntil = System.currentTimeMillis() + (limited ? 60000L : 15000L);
+                translateFails = 0;
+            }
+        }
+    }
 
     /** Gọi Google Translate (endpoint công khai) -> {bản dịch, mã ngôn ngữ gốc}. */
     private static String[] translate(String text) throws IOException {
@@ -291,45 +430,147 @@ public class ChatBarModule extends Module {
 
     /** src = "auto" (tự nhận diện) hoặc mã ngôn ngữ cố định như "vi". */
     private static String[] translate(String text, String src, String target, int timeoutMs) throws IOException {
+        loadCache();
         final String key = src + ">" + target + "\u0000" + text;
-        synchronized (CACHE) {
-            String[] hit = CACHE.get(key);
-            if (hit != null) return hit;
-        }
-        String url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=" + src + "&tl="
-                + target + "&dt=t&q=" + URLEncoder.encode(text, "UTF-8");
-        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
-        c.setConnectTimeout(timeoutMs);
-        c.setReadTimeout(timeoutMs);
-        c.setRequestProperty("User-Agent", "Mozilla/5.0");
-        InputStream in = c.getInputStream();
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        byte[] buf = new byte[4096];
-        int n;
-        while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
-        in.close();
+        String[] hit = cacheGet(key);
+        if (hit != null) return hit;
+        if (System.currentTimeMillis() < translateFailUntil) throw new IOException("translate cooldown");
 
-        JsonArray root = new JsonParser().parse(new String(out.toByteArray(), "UTF-8")).getAsJsonArray();
-        StringBuilder sb = new StringBuilder();
-        for (com.google.gson.JsonElement seg : root.get(0).getAsJsonArray()) {
-            sb.append(seg.getAsJsonArray().get(0).getAsString());
+        String[] res;
+        try {
+            String url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=" + src + "&tl="
+                    + target + "&dt=t&q=" + URLEncoder.encode(text, "UTF-8");
+            JsonArray root = new JsonParser().parse(httpGet(url, timeoutMs)).getAsJsonArray();
+            StringBuilder sb = new StringBuilder();
+            for (com.google.gson.JsonElement seg : root.get(0).getAsJsonArray()) {
+                sb.append(seg.getAsJsonArray().get(0).getAsString());
+            }
+            String lang = root.size() > 2 && !root.get(2).isJsonNull() ? root.get(2).getAsString() : "";
+            res = new String[]{sb.toString(), lang};
+        } catch (IOException ex) {
+            noteTranslateFailure(ex);
+            throw ex;
+        } catch (RuntimeException ex) { // JSON sai định dạng
+            throw new IOException("bad translate response", ex);
         }
-        String lang = root.size() > 2 && !root.get(2).isJsonNull() ? root.get(2).getAsString() : "";
-        String[] res = {sb.toString(), lang};
-        synchronized (CACHE) { CACHE.put(key, res); }
+        synchronized (CACHE) { translateFails = 0; }
+        cachePut(key, res);
         return res;
     }
 
-    /** Dịch tin bạn gõ sang tiếng Anh rồi gửi. Lỗi/timeout thì gửi nguyên văn, không nuốt tin. */
-    // Hàng đợi riêng, 1 luồng: nhiều tin gõ liên tiếp luôn được gửi đúng thứ tự gõ
-    // (dùng chung pool dịch 2 luồng thì tin nào dịch xong trước sẽ chen lên trước).
-    private static final ExecutorService OUT_SENDER = Executors.newSingleThreadExecutor(new ThreadFactory() {
-        @Override public Thread newThread(Runnable r) {
-            Thread t = new Thread(r, "ChatTranslateOut");
-            t.setDaemon(true);
-            return t;
+    // ===== Tiếng Việt không dấu: mở rộng viết tắt + khôi phục dấu trước khi dịch sang tiếng Anh =====
+    /** Có dấu thanh/dấu mũ (không tính "đ", vì "đc", "đi" vẫn cần xử lý tiếp). */
+    private static final Pattern VI_TONE = Pattern.compile(
+            "[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹ]",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+    private static final Pattern WORD_TOKEN = Pattern.compile("[\\p{L}\\p{N}]+");
+
+    /** Viết tắt hay gặp khi chat -> dạng không dấu đầy đủ (sẽ được khôi phục dấu ở bước sau). */
+    private static final Map<String, String> VI_SLANG = new java.util.HashMap<String, String>();
+    static {
+        String[][] p = {
+                {"ko", "khong"}, {"k", "khong"}, {"hok", "khong"}, {"hong", "khong"}, {"kg", "khong"}, {"khg", "khong"},
+                {"dc", "duoc"}, {"đc", "duoc"}, {"dk", "duoc"}, {"dcj", "duoc"},
+                {"j", "gi"}, {"gj", "gi"}, {"r", "roi"}, {"rui", "roi"},
+                {"vs", "voi"}, {"vz", "vay"}, {"v", "vay"}, {"z", "vay"},
+                {"bn", "bao nhieu"}, {"bnh", "bao nhieu"}, {"ntn", "nhu the nao"},
+                {"ae", "anh em"}, {"mn", "moi nguoi"}, {"mk", "minh"}, {"mik", "minh"},
+                {"ng", "nguoi"}, {"nc", "noi chuyen"}, {"trc", "truoc"}, {"sr", "xin loi"},
+                {"cx", "cung"}, {"cg", "cung"}, {"lm", "lam"}, {"nma", "nhung ma"}, {"nhg", "nhung"},
+                {"thx", "cam on"}, {"tks", "cam on"}, {"bt", "binh thuong"}, {"ik", "di"},
+                {"ak", "a"}, {"ah", "a"}, {"e", "em"}, {"a", "anh"}
+        };
+        for (String[] x : p) VI_SLANG.put(x[0], x[1]);
+    }
+
+    /** Từ game / viết tắt quốc tế: giữ nguyên, không đưa vào bước khôi phục dấu. */
+    private static final Set<String> KEEP_WORDS = new HashSet<String>(java.util.Arrays.asList(
+            "gg", "ez", "wp", "gl", "hf", "bed", "bw", "rush", "pls", "plz", "afk", "lol", "ping", "lag",
+            "noob", "pro", "team", "final", "kill", "void", "diamond", "emerald", "iron", "gold", "ok", "oke",
+            "xp", "op", "hp", "pvp", "gm", "brb", "wtf", "omg", "fps", "dm", "tp", "bridge", "invis"));
+
+    /** Từ tiếng Anh phổ biến (đã loại các từ trùng tiếng Việt không dấu như me, do, to, no, can, day, may...). */
+    private static final Set<String> EN_COMMON = new HashSet<String>(java.util.Arrays.asList(
+            "the", "is", "are", "was", "were", "you", "your", "we", "they", "it", "this", "that", "what", "why",
+            "how", "who", "where", "when", "have", "has", "with", "for", "and", "but", "not", "will", "would",
+            "just", "please", "thanks", "thank", "hello", "hi", "hey", "yes", "go", "get", "come", "need", "want",
+            "know", "good", "bad", "nice", "base", "attack", "defend", "dont", "im", "i", "my", "our", "he", "she",
+            "of", "on", "at", "from", "there", "here", "now", "up", "down", "help", "stop", "wait", "come", "lets"));
+
+    private static String[] splitWords(String s) {
+        return s.trim().isEmpty() ? new String[0] : s.trim().split("\\s+");
+    }
+
+    /** Tin không dấu nhưng thật ra là tiếng Anh -> bỏ qua khôi phục dấu, để Google tự nhận diện. */
+    private static boolean looksEnglish(String text) {
+        if (VI_TONE.matcher(text).find()) return false;
+        String[] t = splitWords(text);
+        if (t.length == 0) return false;
+        int en = 0, keep = 0;
+        for (String w : t) {
+            String l = w.toLowerCase().replaceAll("[^\\p{L}']", "");
+            if (EN_COMMON.contains(l)) en++;
+            else if (KEEP_WORDS.contains(l)) keep++;
         }
-    });
+        if (en + keep == t.length) return true;       // toàn từ Anh / từ game
+        return t.length >= 2 && en * 10 >= t.length * 6; // >= 60% là từ Anh phổ biến
+    }
+
+    private static boolean needsRestore(String s) {
+        return !VI_TONE.matcher(s).find() && s.matches(".*\\p{L}.*");
+    }
+
+    private static String expandSlang(String s) {
+        Matcher m = WORD_TOKEN.matcher(s);
+        StringBuffer sb = new StringBuffer();
+        while (m.find()) {
+            String w = m.group().toLowerCase();
+            String rep = KEEP_WORDS.contains(w) ? m.group() : VI_SLANG.containsKey(w) ? VI_SLANG.get(w) : m.group();
+            m.appendReplacement(sb, Matcher.quoteReplacement(rep));
+        }
+        m.appendTail(sb);
+        return sb.toString().replace('đ', 'd').replace('Đ', 'D'); // để Input Tools tự đoán lại đ/d theo ngữ cảnh
+    }
+
+    /** Khôi phục dấu qua Google Input Tools. Lỗi / kết quả lạ thì trả về nguyên chuỗi vào. */
+    private static String restoreDiacritics(String text) {
+        loadCache();
+        final String key = "restore\u0000" + text;
+        String[] hit = cacheGet(key);
+        if (hit != null) return hit[0];
+        if (System.currentTimeMillis() < restoreFailUntil) return text;
+        try {
+            String url = "https://inputtools.google.com/request?itc=vi-t-i0-und&num=1&cp=0&cs=1&ie=utf-8&oe=utf-8"
+                    + "&app=demopage&text=" + URLEncoder.encode(text, "UTF-8");
+            JsonArray root = new JsonParser().parse(httpGet(url, 2000)).getAsJsonArray();
+            if (!"SUCCESS".equals(root.get(0).getAsString())) return text;
+            String best = root.get(1).getAsJsonArray().get(0).getAsJsonArray()
+                    .get(1).getAsJsonArray().get(0).getAsString().trim();
+            if (best.isEmpty() || best.length() > text.length() * 2 + 4) return text;
+
+            // Giữ nguyên từ game (rush, bed, gg...) nếu số từ trước/sau khớp nhau
+            String[] in = splitWords(text), out = splitWords(best);
+            if (in.length == out.length) {
+                for (int i = 0; i < in.length; i++) {
+                    if (KEEP_WORDS.contains(in[i].toLowerCase())) out[i] = in[i];
+                }
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < out.length; i++) sb.append(i > 0 ? " " : "").append(out[i]);
+                best = sb.toString();
+            }
+            cachePut(key, new String[]{best, ""});
+            return best;
+        } catch (Exception ex) {
+            restoreFailUntil = System.currentTimeMillis() + 30000L; // lỗi: 30s sau mới thử lại
+            return text;
+        }
+    }
+
+    /** Chuẩn hoá tin tiếng Việt trước khi dịch: không dấu -> mở rộng viết tắt -> khôi phục dấu. */
+    private static String normalizeVi(String text) {
+        if (!needsRestore(text)) return text;
+        return restoreDiacritics(expandSlang(text));
+    }
 
     /** Cắt bản dịch thành tối đa 3 tin <= 100 ký tự, ưu tiên cắt ở dấu cách để không đứt giữa từ. */
     private static List<String> splitChat(String s) {
@@ -346,16 +587,20 @@ public class ChatBarModule extends Module {
         return parts;
     }
 
-    /** Dịch Việt -> tiếng đích (thử tối đa 2 lần) -> bản dịch, hoặc null nếu lỗi. */
+    /** Dịch tin gõ -> tiếng đích (thử tối đa 2 lần) -> bản dịch, hoặc null nếu lỗi. */
     private static String translateOut(String text) {
+        // tin tiếng Anh gõ nhầm: để Google tự nhận diện; còn lại ép nguồn là tiếng Việt
+        // (tin ngắn / không dấu không bị nhận nhầm), sau khi đã khôi phục dấu 1 lần duy nhất
+        final boolean english = looksEnglish(text);
+        final String src = english ? text : normalizeVi(text);
+        final String from = english ? "auto" : "vi";
         for (int attempt = 0; attempt < 2; attempt++) {
             try {
-                // ép nguồn là tiếng Việt: tin ngắn / không dấu không bị nhận nhầm thành tiếng Anh
-                String[] r = translate(text, "vi", outLang, 3000);
+                String[] r = translate(src, from, outLang, 3000);
                 String t = r[0].trim();
                 if (!t.isEmpty()) return t;
             } catch (Exception ignored) {
-                // mạng chập chờn: thử lại 1 lần rồi bỏ cuộc
+                // mạng chập chờn hoặc đang cooldown: thử lại 1 lần rồi bỏ cuộc
             }
         }
         return null;
