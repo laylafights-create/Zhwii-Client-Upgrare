@@ -4,11 +4,16 @@ import dev.lunarlite.setting.BoolSetting;
 import dev.lunarlite.setting.ColorSetting;
 import dev.lunarlite.setting.RainbowSettings;
 import dev.lunarlite.setting.SliderSetting;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Random;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.particle.EffectRenderer;
+import net.minecraft.client.particle.EntityCrit2FX;
+import net.minecraft.client.particle.EntityCritFX;
+import net.minecraft.client.particle.EntityFX;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.WorldRenderer;
@@ -16,6 +21,7 @@ import net.minecraft.client.renderer.entity.RenderManager;
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraftforge.fml.relauncher.ReflectionHelper;
 import org.lwjgl.opengl.GL11;
 
 /**
@@ -43,6 +49,7 @@ import org.lwjgl.opengl.GL11;
  *   <li>Màu sắc, Độ đục (%), Cỡ hạt (x)</li>
  *   <li>Tia lửa, Số tia lửa</li>
  *   <li>Vạch trắng, Số vạch, Độ văng</li>
+ *   <li>Ẩn hạt chí mạng mặc định của game</li>
  * </ul>
  *
  * <h3>Cách dùng</h3>
@@ -56,21 +63,22 @@ public class SwordTrailModule extends Module {
     // =====================================================================
 
     private final ColorSetting  color        = add(new ColorSetting("color", "Màu sắc", 0x9EEFEB));
-    private final SliderSetting opacity      = add(new SliderSetting("opacity", "Độ đục", 90, 10, 100, 5, "%"));
-    private final SliderSetting particleSize = add(new SliderSetting("particle_size", "Cỡ hạt", 1.0, 0.5, 2.5, 0.1, "x"));
+    private final SliderSetting opacity      = add(new SliderSetting("opacity", "Độ đục", 100, 10, 100, 5, "%"));
+    private final SliderSetting particleSize = add(new SliderSetting("particle_size", "Cỡ hạt", 1.3, 0.5, 2.5, 0.1, "x"));
 
     private final BoolSetting   sparks       = add(new BoolSetting("sparks", "Tia lửa", true));
-    private final SliderSetting sparkCount   = add(new SliderSetting("spark_count", "Số tia lửa", 24, 4, 48, 2, ""));
+    private final SliderSetting sparkCount   = add(new SliderSetting("spark_count", "Số tia lửa", 32, 4, 48, 2, ""));
 
     private final BoolSetting   crit         = add(new BoolSetting("crit", "Vạch trắng", true));
-    private final SliderSetting critCount    = add(new SliderSetting("crit_count", "Số vạch", 18, 4, 60, 2, ""));
-    private final SliderSetting critSpread   = add(new SliderSetting("crit_spread", "Độ văng", 1.0, 0.4, 2.5, 0.1, "x"));
+    private final SliderSetting critCount    = add(new SliderSetting("crit_count", "Số vạch", 24, 4, 60, 2, ""));
+    private final BoolSetting   hideVanillaCrit = add(new BoolSetting("hide_vanilla_crit", "Ẩn hạt chí mạng mặc định", true));
+    private final SliderSetting critSpread   = add(new SliderSetting("crit_spread", "Độ văng", 1.2, 0.4, 2.5, 0.1, "x"));
 
     // =====================================================================
     //  Hằng số
     // =====================================================================
 
-    static final int MAX_PARTICLES = 400;
+    static final int MAX_PARTICLES = 600;
     private static final double FRONT_OFFSET = 0.38; // đẩy điểm nổ ra khỏi tâm hitbox về phía người chơi
 
     // Loại hạt.
@@ -79,8 +87,8 @@ public class SwordTrailModule extends Module {
     private static final int DASH  = 2; // vạch trắng nhỏ
 
     // Lực cản và trọng lực theo loại hạt.
-    private static final double[] DRAG    = {2.4, 3.0, 1.1};
-    private static final double[] GRAVITY = {1.6, 0.35, 0.9};
+    private static final double[] DRAG    = {2.1, 2.4, 1.0};
+    private static final double[] GRAVITY = {1.9, 0.15, 1.1};
 
     // Bảng lượng giác cho chấm sáng tròn 8 cạnh.
     private static final int DOT_SEGMENTS = 8;
@@ -152,6 +160,55 @@ public class SwordTrailModule extends Module {
     }
 
     // =====================================================================
+    //  Ẩn hạt chí mạng mặc định của game
+    // =====================================================================
+
+    private static Field fxLayersField;
+    private static boolean fxLookupFailed;
+
+    /**
+     * Chạy ở cuối mỗi tick: hạt chí mạng (đánh chí mạng, đòn sắc bén, mũi tên chí mạng...) vừa được game
+     * sinh ra đã nằm trong danh sách của EffectRenderer nhưng chưa được vẽ, nên xóa lúc này thì
+     * người chơi không thấy chúng dù chỉ một khung hình.
+     */
+    @Override
+    public void onTick() {
+        if (!enabled || !hideVanillaCrit.value) return;
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.theWorld == null || mc.effectRenderer == null) return;
+        Object layers = fxLayers(mc.effectRenderer);
+        if (layers != null) purgeCrit(layers);
+    }
+
+    /** Duyệt đệ quy (fxLayers là mảng hai chiều các List) và xóa mọi hạt chí mạng. */
+    private static void purgeCrit(Object node) {
+        if (node instanceof List) {
+            for (Iterator<?> it = ((List<?>) node).iterator(); it.hasNext(); ) {
+                Object o = it.next();
+                if (o instanceof EntityCritFX || o instanceof EntityCrit2FX) it.remove();
+            }
+        } else if (node instanceof Object[]) {
+            for (Object child : (Object[]) node) {
+                if (child != null) purgeCrit(child);
+            }
+        }
+    }
+
+    /** Lấy danh sách hạt của EffectRenderer qua reflection (trường này là private). */
+    private static Object fxLayers(EffectRenderer renderer) {
+        if (fxLookupFailed) return null;
+        try {
+            if (fxLayersField == null) {
+                fxLayersField = ReflectionHelper.findField(EffectRenderer.class, "fxLayers", "field_78876_b");
+            }
+            return fxLayersField.get(renderer);
+        } catch (Exception ex) {
+            fxLookupFailed = true; // không tìm được thì thôi, không làm game lỗi
+            return null;
+        }
+    }
+
+    // =====================================================================
     //  Sự kiện đánh trúng
     // =====================================================================
 
@@ -195,29 +252,39 @@ public class SwordTrailModule extends Module {
         for (int i = 0; i < n && particles.size() < MAX_PARTICLES; i++) {
             double vx, vy, vz, speed;
             int kind;
-            float life;
-            if (i % 3 != 2) {
-                // Tia sao chổi: hướng đều trong mặt phẳng màn hình + nhiễu nhẹ + chút dội ngược.
+            float life, scale;
+            // Mỗi hạt bật ra từ một điểm lệch nhẹ quanh điểm va chạm, không phải đúng một điểm.
+            double ox = cx + rng.nextGaussian() * 0.05;
+            double oy = cy + rng.nextGaussian() * 0.05;
+            double oz = cz + rng.nextGaussian() * 0.05;
+            if (i % 4 != 3) {
+                // Tia lửa: thiên về mặt phẳng nhìn nhưng nhiễu 3D mạnh + dội ngược,
+                // nên văng lộn xộn tự nhiên chứ không đều như hình sao.
                 kind = SPARK;
                 double th = rng.nextDouble() * Math.PI * 2.0, ct = Math.cos(th), st = Math.sin(th);
-                vx = rx * ct + ux * st + rng.nextGaussian() * 0.16 + bx * 0.25;
-                vy = uy * st + rng.nextGaussian() * 0.16 + by * 0.25;
-                vz = rz * ct + uz * st + rng.nextGaussian() * 0.16 + bz * 0.25;
+                double flat = 0.55 + rng.nextDouble() * 0.45;
+                vx = (rx * ct + ux * st) * flat + rng.nextGaussian() * 0.38 + bx * 0.45;
+                vy = (uy * st) * flat + rng.nextGaussian() * 0.38 + by * 0.45 + 0.1;
+                vz = (rz * ct + uz * st) * flat + rng.nextGaussian() * 0.38 + bz * 0.45;
                 double r = rng.nextDouble();
-                speed = 1.8 + r * r * 3.4;             // đa số vừa, thỉnh thoảng có tia rất nhanh
-                life = 380f + rng.nextFloat() * 420f;
+                speed = 2.0 + r * r * 4.6;             // đa số vừa, thỉnh thoảng có tia rất nhanh
+                life = 450f + rng.nextFloat() * 550f;
+                scale = 0.7f + rng.nextFloat() * 0.8f; // tia to nhỏ khác nhau
             } else {
-                // Tàn lửa trôi: tỏa 3D, chậm, hơi bay lên.
+                // Tàn lửa trôi: tỏa 3D, chậm, bay lên nhẹ rồi lơ lửng.
                 kind = EMBER;
                 vx = rng.nextGaussian() * 0.8 + bx * 0.5;
-                vy = rng.nextGaussian() * 0.7 + 0.3 + by * 0.5;
+                vy = rng.nextGaussian() * 0.6 + 0.5 + by * 0.4;
                 vz = rng.nextGaussian() * 0.8 + bz * 0.5;
-                speed = 0.35 + rng.nextDouble() * 0.95;
-                life = 600f + rng.nextFloat() * 500f;
+                speed = 0.4 + rng.nextDouble() * 1.1;
+                life = 800f + rng.nextFloat() * 700f;
+                scale = 0.7f + rng.nextFloat() * 0.9f;
             }
             double k = speed / (Math.sqrt(vx * vx + vy * vy + vz * vz) + 1.0E-6);
-            particles.add(new Particle(kind, cx, cy, cz, vx * k, vy * k, vz * k, now,
-                    life, 0f, i * 23f, rng.nextFloat() * 6.2832f));
+            long delay = (long) (rng.nextDouble() * 30.0); // bật ra lệch nhau vài ms cho tự nhiên
+            // Với tia lửa và tàn lửa, trường len dùng làm hệ số kích cỡ riêng của hạt.
+            particles.add(new Particle(kind, ox, oy, oz, vx * k, vy * k, vz * k, now + delay,
+                    life, scale, i * 23f, rng.nextFloat() * 6.2832f));
         }
     }
 
@@ -227,16 +294,20 @@ public class SwordTrailModule extends Module {
         int n = critCount.getInt();
         double spread = critSpread.get();
         double halfW = Math.max(0.2, target.width * 0.5);
+        double midY = target.posY + target.height * 0.55;
         for (int i = 0; i < n && particles.size() < MAX_PARTICLES; i++) {
             double x = target.posX + (rng.nextDouble() * 2.0 - 1.0) * halfW;
             double y = target.posY + target.height * (0.15 + rng.nextDouble() * 0.75);
             double z = target.posZ + (rng.nextDouble() * 2.0 - 1.0) * halfW;
-            double vx = rng.nextGaussian(), vy = rng.nextGaussian() * 0.8 + 0.25, vz = rng.nextGaussian();
-            double k = (1.2 + rng.nextDouble() * 2.0) * spread
+            // Văng theo hướng từ tâm thân ra ngoài + nhiễu, nên trông như bị đánh bật ra.
+            double vx = (x - target.posX) / halfW * 0.9 + rng.nextGaussian() * 0.6;
+            double vy = (y - midY) / Math.max(0.3, target.height * 0.5) * 0.5 + rng.nextGaussian() * 0.6 + 0.3;
+            double vz = (z - target.posZ) / halfW * 0.9 + rng.nextGaussian() * 0.6;
+            double k = (1.6 + rng.nextDouble() * 2.2) * spread
                     / (Math.sqrt(vx * vx + vy * vy + vz * vz) + 1.0E-6);
             long delay = (long) (rng.nextDouble() * 60.0);
             particles.add(new Particle(DASH, x, y, z, vx * k, vy * k, vz * k, now + delay,
-                    330f + rng.nextFloat() * 330f, 0.10f + rng.nextFloat() * 0.12f, i * 31f, 0f));
+                    400f + rng.nextFloat() * 400f, 0.14f + rng.nextFloat() * 0.16f, i * 31f, 0f));
         }
     }
 
@@ -315,8 +386,9 @@ public class SwordTrailModule extends Module {
         }
         o.speed = sp;
 
-        float fade = (1f - lifeK) * (1f - lifeK);
-        float twinkle = q.kind == DASH ? 1f : 0.8f + 0.2f * (float) Math.sin(age * 38.0 + q.phase);
+        float inv = 1f - lifeK;
+        float fade = inv * (0.55f + 0.45f * inv); // giữ sáng lâu hơn, chỉ tắt nhanh ở cuối đời
+        float twinkle = q.kind == DASH ? 1f : 0.86f + 0.14f * (float) Math.sin(age * 38.0 + q.phase);
         o.a = maxA * fade * twinkle;
         o.lifeK = lifeK;
         return o.a > 0.003f;
@@ -332,15 +404,16 @@ public class SwordTrailModule extends Module {
         double len, wid;
         int hr, hg, hb, er, eg, eb;
         if (q.kind == DASH) {
-            len = q.len * sz * (1.0 - 0.4 * k);
-            wid = 0.007 * sz;
-            hr = er = heat(r, 0.82f); hg = eg = heat(g, 0.82f); hb = eb = heat(b, 0.82f);
+            len = q.len * sz * 1.2 * (1.0 - 0.4 * k);
+            wid = 0.010 * sz;
+            hr = er = heat(r, 0.9f); hg = eg = heat(g, 0.9f); hb = eb = heat(b, 0.9f);
         } else {
             boolean spark = q.kind == SPARK;
-            len = spark ? (0.05 + o.speed * 0.05) * sz : 0.05 * sz;
-            wid = (spark ? 0.017 : 0.02) * sz * (1.0 - (spark ? 0.5 : 0.4) * k);
-            float hot = spark ? Math.max(0f, 1f - k * 2.2f) : 0.35f * Math.max(0f, 1f - k * 2f);
-            float dark = 1f - 0.3f * k; // sẫm dần về cuối đời
+            float sc = q.len > 0f ? q.len : 1f;
+            len = spark ? (0.08 + o.speed * 0.075) * sz * sc : 0.07 * sz * sc;
+            wid = (spark ? 0.026 : 0.03) * sz * sc * (1.0 - (spark ? 0.5 : 0.4) * k);
+            float hot = spark ? Math.max(0f, 1f - k * 1.7f) : 0.45f * Math.max(0f, 1f - k * 1.6f);
+            float dark = 1f - 0.2f * k; // sẫm nhẹ về cuối đời
             hr = Math.round(heat(r, hot) * dark); hg = Math.round(heat(g, hot) * dark); hb = Math.round(heat(b, hot) * dark);
             er = Math.round(r * dark); eg = Math.round(g * dark); eb = Math.round(b * dark);
         }
@@ -365,25 +438,32 @@ public class SwordTrailModule extends Module {
         tri(wr, hx, hy, hz, hr, hg, hb, ca, fx, fy, fz, hx - sx, hy - sy, hz - sz2, er, eg, eb);
     }
 
-    /** Chấm sáng tròn mềm: tâm sáng, rìa trong suốt. */
+    /** Chấm sáng: quầng mềm màu hiệu ứng ở ngoài + lõi trắng nóng ở trong, giúp hạt nổi bật hơn hẳn. */
     private void drawDot(WorldRenderer wr, Particle q, Billboard bb, float sz) {
         Pose o = pose;
         float k = o.lifeK;
         boolean spark = q.kind == SPARK;
-        double rad = (spark ? 0.022 : 0.05) * sz * (1.0 - (spark ? 0.3 : 0.4) * k);
-        float da = o.a * (spark ? 0.75f : 0.6f);
+        float sc = q.len > 0f ? q.len : 1f;
+        double coreR = (spark ? 0.032 : 0.065) * sz * sc * (1.0 - (spark ? 0.35 : 0.45) * k);
 
         int c = rainbow.resolve(color.rgb(), q.hue);
         int r = red(c), g = green(c), b = blue(c);
-        float hot = spark ? Math.max(0f, 1f - k * 2.2f) : 0.35f * Math.max(0f, 1f - k * 2f);
-        float dark = 1f - 0.3f * k;
+        float hot = spark ? Math.max(0f, 1f - k * 1.7f) : 0.45f * Math.max(0f, 1f - k * 1.6f);
+        float dark = 1f - 0.2f * k;
         int hr = Math.round(heat(r, hot) * dark), hg = Math.round(heat(g, hot) * dark), hb = Math.round(heat(b, hot) * dark);
         int er = Math.round(r * dark), eg = Math.round(g * dark), eb = Math.round(b * dark);
-        int ca = alpha(da);
 
+        // Quầng ngoài (mờ, rộng) rồi lõi (sáng, nhỏ).
+        disc(wr, o, bb, coreR * 3.4, er, eg, eb, alpha(o.a * 0.30f), er, eg, eb);
+        disc(wr, o, bb, coreR, hr, hg, hb, alpha(o.a * (spark ? 1.0f : 0.85f)), er, eg, eb);
+    }
+
+    /** Đĩa tròn quay mặt về camera: tâm (cr, cg, cb, ca), rìa (er, eg, eb) trong suốt. */
+    private static void disc(WorldRenderer wr, Pose o, Billboard bb, double rad,
+                             int cr, int cg, int cb, int ca, int er, int eg, int eb) {
         for (int i = 0; i < DOT_SEGMENTS; i++) {
             double a0 = DOT_COS[i] * rad, b0 = DOT_SIN[i] * rad, a1 = DOT_COS[i + 1] * rad, b1 = DOT_SIN[i + 1] * rad;
-            wr.pos(o.hx, o.hy, o.hz).color(hr, hg, hb, ca).endVertex();
+            wr.pos(o.hx, o.hy, o.hz).color(cr, cg, cb, ca).endVertex();
             wr.pos(o.hx + bb.rx * a0 + bb.ux * b0, o.hy + bb.uy * b0, o.hz + bb.rz * a0 + bb.uz * b0)
                     .color(er, eg, eb, 0).endVertex();
             wr.pos(o.hx + bb.rx * a1 + bb.ux * b1, o.hy + bb.uy * b1, o.hz + bb.rz * a1 + bb.uz * b1)

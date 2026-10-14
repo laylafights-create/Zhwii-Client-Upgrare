@@ -187,12 +187,20 @@ public class BowEffectModule extends Module {
         }
         if (arrows.isEmpty()) return;
 
-        List<EntityFX>[] layers = fxLayers(mc.effectRenderer);
-        if (layers == null) return;
-        for (List<EntityFX> layer : layers) {
-            if (layer == null) continue;
-            for (Iterator<EntityFX> it = layer.iterator(); it.hasNext(); ) {
-                EntityFX fx = it.next();
+        Object layers = fxLayers(mc.effectRenderer);
+        if (layers != null) purge(layers, arrows);
+    }
+
+    /**
+     * Duyệt danh sách hạt và xóa hạt của mũi tên. Trong 1.8.9 {@code fxLayers} là mảng HAI chiều
+     * (lớp x độ trong suốt) nên duyệt đệ quy qua mọi mảng lồng nhau cho chắc.
+     */
+    private static void purge(Object node, List<double[]> arrows) {
+        if (node instanceof List) {
+            for (Iterator<?> it = ((List<?>) node).iterator(); it.hasNext(); ) {
+                Object o = it.next();
+                if (!(o instanceof EntityFX)) continue;
+                EntityFX fx = (EntityFX) o;
                 if (!isArrowParticle(fx)) continue;
                 for (double[] a : arrows) {
                     double dx = fx.posX - a[0], dy = fx.posY - a[1], dz = fx.posZ - a[2];
@@ -201,6 +209,10 @@ public class BowEffectModule extends Module {
                         break;
                     }
                 }
+            }
+        } else if (node instanceof Object[]) {
+            for (Object child : (Object[]) node) {
+                if (child != null) purge(child, arrows);
             }
         }
     }
@@ -211,14 +223,13 @@ public class BowEffectModule extends Module {
     }
 
     /** Lấy danh sách hạt của EffectRenderer qua reflection (trường này là private). */
-    @SuppressWarnings("unchecked")
-    private static List<EntityFX>[] fxLayers(EffectRenderer renderer) {
+    private static Object fxLayers(EffectRenderer renderer) {
         if (fxLookupFailed) return null;
         try {
             if (fxLayersField == null) {
                 fxLayersField = ReflectionHelper.findField(EffectRenderer.class, "fxLayers", "field_78876_b");
             }
-            return (List<EntityFX>[]) fxLayersField.get(renderer);
+            return fxLayersField.get(renderer);
         } catch (Exception ex) {
             fxLookupFailed = true; // không tìm được thì thôi, không làm game lỗi
             return null;
