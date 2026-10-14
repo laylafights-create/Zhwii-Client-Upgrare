@@ -77,7 +77,7 @@ public class SwordTrailModule extends Module {
 
     private static final int SEGMENTS = 36;
     private static final float FLASH_MS = 160f;
-    private static final double SPARK_DRAG = 2.6, SPARK_GRAVITY = 3.2;
+    private static final double SPARK_DRAG = 2.6, SPARK_GRAVITY = 0.0;
     private static final float SWEEP_MS = 110f;
 
     private final List<Pt> pts = new ArrayList<Pt>();
@@ -178,7 +178,7 @@ public class SwordTrailModule extends Module {
         if (!enabled || p == null || cam == null || mc.theWorld == null) { pts.clear(); slashes.clear(); sparkList.clear(); flashes.clear(); return; }
 
         long now = System.currentTimeMillis();
-        // VCraft-style impact effect: emit only from onAttack(), never from a normal swing.
+        // Impact effect: emit only from onAttack(), never from a normal swing.
         pts.clear();
 
         float len = length.getFloat();
@@ -258,11 +258,11 @@ public class SwordTrailModule extends Module {
         for (int i = 0; i <= SEGMENTS; i++) {
             float f = i / (float) SEGMENTS;
             double u = from + (to - from) * f;
-            double bend = s.bulge * half * (1.0 - u * u);               // độ cong: giữa vồng lên, hai đầu thu về
+            double bend = 0.0; // vệt chém thẳng, không uốn cong
             double px = s.cx + s.dx * u * half + s.nx * bend - cx;
             double py = s.cy + s.dy * u * half + s.ny * bend - cy;
             double pz = s.cz + s.dz * u * half + s.nz * bend - cz;
-            double w = thick * Math.sin(Math.PI * Math.pow(f, 1.4)) * (1.0 - 0.45 * u * u); // lưỡi liềm: nhọn hai đầu, dày nhất gần đầu vệt
+            double w = thick * Math.sin(Math.PI * Math.pow(f, 1.4)); // dải thẳng, thu nhọn ở hai đầu
             int a = Math.round(255f * Math.max(0f, Math.min(1f, maxA * (float) Math.pow(f, 1.2))));
             wr.pos(px - s.nx * w, py - s.ny * w, pz - s.nz * w).color(r, g, b, a).endVertex();
             wr.pos(px + s.nx * w, py + s.ny * w, pz + s.nz * w).color(r, g, b, a).endVertex();
