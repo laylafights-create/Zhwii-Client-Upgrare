@@ -4,6 +4,7 @@ import dev.lunarlite.setting.BoolSetting;
 import dev.lunarlite.setting.ColorSetting;
 import dev.lunarlite.setting.RainbowSettings;
 import dev.lunarlite.setting.SliderSetting;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -11,6 +12,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.particle.EffectRenderer;
+import net.minecraft.client.particle.EntityBubbleFX;
+import net.minecraft.client.particle.EntityCrit2FX;
+import net.minecraft.client.particle.EntityCritFX;
+import net.minecraft.client.particle.EntityFX;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.WorldRenderer;
@@ -19,6 +25,7 @@ import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.projectile.EntityArrow;
+import net.minecraftforge.fml.relauncher.ReflectionHelper;
 import org.lwjgl.opengl.GL11;
 
 /**
@@ -32,6 +39,9 @@ import org.lwjgl.opengl.GL11;
  *   <li><b>Tia lửa khi trúng</b>: khi mũi tên cắm vào block hoặc trúng sinh vật, bụi lửa búng ra
  *       theo hướng ngược chiều bay, có lực cản và trọng lực, chuyển từ trắng nóng sang màu hiệu ứng rồi tắt.
  *       Không có chớp sáng hay vòng sóng đi kèm.</li>
+ *   <li><b>Ẩn hạt mặc định của cung</b>: khi module bật, các hạt có sẵn của Minecraft quanh mũi tên
+ *       (hạt chí mạng và bong bóng dưới nước) bị xóa ngay trong tick đó, trước khi kịp được vẽ,
+ *       để chỉ còn hiệu ứng của module.</li>
  *   <li><b>Chỉ mũi tên của tôi</b>: tùy chọn chỉ hiện hiệu ứng cho mũi tên do bạn bắn.</li>
  *   <li><b>Tự nhận biết mũi tên</b>: không cần sự kiện riêng, module tự quét mũi tên trong thế giới
  *       mỗi khung hình. Hiệu ứng chỉ mang tính hiển thị.</li>
@@ -42,7 +52,7 @@ import org.lwjgl.opengl.GL11;
  *   <li>Màu sắc, Độ đục (%)</li>
  *   <li>Vệt mũi tên, Độ dài vệt (ms), Đầu sáng</li>
  *   <li>Tia lửa khi trúng, Số tia lửa</li>
- *   <li>Chỉ mũi tên của tôi</li>
+ *   <li>Ẩn hạt mặc định của cung, Chỉ mũi tên của tôi</li>
  * </ul>
  *
  * <h3>Cách dùng</h3>
@@ -64,6 +74,7 @@ public class BowEffectModule extends Module {
     private final BoolSetting   impact     = add(new BoolSetting("impact", "Tia lửa khi trúng", true));
     private final SliderSetting impactCount = add(new SliderSetting("impact_count", "Số tia lửa", 16, 4, 48, 2, ""));
 
+    private final BoolSetting   hideVanilla = add(new BoolSetting("hide_vanilla", "Ẩn hạt mặc định của cung", true));
     private final BoolSetting   mineOnly   = add(new BoolSetting("mine_only", "Chỉ mũi tên của tôi", true));
 
     // =====================================================================
@@ -143,6 +154,75 @@ public class BowEffectModule extends Module {
     private void clearAll() {
         tracked.clear();
         dusts.clear();
+    }
+
+    // =====================================================================
+    //  Ẩn hạt mặc định của cung
+    // =====================================================================
+
+    private static Field fxLayersField;
+    private static boolean fxLookupFailed;
+
+    /**
+     * Chạy ở cuối mỗi tick: hạt do mũi tên vừa sinh ra đã nằm trong danh sách của EffectRenderer
+     * nhưng chưa được vẽ, nên xóa lúc này thì người chơi không thấy chúng dù chỉ một khung hình.
+     */
+    @Override
+    public void onTick() {
+        if (!enabled || !hideVanilla.value) return;
+        Minecraft mc = Minecraft.getMinecraft();
+        EntityPlayer p = mc.thePlayer;
+        if (p == null || mc.theWorld == null || mc.effectRenderer == null) return;
+
+        // Mũi tên đang bay mà module có vẽ hiệu ứng riêng: (x, y, z, bán kính).
+        List<double[]> arrows = new ArrayList<double[]>();
+        for (Object o : mc.theWorld.loadedEntityList) {
+            if (!(o instanceof EntityArrow)) continue;
+            EntityArrow a = (EntityArrow) o;
+            if (a.isDead) continue;
+            if (mineOnly.value && a.shootingEntity != p) continue;
+            double sp = Math.sqrt(a.motionX * a.motionX + a.motionY * a.motionY + a.motionZ * a.motionZ);
+            // Hạt sinh dọc quãng đường mũi tên vừa bay trong tick này nên bán kính lấy theo tốc độ.
+            arrows.add(new double[]{a.posX, a.posY, a.posZ, sp + 1.0});
+        }
+        if (arrows.isEmpty()) return;
+
+        List<EntityFX>[] layers = fxLayers(mc.effectRenderer);
+        if (layers == null) return;
+        for (List<EntityFX> layer : layers) {
+            if (layer == null) continue;
+            for (Iterator<EntityFX> it = layer.iterator(); it.hasNext(); ) {
+                EntityFX fx = it.next();
+                if (!isArrowParticle(fx)) continue;
+                for (double[] a : arrows) {
+                    double dx = fx.posX - a[0], dy = fx.posY - a[1], dz = fx.posZ - a[2];
+                    if (dx * dx + dy * dy + dz * dz <= a[3] * a[3]) {
+                        it.remove();
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    /** Hạt mặc định mà mũi tên sinh ra: chí mạng khi bay và bong bóng khi ở dưới nước. */
+    private static boolean isArrowParticle(EntityFX fx) {
+        return fx instanceof EntityCritFX || fx instanceof EntityCrit2FX || fx instanceof EntityBubbleFX;
+    }
+
+    /** Lấy danh sách hạt của EffectRenderer qua reflection (trường này là private). */
+    @SuppressWarnings("unchecked")
+    private static List<EntityFX>[] fxLayers(EffectRenderer renderer) {
+        if (fxLookupFailed) return null;
+        try {
+            if (fxLayersField == null) {
+                fxLayersField = ReflectionHelper.findField(EffectRenderer.class, "fxLayers", "field_78876_b");
+            }
+            return (List<EntityFX>[]) fxLayersField.get(renderer);
+        } catch (Exception ex) {
+            fxLookupFailed = true; // không tìm được thì thôi, không làm game lỗi
+            return null;
+        }
     }
 
     // =====================================================================
