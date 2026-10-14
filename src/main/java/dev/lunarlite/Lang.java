@@ -109,7 +109,7 @@ public final class Lang {
 
         // ---- Hiệu ứng (Effect)
         p("Sword Trail", "Vệt kiếm"); p("Hit Effect", "Hiệu ứng đánh trúng"); p("Kill Effect", "Hiệu ứng hạ gục");
-        p("Jump Circle", "Vòng sáng khi nhảy"); p("Particle Trail", "Vệt hạt");
+        p("Jump Dust", "Bụi khi nhảy"); p("Dust Type", "Loại bụi"); p("Particle Trail", "Vệt hạt");
         p("Particle", "Loại hạt"); p("Effect", "Hiệu ứng"); p("Amount", "Số lượng"); p("Spread", "Độ tản");
         p("Trail Length", "Độ dài vệt"); p("Blade Length", "Chiều dài lưỡi"); p("Max Radius", "Bán kính tối đa");
         p("Duration", "Thời lượng"); p("Only When Moving", "Chỉ khi di chuyển");
