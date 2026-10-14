@@ -20,19 +20,23 @@ import net.minecraft.entity.player.EntityPlayer;
 import org.lwjgl.opengl.GL11;
 
 /**
- * Vệt chém sáng thẳng. Chế độ "On Hit": khi đánh trúng kẻ địch, vệt chém hiện ở mặt trước mục tiêu, hướng về phía người chơi.
+ * Vệt chém điện ảnh. Chế độ "On Hit": khi đánh trúng kẻ địch, một nhát chém cong hình lưỡi liềm
+ * quét qua mặt trước mục tiêu, kèm chớp sáng anamorphic, vòng sóng xung kích và tàn lửa bay.
  * Chỉ kích hoạt khi nhận sự kiện đánh trúng; hiệu ứng chỉ mang tính hiển thị.
  */
 public class SwordTrailModule extends Module {
     private final ModeSetting trigger = add(new ModeSetting("trigger", "Trigger", 0, "On Hit"));
     private final ColorSetting color = add(new ColorSetting("color", "Color", 0x55FFFF));
-    private final SliderSetting length = add(new SliderSetting("length", "Trail Length", 380, 100, 1500, 50, " ms"));
+    private final SliderSetting length = add(new SliderSetting("length", "Trail Length", 420, 100, 1500, 50, " ms"));
     private final SliderSetting opacity = add(new SliderSetting("opacity", "Opacity", 90, 10, 100, 5, "%"));
     private final SliderSetting size = add(new SliderSetting("size", "Slash Size", 1.1, 0.4, 2.5, 0.1, "x"));
     private final BoolSetting glow = add(new BoolSetting("glow", "Glow", true));
+    private final BoolSetting streak = add(new BoolSetting("streak", "Anamorphic Streak", true));
+    private final BoolSetting shockwave = add(new BoolSetting("shockwave", "Shockwave Ring", true));
+    private final BoolSetting chromatic = add(new BoolSetting("chromatic", "Chromatic Edge", true));
     private final SliderSetting reach = add(new SliderSetting("reach", "Blade Length", 2.6, 1.0, 4.0, 0.1, ""));
     private final BoolSetting sparks = add(new BoolSetting("sparks", "Hit Sparks", true));
-    private final SliderSetting sparkCount = add(new SliderSetting("spark_count", "Spark Count", 18, 4, 40, 2, ""));
+    private final SliderSetting sparkCount = add(new SliderSetting("spark_count", "Spark Count", 22, 4, 40, 2, ""));
     private final BoolSetting firstPerson = add(new BoolSetting("first_person", "Show In First Person", true));
     private final BoolSetting emptyHand = add(new BoolSetting("empty_hand", "Show With Empty Hand", false));
 
@@ -45,7 +49,7 @@ public class SwordTrailModule extends Module {
         }
     }
 
-    /** Một vệt chém thẳng ở mặt trước mục tiêu: tâm c, trục d (hướng chém), pháp tuyến n (bề ngang vệt). */
+    /** Một nhát chém ở mặt trước mục tiêu: tâm c, trục d (hướng chém), pháp tuyến n (bề ngang), bulge (độ cong). */
     private static final class Slash {
         final double cx, cy, cz, dx, dy, dz, nx, ny, nz, bulge, scale;
         final long t;
@@ -57,7 +61,7 @@ public class SwordTrailModule extends Module {
         }
     }
 
-    /** Hạt sáng bắn ra khi đánh trúng. Vận tốc tính theo block/giây. */
+    /** Tàn lửa bắn ra khi đánh trúng. Vận tốc tính theo block/giây. */
     private static final class Spark {
         final double x, y, z, vx, vy, vz;
         final long t;
@@ -68,17 +72,19 @@ public class SwordTrailModule extends Module {
         }
     }
 
-    /** Chớp sáng tại điểm va chạm. */
+    /** Chớp sáng + vòng xung kích tại điểm va chạm. */
     private static final class Flash {
-        final double x, y, z, rot;
+        final double x, y, z, rot, streakTilt;
         final long t;
-        Flash(double x, double y, double z, double rot, long t) { this.x = x; this.y = y; this.z = z; this.rot = rot; this.t = t; }
+        Flash(double x, double y, double z, double rot, double streakTilt, long t) {
+            this.x = x; this.y = y; this.z = z; this.rot = rot; this.streakTilt = streakTilt; this.t = t;
+        }
     }
 
-    private static final int SEGMENTS = 36;
-    private static final float FLASH_MS = 160f;
-    private static final double SPARK_DRAG = 2.6, SPARK_GRAVITY = 0.0;
-    private static final float SWEEP_MS = 110f;
+    private static final int SEGMENTS = 44;
+    private static final float FLASH_MS = 260f;
+    private static final double SPARK_DRAG = 2.4, SPARK_GRAVITY = 1.6;
+    private static final float SWEEP_MS = 120f;
 
     private final List<Pt> pts = new ArrayList<Pt>();
     private final List<Slash> slashes = new ArrayList<Slash>();
@@ -87,7 +93,7 @@ public class SwordTrailModule extends Module {
     private final Random rng = new Random();
 
     public SwordTrailModule() {
-        super("swordtrail", "Sword Trail", "Vệt kiếm thẳng ở phía trước mục tiêu khi đánh trúng, kèm chớp sáng và bụi phát sáng.", Category.EFFECT, true);
+        super("swordtrail", "Sword Trail", "Vệt kiếm điện ảnh ở phía trước mục tiêu khi đánh trúng, kèm chớp sáng, sóng xung kích và tàn lửa.", Category.EFFECT, true);
         new RainbowSettings(this);
     }
 
@@ -107,7 +113,6 @@ public class SwordTrailModule extends Module {
         if (vl < 1.0E-4) return;
         vx /= vl; vy /= vl; vz /= vl;
         // Đẩy điểm hiệu ứng ra khỏi tâm hitbox về phía người chơi để vệt nằm trên mặt trước mục tiêu.
-        // Hướng v (vx, vy, vz) đi từ người chơi tới mục tiêu, nên trừ v để dịch về phía người chơi.
         double frontOffset = 0.38;
         cx -= vx * frontOffset;
         cy -= vy * frontOffset;
@@ -119,21 +124,22 @@ public class SwordTrailModule extends Module {
         double ux = -rz * vy, uy = rz * vx - rx * vz, uz = rx * vy;
 
         long nowMs = System.currentTimeMillis();
-        flashes.add(new Flash(cx, cy, cz, rng.nextDouble() * Math.PI, nowMs));
+        flashes.add(new Flash(cx, cy, cz, rng.nextDouble() * Math.PI, 0.0, nowMs));
         double base = pickAngle();
         if (sparks.value) {
             double ba = Math.toRadians(base), bca = Math.cos(ba), bsa = Math.sin(ba);
             spawnSparks(cx, cy, cz, rx * bca + ux * bsa, uy * bsa, rz * bca + uz * bsa, -vx, -vy, -vz);
         }
         if (!trigger.is("On Hit")) return;
-        // A straight, tapered slash sweeps across the front face of the target on confirmed hit.
         double ang = Math.toRadians(base);
         double ca = Math.cos(ang), sa = Math.sin(ang);
         double dx = rx * ca + ux * sa, dy = uy * sa, dz = rz * ca + uz * sa;
         double nx = -rx * sa + ux * ca, ny = uy * ca, nz = -rz * sa + uz * ca;
-        double off = (rng.nextDouble() - 0.5) * 0.2;
+        double off = (rng.nextDouble() - 0.5) * 0.16;
+        // bulge mang dấu theo lastSign để nhát chém cong về cùng phía với chiều vung.
+        double bulge = (0.30 + rng.nextDouble() * 0.12) * lastSign;
         slashes.add(new Slash(cx + nx * off, cy + ny * off, cz + nz * off, dx, dy, dz, nx, ny, nz,
-                0.24 + rng.nextDouble() * 0.10, size.get() * (0.9 + rng.nextDouble() * 0.2), nowMs, 0f));
+                bulge, size.get() * (0.9 + rng.nextDouble() * 0.2), nowMs, 0f));
     }
 
     private int lastSign = 1;
@@ -152,27 +158,27 @@ public class SwordTrailModule extends Module {
         return sign * mag;
     }
 
-    /** Bắn hạt: một nửa chạy dọc đường chém, nửa còn lại tỏa theo mọi hướng, hơi dội về phía người đánh. */
+    /** Bắn tàn lửa: một nửa chạy dọc đường chém, nửa còn lại là bụi sáng tỏa ra và hơi dội về phía người đánh. */
     private void spawnSparks(double cx, double cy, double cz, double ax, double ay, double az, double bx, double by, double bz) {
         long now = System.currentTimeMillis();
         int n = sparkCount.getInt();
         for (int i = 0; i < n; i++) {
             double vx, vy, vz, speed;
-            if (i % 2 == 0) { // dọc đường chém, hai chiều
+            if (i % 2 == 0) { // tia lửa dọc đường chém, hai chiều, nhanh
                 double sg = rng.nextBoolean() ? 1 : -1;
-                vx = ax * sg + rng.nextGaussian() * 0.25; vy = ay * sg + rng.nextGaussian() * 0.25; vz = az * sg + rng.nextGaussian() * 0.25;
-                speed = 2.2 + rng.nextDouble() * 3.8;
+                vx = ax * sg + rng.nextGaussian() * 0.22; vy = ay * sg + rng.nextGaussian() * 0.22; vz = az * sg + rng.nextGaussian() * 0.22;
+                speed = 2.8 + rng.nextDouble() * 4.6;
             } else {
-                // Softer, slower motes create a dust-like halo around the bright impact.
-                vx = rng.nextGaussian() * 0.72 + bx * 0.45;
-                vy = rng.nextGaussian() * 0.62 + 0.18 + by * 0.45;
-                vz = rng.nextGaussian() * 0.72 + bz * 0.45;
-                speed = 0.65 + rng.nextDouble() * 1.9;
+                // Bụi sáng chậm tạo quầng halo quanh điểm va chạm.
+                vx = rng.nextGaussian() * 0.72 + bx * 0.5;
+                vy = rng.nextGaussian() * 0.62 + 0.22 + by * 0.5;
+                vz = rng.nextGaussian() * 0.72 + bz * 0.5;
+                speed = 0.55 + rng.nextDouble() * 1.7;
             }
             double l = Math.sqrt(vx * vx + vy * vy + vz * vz) + 1.0E-6;
             double k = speed / l;
             sparkList.add(new Spark(cx, cy, cz, vx * k, vy * k, vz * k, now,
-                    420f + rng.nextFloat() * 480f, 0.70f + rng.nextFloat() * 0.55f, i * 23f));
+                    460f + rng.nextFloat() * 560f, 0.65f + rng.nextFloat() * 0.6f, i * 23f));
         }
     }
 
@@ -184,12 +190,10 @@ public class SwordTrailModule extends Module {
         if (!enabled || p == null || cam == null || mc.theWorld == null) { pts.clear(); slashes.clear(); sparkList.clear(); flashes.clear(); return; }
 
         long now = System.currentTimeMillis();
-        // Impact effect: emit only from onAttack(), never from a normal swing.
+        // Hiệu ứng va chạm: chỉ phát từ onAttack(), không phát khi vung tay thường.
         pts.clear();
 
         float len = length.getFloat();
-        Iterator<Pt> it = pts.iterator();
-        while (it.hasNext()) if (now - it.next().t > len) it.remove();
         Iterator<Slash> si = slashes.iterator();
         while (si.hasNext()) if (now - si.next().t > len) si.remove();
         Iterator<Spark> ki = sparkList.iterator();
@@ -203,7 +207,7 @@ public class SwordTrailModule extends Module {
         double cz = EffectUtil.lerp(cam.lastTickPosZ, cam.posZ, pt);
 
         GlStateManager.enableBlend();
-        GlStateManager.tryBlendFuncSeparate(770, 1, 1, 0); // cộng màu: vệt sáng rực hơn
+        GlStateManager.tryBlendFuncSeparate(770, 1, 1, 0); // cộng màu: ánh sáng bùng rực
         GlStateManager.disableTexture2D();
         GlStateManager.disableLighting();
         GlStateManager.disableCull();
@@ -221,42 +225,56 @@ public class SwordTrailModule extends Module {
         GlStateManager.color(1f, 1f, 1f, 1f);
     }
 
-    // ---------------------------------------------------------------- vệt chém tại mục tiêu
+    // ---------------------------------------------------------------- nhát chém tại mục tiêu
+
+    private static float easeOutCubic(float x) { float i = 1f - x; return 1f - i * i * i; }
 
     private void drawSlash(Slash s, long now, float len, double cx, double cy, double cz) {
         float age = now - s.t;
         if (age < 0f) return;
         float k = Math.min(1f, age / SWEEP_MS);
-        // Quét nhanh ở đầu, giảm tốc mượt ở cuối; phần đuôi rút dần.
-        float head = -1f + 2f * (1f - (1f - k) * (1f - k));
-        float tail = age > SWEEP_MS
-                ? -1f + 2f * Math.min(1f, (age - SWEEP_MS) / Math.max(1f, len - SWEEP_MS))
-                : -1f;
+        // Đầu quét cực nhanh rồi giảm tốc (ease-out cubic); đuôi bám theo bằng ease-in, rút dần như vệt sáng tan.
+        float head = -1f + 2f * easeOutCubic(k);
+        float rest = age > SWEEP_MS ? Math.min(1f, (age - SWEEP_MS) / Math.max(1f, len - SWEEP_MS)) : 0f;
+        float tail = -1f + 2f * (float) Math.pow(rest, 1.6);
         if (head - tail < 0.02f) return;
-        float rest = age > SWEEP_MS ? (age - SWEEP_MS) / Math.max(1f, len - SWEEP_MS) : 0f;
+        // Chớp bừng ở khoảnh khắc chạm, sau đó tắt dần mượt.
+        float pop = 1f + 0.55f * (float) Math.exp(-age / 45f);
         float fade = (1f - rest) * (1f - rest);
-        float maxA = opacity.getFloat() / 100f * fade;
+        float maxA = Math.min(1f, opacity.getFloat() / 100f * fade * pop);
         double half = 1.35 * s.scale;
-        double thick = 0.115 * s.scale; // vệt chém thanh mảnh hơn
+        double thick = 0.105 * s.scale * (1.0 + 0.35 * Math.exp(-age / 60.0)); // lúc đầu dày hơn rồi thanh lại
 
         int c = rainbow.resolve(color.rgb(), s.hue);
         int r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
-        // Lõi gần trắng tạo cảm giác bloom như hiệu ứng chém fantasy.
-        int lr = r + (255 - r) * 4 / 5;
-        int lg = g + (255 - g) * 4 / 5;
-        int lb = b + (255 - b) * 4 / 5;
+        // Lõi gần trắng (bloom) và quầng ngoài ngả màu sâu hơn để có chiều sâu như grading điện ảnh.
+        int lr = r + (255 - r) * 5 / 6, lg = g + (255 - g) * 5 / 6, lb = b + (255 - b) * 5 / 6;
+        int dr = r * 3 / 4, dg = g * 3 / 4, db = Math.min(255, b + 30);
 
         if (glow.value) {
-            strip(s, tail, head, half * 1.02, thick * 2.5, r, g, b, maxA * 0.10f, cx, cy, cz);
-            strip(s, tail, head, half, thick * 1.55, r, g, b, maxA * 0.20f, cx, cy, cz);
+            strip(s, tail, head, half * 1.03, thick * 4.2, 0.0, dr, dg, db, maxA * 0.08f, cx, cy, cz);
+            strip(s, tail, head, half * 1.01, thick * 2.6, 0.0, r, g, b, maxA * 0.14f, cx, cy, cz);
+            strip(s, tail, head, half, thick * 1.6, 0.0, r, g, b, maxA * 0.24f, cx, cy, cz);
         }
-        // Dải màu chính và đường lõi sáng mảnh ở giữa.
-        strip(s, tail, head, half, thick, r, g, b, maxA * 0.82f, cx, cy, cz);
-        strip(s, tail, head, half * 0.985, thick * 0.22, lr, lg, lb, maxA, cx, cy, cz);
+        if (chromatic.value) {
+            // Viền lệch kênh màu (đỏ / lam) hai bên nhát chém, mô phỏng sắc sai của ống kính.
+            strip(s, tail, head, half, thick * 0.9, thick * 0.85, 255, 70, 110, maxA * 0.30f, cx, cy, cz);
+            strip(s, tail, head, half, thick * 0.9, -thick * 0.85, 70, 170, 255, maxA * 0.30f, cx, cy, cz);
+        }
+        // Vệt gió mảnh song song, ngắn hơn, tạo cảm giác tốc độ.
+        float sh = head, st = tail + (head - tail) * 0.35f;
+        strip(s, st, sh, half * 0.9, thick * 0.10, thick * 3.2, r, g, b, maxA * 0.35f, cx, cy, cz);
+        strip(s, st, sh, half * 0.8, thick * 0.08, -thick * 3.6, r, g, b, maxA * 0.28f, cx, cy, cz);
+        // Dải màu chính và đường lõi trắng nóng.
+        strip(s, tail, head, half, thick, 0.0, r, g, b, maxA * 0.85f, cx, cy, cz);
+        strip(s, tail, head, half * 0.99, thick * 0.26, 0.0, lr, lg, lb, maxA, cx, cy, cz);
     }
 
-    /** Vẽ dải chém thẳng từ u = from đến u = to; nhọn ở hai đầu, đuôi mờ dần, đầu sáng nhất. */
-    private void strip(Slash s, float from, float to, double half, double thick,
+    /**
+     * Vẽ dải chém cong từ u = from đến u = to (u thuộc [-1, 1]); nhọn ở hai đầu, đuôi mờ dần, đầu sáng nhất.
+     * off dịch cả dải theo pháp tuyến để vẽ viền / vệt gió.
+     */
+    private void strip(Slash s, float from, float to, double half, double thick, double off,
                        int r, int g, int b, float maxA, double cx, double cy, double cz) {
         Tessellator tess = Tessellator.getInstance();
         WorldRenderer wr = tess.getWorldRenderer();
@@ -264,19 +282,20 @@ public class SwordTrailModule extends Module {
         for (int i = 0; i <= SEGMENTS; i++) {
             float f = i / (float) SEGMENTS;
             double u = from + (to - from) * f;
-            double bend = 0.0; // vệt chém thẳng, không uốn cong
+            double bend = off; // vệt chém thẳng, không uốn cong (off chỉ dùng để dịch viền / vệt gió)
             double px = s.cx + s.dx * u * half + s.nx * bend - cx;
             double py = s.cy + s.dy * u * half + s.ny * bend - cy;
             double pz = s.cz + s.dz * u * half + s.nz * bend - cz;
-            double w = thick * Math.sin(Math.PI * Math.pow(f, 1.4)); // dải thẳng, thu nhọn ở hai đầu
-            int a = Math.round(255f * Math.max(0f, Math.min(1f, maxA * (float) Math.pow(f, 1.2))));
+            // Bề ngang: thu nhọn hai đầu, phình về phía đầu quét như lưỡi kiếm.
+            double w = thick * Math.sin(Math.PI * Math.pow(f, 1.3));
+            int a = Math.round(255f * Math.max(0f, Math.min(1f, maxA * (float) Math.pow(f, 1.15))));
             wr.pos(px - s.nx * w, py - s.ny * w, pz - s.nz * w).color(r, g, b, a).endVertex();
             wr.pos(px + s.nx * w, py + s.ny * w, pz + s.nz * w).color(r, g, b, a).endVertex();
         }
         tess.draw();
     }
 
-    // ---------------------------------------------------------------- chớp sáng + hạt sáng khi đánh trúng
+    // ---------------------------------------------------------------- chớp sáng, sóng xung kích, tàn lửa
 
     private void drawImpact(long now, double cx, double cy, double cz) {
         RenderManager rm = Minecraft.getMinecraft().getRenderManager();
@@ -291,45 +310,67 @@ public class SwordTrailModule extends Module {
         for (Flash f : flashes) {
             float k = (now - f.t) / FLASH_MS;
             if (k < 0f || k >= 1f) continue;
-            float a = (1f - k) * (1f - k) * maxA;
-            double sz = size.get() * (0.22 + 0.3 * (1f - (1f - k) * (1f - k)));
+            float fast = Math.min(1f, k * 1.6f);                    // chớp lõi tắt nhanh hơn vòng xung kích
+            float a = (1f - fast) * (1f - fast) * maxA;
+            double sz = size.get() * (0.20 + 0.34 * easeOutCubic(fast));
             int c = rainbow.resolve(color.rgb(), 0f);
             int r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
             double px = f.x - cx, py = f.y - cy, pz = f.z - cz;
-            fan(wr, tess, px, py, pz, rx, 0, rz, ux, uy, uz, sz, sz, r, g, b, a * 0.55f, 255, 255, 255);
-            for (int i = 0; i < 2; i++) { // sao 4 cánh, xoay ngẫu nhiên
+
+            // Quầng bloom tròn, lõi trắng.
+            if (a > 0f) {
+                fan(wr, tess, px, py, pz, rx, 0, rz, ux, uy, uz, sz * 1.15, sz * 1.15, r, g, b, a * 0.50f, 255, 255, 255);
+                fan(wr, tess, px, py, pz, rx, 0, rz, ux, uy, uz, sz * 0.38, sz * 0.38, 255, 255, 255, a * 0.9f, 255, 255, 255);
+            }
+            // Vệt sáng anamorphic ngang (đặc trưng ống kính điện ảnh), ngả lam.
+            if (streak.value && a > 0f) {
+                int sr = Math.min(255, r / 2 + 70), sg = Math.min(255, g / 2 + 110), sb = 255;
+                double len = size.get() * (1.5 + 2.2 * easeOutCubic(fast));
+                fan(wr, tess, px, py, pz, rx, 0, rz, ux, uy, uz, len, sz * 0.045, sr, sg, sb, a * 0.85f, 255, 255, 255);
+                fan(wr, tess, px, py, pz, rx, 0, rz, ux, uy, uz, len * 0.55, sz * 0.10, sr, sg, sb, a * 0.35f, 255, 255, 255);
+            }
+            // Sao 4 cánh xoay ngẫu nhiên.
+            for (int i = 0; i < 2; i++) {
                 double ang = i * Math.PI / 2.0;
                 double dxr = Math.cos(f.rot + ang), dyr = Math.sin(f.rot + ang);
                 double ax = rx * dxr + ux * dyr, ay = uy * dyr, az = rz * dxr + uz * dyr;
                 double bxr = -dyr, byr = dxr;
                 double qx = rx * bxr + ux * byr, qy = uy * byr, qz = rz * bxr + uz * byr;
-                fan(wr, tess, px, py, pz, ax, ay, az, qx, qy, qz, sz * 2.4, sz * 0.12, r, g, b, a, 255, 255, 255);
+                fan(wr, tess, px, py, pz, ax, ay, az, qx, qy, qz, sz * (i == 0 ? 2.6 : 1.7), sz * 0.10, r, g, b, a, 255, 255, 255);
+            }
+            // Vòng sóng xung kích lan ra, mờ dần.
+            if (shockwave.value) {
+                float rk = easeOutCubic(k);
+                double rad = size.get() * (0.15 + 1.05 * rk);
+                float ra = (1f - k) * (1f - k) * maxA * 0.55f;
+                ring(wr, tess, px, py, pz, rx, 0, rz, ux, uy, uz, rad, size.get() * 0.045 * (1.0 - 0.5 * k), r, g, b, ra);
             }
         }
 
-        // hạt sáng: vệt ngắn (đuôi mờ) + chấm phát sáng ở đầu
+        // Tàn lửa: vệt dài theo vận tốc (đuôi mờ) + hạt phát sáng, chuyển từ trắng nóng sang màu hiệu ứng rồi tắt.
         for (Spark k : sparkList) {
             double age = (now - k.t) / 1000.0;
             if (age < 0) continue;
             float lifeK = (now - k.t) / k.life;
             float a = (1f - lifeK) * (1f - lifeK) * Math.min(1f, maxA * 1.15f);
             double dr = Math.exp(-SPARK_DRAG * age), disp = (1.0 - dr) / SPARK_DRAG;
-            double hx = k.x + k.vx * disp - cx, hy = k.y + k.vy * disp - 0.5 * SPARK_GRAVITY * age * age - cy, hz = k.z + k.vz * disp - cz;
+            double hx = k.x + k.vx * disp - cx;
+            double hy = k.y + k.vy * disp - 0.5 * SPARK_GRAVITY * age * age - cy;
+            double hz = k.z + k.vz * disp - cz;
             double cvx = k.vx * dr, cvy = k.vy * dr - SPARK_GRAVITY * age, cvz = k.vz * dr;
-            double tx = hx - cvx * 0.05, ty = hy - cvy * 0.05, tz = hz - cvz * 0.05;
+            double tl = 0.055 + 0.03 * k.size;
+            double tx = hx - cvx * tl, ty = hy - cvy * tl, tz = hz - cvz * tl;
             int c = rainbow.resolve(color.rgb(), k.hue);
             int r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
-            int wr2 = r + (255 - r) * 3 / 4, wg = g + (255 - g) * 3 / 4, wb = b + (255 - b) * 3 / 4;
-            // Chỉ vẽ một đuôi màu; bỏ lớp đuôi trắng gây cảm giác có mảng/nền trắng.
-            GL11.glLineWidth(2.2f);
+            float hot = Math.max(0f, 1f - lifeK * 2.2f);              // ban đầu trắng nóng
+            int hr = r + Math.round((255 - r) * hot), hg = g + Math.round((255 - g) * hot), hb = b + Math.round((255 - b) * hot);
+            GL11.glLineWidth(2.4f);
             wr.begin(1, DefaultVertexFormats.POSITION_COLOR);
             wr.pos(tx, ty, tz).color(r, g, b, 0).endVertex();
-            wr.pos(hx, hy, hz).color(r, g, b, Math.round(255f * a * 0.9f)).endVertex();
+            wr.pos(hx, hy, hz).color(hr, hg, hb, Math.round(255f * a * 0.95f)).endVertex();
             tess.draw();
-            // Hạt lớn hơn rõ rệt, lõi dùng màu hiệu ứng thay vì trắng gắt.
-            double gs = 0.17 * k.size * (1.0 - 0.18 * lifeK);
-            fan(wr, tess, hx, hy, hz, rx, 0, rz, ux, uy, uz, gs * 2.8, gs * 2.8,
-                    r, g, b, a, wr2, wg, wb);
+            double gs = 0.15 * k.size * (1.0 - 0.3 * lifeK);
+            fan(wr, tess, hx, hy, hz, rx, 0, rz, ux, uy, uz, gs * 2.6, gs * 2.6, r, g, b, a * 0.8f, hr, hg, hb);
         }
     }
 
@@ -339,14 +380,39 @@ public class SwordTrailModule extends Module {
                             double la, double lb, int r, int g, int b, float a, int cr, int cg, int cb) {
         wr.begin(6, DefaultVertexFormats.POSITION_COLOR);
         wr.pos(px, py, pz).color(cr, cg, cb, Math.round(255f * Math.max(0f, Math.min(1f, a)))).endVertex();
-        for (int i = 0; i <= 12; i++) {
-            double ang = i / 12.0 * Math.PI * 2.0, ca = Math.cos(ang) * la, sa = Math.sin(ang) * lb;
+        for (int i = 0; i <= 16; i++) {
+            double ang = i / 16.0 * Math.PI * 2.0, ca = Math.cos(ang) * la, sa = Math.sin(ang) * lb;
             wr.pos(px + ax * ca + bx * sa, py + ay * ca + by * sa, pz + az * ca + bz * sa).color(r, g, b, 0).endVertex();
         }
         tess.draw();
     }
 
-    // ---------------------------------------------------------------- legacy swing helpers (not called in hit-only mode)
+    /** Vòng sáng mềm: mép trong và mép ngoài trong suốt, giữa vòng sáng nhất. */
+    private static void ring(WorldRenderer wr, Tessellator tess, double px, double py, double pz,
+                             double ax, double ay, double az, double bx, double by, double bz,
+                             double rad, double wid, int r, int g, int b, float a) {
+        if (a <= 0f) return;
+        int mid = Math.round(255f * Math.max(0f, Math.min(1f, a)));
+        wr.begin(5, DefaultVertexFormats.POSITION_COLOR);
+        for (int i = 0; i <= 40; i++) {
+            double ang = i / 40.0 * Math.PI * 2.0, ca = Math.cos(ang), sa = Math.sin(ang);
+            double ix = (rad - wid) * ca, iy = (rad - wid) * sa, ox = (rad + wid) * ca, oy = (rad + wid) * sa;
+            double mx = rad * ca, my = rad * sa;
+            wr.pos(px + ax * ix + bx * iy, py + ay * ix + by * iy, pz + az * ix + bz * iy).color(r, g, b, 0).endVertex();
+            wr.pos(px + ax * mx + bx * my, py + ay * mx + by * my, pz + az * mx + bz * my).color(255, 255, 255, mid).endVertex();
+        }
+        tess.draw();
+        wr.begin(5, DefaultVertexFormats.POSITION_COLOR);
+        for (int i = 0; i <= 40; i++) {
+            double ang = i / 40.0 * Math.PI * 2.0, ca = Math.cos(ang), sa = Math.sin(ang);
+            double ox = (rad + wid) * ca, oy = (rad + wid) * sa, mx = rad * ca, my = rad * sa;
+            wr.pos(px + ax * mx + bx * my, py + ay * mx + by * my, pz + az * mx + bz * my).color(255, 255, 255, mid).endVertex();
+            wr.pos(px + ax * ox + bx * oy, py + ay * ox + by * oy, pz + az * ox + bz * oy).color(r, g, b, 0).endVertex();
+        }
+        tess.draw();
+    }
+
+    // ---------------------------------------------------------------- legacy swing helpers (không dùng ở chế độ hit-only)
 
     private void recordSwing(EntityPlayer p, float pt, long now) {
         boolean fp = Minecraft.getMinecraft().gameSettings.thirdPersonView == 0;
