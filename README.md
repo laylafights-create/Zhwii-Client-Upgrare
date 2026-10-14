@@ -9,6 +9,7 @@ Client HUD / PvP tiếng Việt cho **Minecraft 1.8.9** (Forge), giao diện t�
 | **PvP** | Keystrokes, CPS, Bow Trajectory, Thông tin mục tiêu, Combo, Aim Assist, Armor Status, Potion Status, Resource Counter, Item Pickup, Phát hiện kẻ địch (kèm viền kẻ địch) |
 | **HUD** | FPS, Speed, Ping, Server Address, Ẩn Scoreboard |
 | **Hình ảnh** | Zoom (mượt, chỉnh bằng con lăn), Fullbright, Time Changer, Block Outline, Item Physics, Animations |
+| **Hiệu ứng** | Sword Trail (vệt kiếm), Hit Effect, Kill Effect (sét/nổ/pháo hoa…), Jump Circle, Particle Trail |
 | **Tiện ích** | Toggle Sprint |
 
 Điểm nhấn:
