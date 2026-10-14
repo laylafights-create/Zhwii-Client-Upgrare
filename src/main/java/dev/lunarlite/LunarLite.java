@@ -159,6 +159,7 @@ public class LunarLite {
         if (e.entityPlayer == Minecraft.getMinecraft().thePlayer && e.target instanceof EntityLivingBase) {
             ComboModule.onAttack();
             if (HIT_EFFECT != null) HIT_EFFECT.onAttack(e.target);
+            if (SWORD_TRAIL != null) SWORD_TRAIL.onAttack(e.target);
             if (KILL_EFFECT != null) KILL_EFFECT.onAttack(e.target);
         }
     }
