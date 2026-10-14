@@ -1,4 +1,4 @@
-package dev.lunarlite.modules;
+package dev.lunarlite.module;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonParser;
@@ -323,6 +323,242 @@ public class ChatBarModule {
                 }
             }
         });
+    }
+
+    // ===== Bedwars =====
+    private static final Pattern BED_BROKEN = Pattern.compile("BED DESTRUCTION\\s*>\\s*(\\w+) Bed");
+    private static final Pattern TEAM_TAG = Pattern.compile("\\[(RED|BLUE|GREEN|YELLOW|AQUA|WHITE|PINK|GRAY)\\]");
+    /** Tin hệ thống được giữ lại khi playerOnly bật. Thêm/bớt từ khóa tại đây. */
+    private static final Pattern BW_EVENT = Pattern.compile(
+            "BED DESTRUCTION|FINAL KILL|TEAM ELIMINATED|has been eliminated|You have been eliminated"
+                    + "|Protect your bed|The game starts in|Victory|Your bed was");
+    private static final Set<Integer> DEAD_BEDS = new HashSet<Integer>(); // màu RGB của team đã mất giường
+
+    private static int colorByName(String n) {
+        if (n.equals("RED")) return MC_COLORS[12];
+        if (n.equals("BLUE")) return MC_COLORS[9];
+        if (n.equals("GREEN")) return MC_COLORS[10];
+        if (n.equals("YELLOW")) return MC_COLORS[14];
+        if (n.equals("AQUA")) return MC_COLORS[11];
+        if (n.equals("WHITE")) return MC_COLORS[15];
+        if (n.equals("PINK")) return MC_COLORS[13];
+        if (n.equals("GRAY")) return MC_COLORS[8];
+        return -1;
+    }
+
+    private static void trackBeds(String plain) {
+        Matcher m = BED_BROKEN.matcher(plain);
+        if (!m.find()) return;
+        String t = m.group(1);
+        int c;
+        if (t.equalsIgnoreCase("Your")) {
+            Minecraft mc = Minecraft.getMinecraft();
+            NetworkPlayerInfo me = mc.thePlayer == null || mc.getNetHandler() == null
+                    ? null : mc.getNetHandler().getPlayerInfo(mc.thePlayer.getName());
+            c = me == null ? -1 : teamColor(me);
+        } else {
+            c = colorByName(t.toUpperCase());
+        }
+        if (c != -1) DEAD_BEDS.add(c);
+    }
+
+    @SubscribeEvent
+    public void onWorldLoad(WorldEvent.Load e) {
+        DEAD_BEDS.clear(); // sang ván mới
+    }
+
+    // ===== Tin giết người =====
+    private static final Pattern WORD = Pattern.compile("[A-Za-z0-9_]{3,16}");
+    private static final Pattern KILL_VERB = Pattern.compile(
+            "\\b(killed|shot|knocked|struck|fell|died|burned|drowned|exploded|blown|suffocated|starved|squashed"
+                    + "|withered|perished|slain|slaughtered|thrown|pushed|punched|fireballed|melted|zapped|hit)\\b");
+
+    /** {người bị giết, người giết hoặc null} nếu là tin chết/giết, ngược lại null. */
+    private static String[] parseKill(String plain) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.getNetHandler() == null || !KILL_VERB.matcher(plain).find()) return null;
+        Matcher m = WORD.matcher(plain);
+        String victim = null, killer = null;
+        while (m.find()) {
+            String w = m.group();
+            if (mc.getNetHandler().getPlayerInfo(w) == null) continue;
+            if (victim == null) {
+                if (m.start() != 0) return null; // tin chết luôn bắt đầu bằng tên người bị giết
+                victim = w;
+            } else if (!w.equals(victim)) {
+                killer = w;
+            }
+        }
+        return victim == null ? null : new String[]{victim, killer};
+    }
+
+    private static String colorCode(int rgb) {
+        for (int i = 0; i < 16; i++) if (MC_COLORS[i] == rgb) return S + "0123456789abcdef".charAt(i);
+        return S + "7";
+    }
+
+    private static String teamColorOf(String name) {
+        NetworkPlayerInfo info = Minecraft.getMinecraft().getNetHandler().getPlayerInfo(name);
+        int c = info == null ? -1 : teamColor(info);
+        return c == -1 ? S + "7" : colorCode(c);
+    }
+
+    /** [avt người giết] Tên giết [avt người bị giết] Tên */
+    private static IChatComponent buildKill(String victim, String killer, boolean fin, String plain) {
+        String mk = playerHeads ? makeMarker(killer, plain, false) : "";
+        String mv = playerHeads ? makeMarker(victim, plain, false) : "";
+        StringBuilder sb = new StringBuilder();
+        sb.append(mk).append(teamColorOf(killer)).append(killer);
+        sb.append(S).append("c giết ");
+        sb.append(mv).append(teamColorOf(victim)).append(victim);
+        if (fin) sb.append(S).append("6").append(S).append("l FINAL KILL!");
+        return new ChatComponentText(sb.toString());
+    }
+
+    // ===== Avatar + giường =====
+    private static final String S = "\u00A7";
+    private static final String SENT = S + "r" + S + "r" + S + "r";
+    private static final int[] MC_COLORS = {
+            0x000000, 0x0000AA, 0x00AA00, 0x00AAAA, 0xAA0000, 0xAA00AA, 0xFFAA00, 0xAAAAAA,
+            0x555555, 0x5555FF, 0x55FF55, 0x55FFFF, 0xFF5555, 0xFF55FF, 0xFFFF55, 0xFFFFFF};
+
+    /** Chừa chỗ cho icon: đầu (+ giường) + khoảng cách, mỗi dấu cách rộng 4px. */
+    private static String iconSpace(boolean bed) {
+        int w = iconSize + 2 + (bed ? (int) Math.ceil(9 * iconSize / 8f) + 1 : 0);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < (w + 3) / 4; i++) sb.append(' ');
+        return sb.toString();
+    }
+
+    private static class Icon {
+        final String name; final int color; final boolean bed;
+        Icon(String name, int color, boolean bed) { this.name = name; this.color = color; this.bed = bed; }
+    }
+
+    private static final Map<Integer, Icon> ICONS = new LinkedHashMap<Integer, Icon>() {
+        @Override protected boolean removeEldestEntry(Map.Entry<Integer, Icon> eldest) { return size() > 512; }
+    };
+    private static int nextId = 0;
+
+    private static int teamColor(NetworkPlayerInfo info) {
+        ScorePlayerTeam t = info.getPlayerTeam();
+        if (t == null) return -1;
+        String p = t.getColorPrefix();
+        for (int i = p.length() - 2; i >= 0; i--) {
+            if (p.charAt(i) == '\u00A7') {
+                int idx = "0123456789abcdef".indexOf(Character.toLowerCase(p.charAt(i + 1)));
+                if (idx >= 0) return MC_COLORS[idx];
+            }
+        }
+        return -1;
+    }
+
+    /** Tạo marker ẩn (chỉ gồm mã màu, rộng 0px) + khoảng trống cho icon. */
+    private static String makeMarker(String name, String plain, boolean bed) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.getNetHandler() == null) return "";
+        NetworkPlayerInfo info = mc.getNetHandler().getPlayerInfo(name);
+        if (info == null) return "";
+        int id = nextId++ & 0xFFF;
+        int color = teamColor(info);
+        if (color == -1) { // chưa có team scoreboard: lấy từ tag [RED]/[BLUE]... trong tin
+            Matcher tm = TEAM_TAG.matcher(plain);
+            if (tm.find()) color = colorByName(tm.group(1));
+        }
+        ICONS.put(id, new Icon(name, color, bed));
+        String h = String.format("%03x", id);
+        return SENT + S + h.charAt(0) + S + h.charAt(1) + S + h.charAt(2) + S + "r" + iconSpace(bed);
+    }
+
+    /**
+     * Vẽ mọi icon trong dòng: x = độ rộng chữ đứng trước marker.
+     * Dòng chat thường mở đầu bằng "§r" (component rỗng) nên "§r" + marker tạo ra một khớp SENT sai
+     * ở vị trí 0 -> khớp sai thì dịch 1 ký tự rồi tìm tiếp, không được nhảy qua marker thật.
+     */
+    private static void drawIcons(Minecraft mc, String fmt, int y, int a) {
+        int from = 0;
+        while (true) {
+            int i = fmt.indexOf(SENT, from);
+            if (i < 0) return;
+            int p = i + SENT.length();
+            from = i + 1;
+            if (fmt.length() < p + 6) continue;
+            try {
+                Icon ic = ICONS.get(Integer.parseInt("" + fmt.charAt(p + 1) + fmt.charAt(p + 3) + fmt.charAt(p + 5), 16));
+                if (ic != null) {
+                    drawIcon(mc, ic, y, a, mc.fontRendererObj.getStringWidth(fmt.substring(0, i)));
+                    from = p + 6;
+                }
+            } catch (NumberFormatException ex) {
+                // khớp sai, thử vị trí kế tiếp
+            }
+        }
+    }
+
+    private static void drawIcon(Minecraft mc, Icon ic, int y, int a, int x0) {
+        NetworkPlayerInfo info = mc.getNetHandler().getPlayerInfo(ic.name);
+        int sz = iconSize;
+        int top = y - 8 + (8 - sz) / 2 + iconY;
+        GlStateManager.enableTexture2D();
+        GlStateManager.color(1f, 1f, 1f, a / 255f);
+        if (info != null) {
+            mc.getTextureManager().bindTexture(info.getLocationSkin());
+            Gui.drawScaledCustomSizeModalRect(x0 + iconX, top, 8f, 8f, 8, 8, sz, sz, 64f, 64f);   // mặt
+            Gui.drawScaledCustomSizeModalRect(x0 + iconX, top, 40f, 8f, 8, 8, sz, sz, 64f, 64f);  // lớp mũ
+        }
+        if (ic.bed && ic.color != -1) {
+            float k = sz / 8f;
+            int al = a << 24;
+            boolean dead = DEAD_BEDS.contains(ic.color);
+            GlStateManager.pushMatrix();
+            GlStateManager.translate(x0 + iconX + sz + 2, top + sz / 2f - 3f * k, 0f);
+            GlStateManager.scale(k, k, 1f);
+            Gui.drawRect(0, 2, 9, 6, al | (dead ? 0x444444 : 0x8B5A2B));   // khung gỗ
+            Gui.drawRect(3, 1, 9, 4, al | (dead ? 0x777777 : ic.color));   // chăn: xám nếu mất giường
+            Gui.drawRect(0, 1, 3, 3, al | (dead ? 0x999999 : 0xFFFFFF));   // gối
+            GlStateManager.popMatrix();
+        }
+        GlStateManager.color(1f, 1f, 1f, 1f);
+    }
+
+    // Vẽ icon lên từng dòng chat có marker
+    @SubscribeEvent
+    public void onRenderChat(RenderGameOverlayEvent.Post e) {
+        if (!enabled || !playerHeads || e.type != RenderGameOverlayEvent.ElementType.CHAT) return;
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.gameSettings.chatVisibility == EntityPlayer.EnumChatVisibility.HIDDEN || mc.getNetHandler() == null) return;
+
+        GuiNewChat chat = mc.ingameGUI.getChatGUI();
+        List<ChatLine> lines;
+        Integer scroll;
+        try {
+            lines = ReflectionHelper.getPrivateValue(GuiNewChat.class, chat, "drawnChatLines", "field_146253_i");
+            scroll = ReflectionHelper.getPrivateValue(GuiNewChat.class, chat, "scrollPos", "field_146250_j");
+        } catch (Exception ex) {
+            return;
+        }
+
+        boolean open = chat.getChatOpen();
+        float opacity = mc.gameSettings.chatOpacity * 0.9f + 0.1f;
+        int tick = mc.ingameGUI.getUpdateCounter();
+        float sc = chat.getChatScale();
+
+        GlStateManager.pushMatrix();
+        GlStateManager.translate(2f, e.resolution.getScaledHeight() - 48 + 20f, 0f);
+        GlStateManager.scale(sc, sc, 1f);
+        GlStateManager.enableBlend();
+        for (int i = 0; i + scroll < lines.size() && i < chat.getLineCount(); i++) {
+            ChatLine line = lines.get(i + scroll);
+            if (line == null) continue;
+            int age = tick - line.getUpdatedCounter();
+            if (age >= 200 && !open) continue;
+            double d = Math.max(0.0, Math.min(1.0, (1.0 - age / 200.0) * 10.0));
+            int a = (int) ((open ? 255 : (int) (255 * d * d)) * opacity);
+            if (a <= 3) continue;
+            drawIcons(mc, line.getChatComponent().getFormattedText(), -i * 9, a);
+        }
+        GlStateManager.disableBlend();
+        GlStateManager.popMatrix();
     }
 
     // Lọc tin hệ thống (giữ sự kiện Bedwars) + marker icon
