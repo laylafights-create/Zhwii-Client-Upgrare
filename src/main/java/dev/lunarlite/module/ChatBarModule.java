@@ -623,7 +623,10 @@ public class ChatBarModule extends Module {
     private static float slideY;      // độ lệch dọc còn lại (px GUI), về 0 dần
     private static int curSlide;      // giá trị đã làm tròn của khung hình này (icon dùng chung)
     private static long lastFrame;
-    private static final String GAP_MARKER = "\u200B";
+    private static final class GapLine extends ChatLine {
+        GapLine(int counter) { super(counter, new ChatComponentText(""), -1); }
+    }
+    private static boolean isGap(ChatLine l) { return l instanceof GapLine; }
     private static boolean spacingApplied;
 
     /** Có dòng mới ở cuối thì đẩy cả khung xuống đúng số dòng đó, rồi cho trượt lên về vị trí cũ. */
@@ -734,49 +737,25 @@ public class ChatBarModule extends Module {
         }
         if (lines == null || lines.isEmpty()) return;
 
-        // Chèn các dòng đệm vào danh sách render để tạo khoảng cách thật giữa tin nhắn.
-        // Dòng đệm có marker zero-width để không hiện chữ và không bị chèn lặp.
-        if (CHAT_GAP.getInt() <= 0) {
-            try {
-                List<ChatLine> mutable = (List<ChatLine>) lines;
-                for (Iterator<ChatLine> it = mutable.iterator(); it.hasNext();) {
-                    ChatLine line = it.next();
-                    if (line != null && line.getChatComponent() != null
-                            && GAP_MARKER.equals(line.getChatComponent().getUnformattedText())) it.remove();
-                }
-            } catch (RuntimeException ignored) {}
-        }
-        if (CHAT_GAP.getInt() > 0) {
-            try {
-                List<ChatLine> mutable = (List<ChatLine>) lines;
-                int gap = CHAT_GAP.getInt();
+        // Chèn dòng đệm (nội dung rỗng, nhận diện bằng class GapLine) để tạo khoảng cách giữa các tin nhắn.
+        int gap = CHAT_GAP.getInt();
+        try {
+            List<ChatLine> mutable = lines;
+            // xoá hết dòng đệm cũ rồi chèn lại theo số dòng hiện tại
+            for (Iterator<ChatLine> it = mutable.iterator(); it.hasNext();) {
+                if (isGap(it.next())) it.remove();
+            }
+            if (gap > 0) {
                 for (int i = mutable.size() - 1; i >= 0; i--) {
                     ChatLine line = mutable.get(i);
-                    if (line == null || line.getChatComponent() == null) continue;
-                    if (GAP_MARKER.equals(line.getChatComponent().getUnformattedText())) continue;
-                    int insertAt = i + 1;
-                    int found = 0;
-                    while (insertAt < mutable.size()
-                            && mutable.get(insertAt) != null
-                            && mutable.get(insertAt).getChatComponent() != null
-                            && GAP_MARKER.equals(mutable.get(insertAt).getChatComponent().getUnformattedText())) {
-                        found++;
-                        insertAt++;
-                    }
-                    for (int g = found; g < gap; g++) {
-                        mutable.add(insertAt, new ChatLine(line.getUpdatedCounter(),
-                                new ChatComponentText(GAP_MARKER), -1));
-                        insertAt++;
-                    }
-                    while (found > gap && insertAt > i + 1) {
-                        mutable.remove(i + 1);
-                        found--;
-                        insertAt--;
+                    if (line == null) continue;
+                    for (int g = 0; g < gap; g++) {
+                        mutable.add(i + 1, new GapLine(line.getUpdatedCounter()));
                     }
                 }
-            } catch (RuntimeException ignored) {
-                // Không để tùy chỉnh khoảng cách làm gián đoạn render chat.
             }
+        } catch (RuntimeException ignored) {
+            // Không để tùy chỉnh khoảng cách làm gián đoạn render chat.
         }
 
         boolean open = chat.getChatOpen();
