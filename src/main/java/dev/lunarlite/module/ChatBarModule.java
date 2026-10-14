@@ -97,6 +97,7 @@ public class ChatBarModule extends Module {
     public static final BoolSetting ANIM_MESSAGES = new BoolSetting("animMessages", "Animation tin nhắn mới", true);
     public static final BoolSetting ANIM_BAR = new BoolSetting("animBar", "Animation thanh nhập", true);
     public static final BoolSetting BAR_BORDER = new BoolSetting("barBorder", "Viền màu thanh nhập", true);
+    public static final BoolSetting HIDE_BAR_BACKGROUND = new BoolSetting("hideBarBackground", "Ẩn nền thanh nhập", false);
 
     public static String translateTo = "vi";
     public static int accent = 0xFF55AAFF;     // ARGB
@@ -117,6 +118,7 @@ public class ChatBarModule extends Module {
         add(HIDE_ORIGINAL, SEC_CHAT, AUTO_TRANSLATE);
         add(CHAR_COUNTER, SEC_BAR);
         add(BAR_BORDER, SEC_BAR);
+        add(HIDE_BAR_BACKGROUND, SEC_BAR);
         add(ANIM_BAR, SEC_BAR);
         add(ANIM_MESSAGES, SEC_CHAT);
         add(BAR_OPACITY, SEC_BAR);
@@ -997,7 +999,7 @@ public class ChatBarModule extends Module {
             fontRendererObj.drawStringWithShadow("Khung tin nhắn", win[0] + 4, win[1] + 4, 0xFFFFFF);
 
             int[] bar = barRect(width, height);
-            drawBarBox(bar, 1f);
+            if (!HIDE_BAR_BACKGROUND.value) drawBarBox(bar, 1f);
             fontRendererObj.drawStringWithShadow("Thanh nhập", bar[0] + 18, bar[1] + 4, 0x99FFFFFF);
 
             super.drawScreen(mouseX, mouseY, partialTicks);
@@ -1144,7 +1146,7 @@ public class ChatBarModule extends Module {
             GlStateManager.translate(0, offset, 0);
 
             glow += ((inputField.getText().isEmpty() ? 0f : 1f) - glow) * 0.25f;
-            drawBarBox(r, p, glow);
+            if (!HIDE_BAR_BACKGROUND.value) drawBarBox(r, p, glow);
 
             // ô nhập (+ chữ gợi ý khi còn trống)
             inputField.drawTextBox();
