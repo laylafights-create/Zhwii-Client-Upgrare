@@ -39,6 +39,8 @@ import net.minecraftforge.fml.common.gameevent.TickEvent;
 import net.minecraftforge.fml.common.eventhandler.EventPriority;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.relauncher.ReflectionHelper;
+import net.minecraft.client.gui.ScaledResolution;
+import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
 
 import java.io.ByteArrayOutputStream;
@@ -84,6 +86,10 @@ public class ChatBarModule {
     public static boolean autoTranslate = true; // tự dịch tin người chơi sang tiếng Việt
     public static String translateTo = "vi";
     public static boolean playerOnly = true;   // chỉ hiện tin người chơi, chặn tin hệ thống
+    // Vị trí tùy ý (px GUI, tính từ vị trí mặc định; x phải +, y xuống +)
+    public static int windowX = 0, windowY = 0; // khung hiển thị tin nhắn
+    public static int barX = 0, barY = 0;       // thanh nhập chat
+    public static int barW = 0;                 // độ rộng thanh nhập, 0 = tự động tới mép phải
     public static int accent = 0xFF55AAFF;     // ARGB
     public static int background = 0x90000000; // ARGB
 
@@ -104,6 +110,11 @@ public class ChatBarModule {
         iconSize = cfg.getInt("iconSize", "chatbar", iconSize, 6, 14, "Kích thước avatar (px)");
         iconX = cfg.getInt("iconX", "chatbar", iconX, -20, 20, "Lệch ngang");
         iconY = cfg.getInt("iconY", "chatbar", iconY, -10, 10, "Lệch dọc");
+        windowX = cfg.getInt("windowX", "chatbar", windowX, -2000, 2000, "Vị trí ngang khung chat");
+        windowY = cfg.getInt("windowY", "chatbar", windowY, -2000, 2000, "Vị trí dọc khung chat");
+        barX = cfg.getInt("barX", "chatbar", barX, -2000, 2000, "Vị trí ngang thanh nhập");
+        barY = cfg.getInt("barY", "chatbar", barY, -2000, 2000, "Vị trí dọc thanh nhập");
+        barW = cfg.getInt("barW", "chatbar", barW, 0, 2000, "Độ rộng thanh nhập (0 = tự động)");
         if (cfg.hasChanged()) cfg.save();
     }
 
@@ -119,12 +130,27 @@ public class ChatBarModule {
         cfg.get("chatbar", "iconSize", 8).set(iconSize);
         cfg.get("chatbar", "iconX", 0).set(iconX);
         cfg.get("chatbar", "iconY", 0).set(iconY);
+        cfg.get("chatbar", "windowX", 0).set(windowX);
+        cfg.get("chatbar", "windowY", 0).set(windowY);
+        cfg.get("chatbar", "barX", 0).set(barX);
+        cfg.get("chatbar", "barY", 0).set(barY);
+        cfg.get("chatbar", "barW", 0).set(barW);
         cfg.save();
     }
 
-    /** Mở màn hình cài đặt (gọi được từ nút trong MenuScreen hoặc bằng lệnh /chatbar). */
+    /** Mở cài đặt sau 1 tick (dùng cho lệnh /chatbar, vì lúc đó màn hình chat đang đóng lại). */
     public static void openSettings() {
         openRequested = true;
+    }
+
+    /** Mở cài đặt ngay từ MenuScreen: nút "Xong"/Esc sẽ quay lại menu (parent). */
+    public static void openSettings(GuiScreen parent) {
+        Minecraft.getMinecraft().displayGuiScreen(new SettingsScreen(parent));
+    }
+
+    /** Đặt lại toàn bộ vị trí chat về mặc định. */
+    public static void resetPositions() {
+        windowX = windowY = barX = barY = barW = 0;
     }
 
     @SubscribeEvent
@@ -153,7 +179,8 @@ public class ChatBarModule {
                     if (a.length == 2 && a[0].equalsIgnoreCase("hide")) { hideOriginalLine(Integer.parseInt(a[1])); return; }
                     if (a.length == 1 && a[0].equalsIgnoreCase("reset")) {
                         iconSize = 8; iconX = 0; iconY = 0;
-                        msg = "Đã reset icon chat.";
+                        resetPositions();
+                        msg = "Đã reset icon và vị trí chat.";
                     } else if (a.length == 2) {
                         int v = Integer.parseInt(a[1]);
                         if (a[0].equalsIgnoreCase("size")) iconSize = Math.max(6, Math.min(14, v));
@@ -521,6 +548,46 @@ public class ChatBarModule {
         GlStateManager.color(1f, 1f, 1f, 1f);
     }
 
+    // Dời khung hiển thị tin nhắn tới vị trí người dùng chọn
+    @SubscribeEvent
+    public void onChatPosition(RenderGameOverlayEvent.Chat e) {
+        if (!enabled) return;
+        e.posX += windowX;
+        e.posY += windowY;
+    }
+
+    // ===== Hình học khung chat / thanh nhập (dùng chung cho chat thật và màn hình kéo thả) =====
+
+    /** Khung tin nhắn: {x1, y1, x2, y2}, đã kẹp trong màn hình. */
+    static int[] windowRect(int sw, int sh) {
+        Minecraft mc = Minecraft.getMinecraft();
+        GuiNewChat chat = mc.ingameGUI.getChatGUI();
+        float sc = chat.getChatScale();
+        int w = (int) Math.ceil((GuiNewChat.calculateChatboxWidth(mc.gameSettings.chatWidth) + 4) * sc);
+        int h = (int) Math.ceil(GuiNewChat.calculateChatboxHeight(mc.gameSettings.chatHeightFocused) * sc);
+        int x1 = Math.max(0, Math.min(sw - w, 2 + windowX));
+        int y2 = Math.max(Math.min(h, sh), Math.min(sh, sh - 28 + windowY));
+        return new int[]{x1, y2 - h, x1 + w, y2};
+    }
+
+    /** Thanh nhập: {x1, y1, x2, y2}, đã kẹp trong màn hình. */
+    static int[] barRect(int sw, int sh) {
+        int bw = barW > 0 ? barW : sw - 4 - Math.max(0, barX);
+        bw = Math.max(60, Math.min(sw - 4, bw));
+        int x1 = Math.max(0, Math.min(sw - bw - 2, 2 + barX));
+        int y1 = Math.max(0, Math.min(sh - 13, sh - 15 + barY));
+        return new int[]{x1, y1, x1 + bw, y1 + 13};
+    }
+
+    /** Tọa độ chuột thô đã bù vị trí khung chat, để click/hover link đúng chỗ. */
+    static int rawMouseX(Minecraft mc) {
+        return Mouse.getX() - windowX * new ScaledResolution(mc).getScaleFactor();
+    }
+
+    static int rawMouseY(Minecraft mc) {
+        return Mouse.getY() + windowY * new ScaledResolution(mc).getScaleFactor();
+    }
+
     // Vẽ icon lên từng dòng chat có marker
     @SubscribeEvent
     public void onRenderChat(RenderGameOverlayEvent.Post e) {
@@ -544,7 +611,7 @@ public class ChatBarModule {
         float sc = chat.getChatScale();
 
         GlStateManager.pushMatrix();
-        GlStateManager.translate(2f, e.resolution.getScaledHeight() - 48 + 20f, 0f);
+        GlStateManager.translate(2f + windowX, e.resolution.getScaledHeight() - 48 + 20f + windowY, 0f);
         GlStateManager.scale(sc, sc, 1f);
         GlStateManager.enableBlend();
         for (int i = 0; i + scroll < lines.size() && i < chat.getLineCount(); i++) {
@@ -660,6 +727,20 @@ public class ChatBarModule {
     }
 
     public static class SettingsScreen extends GuiScreen {
+        private final GuiScreen parent;
+
+        public SettingsScreen() { this(null); }
+
+        public SettingsScreen(GuiScreen parent) { this.parent = parent; }
+
+        @Override
+        protected void keyTyped(char c, int key) throws IOException {
+            if (key == Keyboard.KEY_ESCAPE) {
+                save();
+                mc.displayGuiScreen(parent);
+            }
+        }
+
         private static final String[] LABELS = {"Chat bar", "Avatar + giường", "Dịch tiếng Việt",
                 "Tin giết người", "Chỉ tin người chơi", "Tối ưu Bedwars", "Tự ẩn tin gốc"};
 
@@ -688,7 +769,7 @@ public class ChatBarModule {
         }
 
         private int top() {
-            return Math.max(24, (height - 184) / 2);
+            return Math.max(24, (height - 206) / 2);
         }
 
         @Override
@@ -715,8 +796,13 @@ public class ChatBarModule {
             buttonList.add(new GuiOptionSlider(22, rx, y + 110, GameSettings.Options.CHAT_HEIGHT_FOCUSED));
             buttonList.add(new GuiOptionSlider(23, rx, y + 132, GameSettings.Options.CHAT_OPACITY));
 
-            buttonList.add(new GuiButton(98, lx, y + 160, 150, 20, "Mặc định"));
-            buttonList.add(new GuiButton(99, rx, y + 160, 150, 20, "Xong"));
+            // Hàng cuối: đặt vị trí bằng kéo thả + độ rộng thanh nhập
+            buttonList.add(new GuiButton(30, lx, y + 154, 150, 20, "Kéo thả vị trí chat..."));
+            buttonList.add(new ValueSlider(13, rx, y + 154, 150, "Rộng thanh (0=auto)", 0, 600, barW,
+                    new ValueSlider.Setter() { public void set(int v) { barW = v; } }));
+
+            buttonList.add(new GuiButton(98, lx, y + 182, 150, 20, "Mặc định"));
+            buttonList.add(new GuiButton(99, rx, y + 182, 150, 20, parent == null ? "Xong" : "Quay lại"));
         }
 
         @Override
@@ -728,9 +814,14 @@ public class ChatBarModule {
                 enabled = playerHeads = autoTranslate = showKills = playerOnly = bedwars = true;
                 hideOriginal = false;
                 iconSize = 8; iconX = 0; iconY = 0;
+                resetPositions();
+            } else if (b.id == 30) {
+                save();
+                mc.displayGuiScreen(new PositionScreen(this));
+                return;
             } else if (b.id == 99) {
                 save();
-                mc.displayGuiScreen(null);
+                mc.displayGuiScreen(parent);
                 return;
             }
             save();
@@ -750,6 +841,114 @@ public class ChatBarModule {
         }
     }
 
+    /** Màn hình kéo thả: kéo khung tin nhắn và thanh nhập tới bất kỳ đâu. */
+    public static class PositionScreen extends GuiScreen {
+        private final GuiScreen parent;
+        private int drag; // 0 = không kéo, 1 = khung tin nhắn, 2 = thanh nhập
+        private int startMx, startMy, startX, startY;
+
+        public PositionScreen(GuiScreen parent) { this.parent = parent; }
+
+        @Override
+        public void initGui() {
+            buttonList.clear();
+            buttonList.add(new GuiButton(1, width / 2 - 102, height / 2 + 20, 100, 20, "Mặc định"));
+            buttonList.add(new GuiButton(0, width / 2 + 2, height / 2 + 20, 100, 20, "Xong"));
+        }
+
+        @Override
+        protected void actionPerformed(GuiButton b) throws IOException {
+            if (b.id == 1) {
+                resetPositions();
+                save();
+            } else if (b.id == 0) {
+                save();
+                mc.displayGuiScreen(parent);
+            }
+        }
+
+        @Override
+        protected void keyTyped(char c, int key) throws IOException {
+            if (key == Keyboard.KEY_ESCAPE) {
+                save();
+                mc.displayGuiScreen(parent);
+            }
+        }
+
+        private static boolean in(int[] r, int x, int y) {
+            return x >= r[0] && x < r[2] && y >= r[1] && y < r[3];
+        }
+
+        @Override
+        protected void mouseClicked(int mx, int my, int btn) throws IOException {
+            if (btn == 0) {
+                int[] bar = barRect(width, height);
+                int[] win = windowRect(width, height);
+                if (in(bar, mx, my)) { drag = 2; startX = barX; startY = barY; }
+                else if (in(win, mx, my)) { drag = 1; startX = windowX; startY = windowY; }
+                if (drag != 0) { startMx = mx; startMy = my; return; }
+            }
+            super.mouseClicked(mx, my, btn);
+        }
+
+        @Override
+        protected void mouseClickMove(int mx, int my, int btn, long time) {
+            if (drag == 0) return;
+            int nx = startX + mx - startMx, ny = startY + my - startMy;
+            if (drag == 1) {
+                windowX = nx; windowY = ny;
+                int[] r = windowRect(width, height); // kẹp trong màn hình
+                windowX = r[0] - 2;
+                windowY = r[3] - (height - 28);
+            } else {
+                barX = nx; barY = ny;
+                int[] r = barRect(width, height);
+                barX = r[0] - 2;
+                barY = r[1] - (height - 15);
+            }
+        }
+
+        @Override
+        protected void mouseReleased(int mx, int my, int state) {
+            if (drag != 0) save();
+            drag = 0;
+            super.mouseReleased(mx, my, state);
+        }
+
+        @Override
+        public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+            drawDefaultBackground();
+            drawCenteredString(fontRendererObj, "Kéo khung chat và thanh nhập tới vị trí bạn muốn",
+                    width / 2, height / 2 - 12, 0xFFFFFF);
+
+            int[] win = windowRect(width, height);
+            drawRect(win[0], win[1], win[2], win[3], 0x80000000);
+            drawRect(win[0], win[1], win[2], win[1] + 1, accent);
+            drawRect(win[0], win[3] - 1, win[2], win[3], accent);
+            drawRect(win[0], win[1], win[0] + 1, win[3], accent);
+            drawRect(win[2] - 1, win[1], win[2], win[3], accent);
+            fontRendererObj.drawStringWithShadow("Khung tin nhắn", win[0] + 4, win[1] + 4, 0xFFFFFF);
+
+            int[] bar = barRect(width, height);
+            roundRect(bar[0] - 1, bar[1] - 1, bar[2] + 1, bar[3] + 1, accent);
+            roundRect(bar[0], bar[1], bar[2], bar[3], background);
+            fontRendererObj.drawStringWithShadow("Thanh nhập", bar[0] + 4, bar[1] + 3, 0xFFAAAAAA);
+
+            super.drawScreen(mouseX, mouseY, partialTicks);
+        }
+
+        @Override
+        public boolean doesGuiPauseGame() {
+            return false;
+        }
+    }
+
+    static void roundRect(int x1, int y1, int x2, int y2, int color) {
+        Gui.drawRect(x1 + 2, y1, x2 - 2, y2, color);
+        Gui.drawRect(x1 + 1, y1 + 1, x2 - 1, y2 - 1, color);
+        Gui.drawRect(x1, y1 + 2, x2, y2 - 2, color);
+    }
+
     // ===== GUI =====
     public static class FancyChat extends GuiChat {
         private long openTime;
@@ -761,7 +960,26 @@ public class ChatBarModule {
         @Override
         public void initGui() {
             super.initGui();
+            // dựng lại ô nhập theo vị trí/độ rộng người dùng chọn
+            String t = inputField.getText();
+            int[] r = barRect(width, height);
+            inputField = new GuiTextField(0, fontRendererObj, r[0] + 3, r[1] + 3,
+                    r[2] - r[0] - 6 - (charCounter ? 36 : 0), 12);
+            inputField.setMaxStringLength(100);
+            inputField.setEnableBackgroundDrawing(false);
+            inputField.setFocused(true);
+            inputField.setText(t);
+            inputField.setCanLoseFocus(false);
             openTime = System.currentTimeMillis();
+        }
+
+        @Override
+        protected void mouseClicked(int mx, int my, int btn) throws IOException {
+            if (btn == 0) {
+                IChatComponent c = mc.ingameGUI.getChatGUI().getChatComponent(rawMouseX(mc), rawMouseY(mc));
+                if (handleComponentClick(c)) return;
+            }
+            inputField.mouseClicked(mx, my, btn);
         }
 
         private float progress() {
@@ -785,8 +1003,9 @@ public class ChatBarModule {
             float p = progress();
             float offset = (1f - p) * 16f;
 
-            int x1 = 2, x2 = width - 2;
-            int y1 = height - 15, y2 = height - 2;
+            int[] r = barRect(width, height);
+            int x1 = r[0], x2 = r[2];
+            int y1 = r[1], y2 = r[3];
 
             GlStateManager.pushMatrix();
             GlStateManager.translate(0, offset, 0);
@@ -810,7 +1029,7 @@ public class ChatBarModule {
             GlStateManager.popMatrix();
 
             // hover component (link, item...)
-            IChatComponent comp = mc.ingameGUI.getChatGUI().getChatComponent(Mouse.getX(), Mouse.getY());
+            IChatComponent comp = mc.ingameGUI.getChatGUI().getChatComponent(rawMouseX(mc), rawMouseY(mc));
             if (comp != null && comp.getChatStyle().getChatHoverEvent() != null) {
                 handleComponentHover(comp, mouseX, mouseY);
             }
