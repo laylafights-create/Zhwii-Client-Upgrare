@@ -21,10 +21,10 @@ import org.lwjgl.opengl.GL11;
 
 /**
  * Vệt chém sáng. Chế độ "On Hit": mỗi lần chém trúng kẻ địch sẽ quét ra vài vệt chém cong (có lõi sáng + hào quang)
- * ngay tại mục tiêu. Chế độ "On Swing": vệt sáng theo đường vung tay. Chỉ hiển thị, không ảnh hưởng gameplay.
+ * ngay tại mục tiêu. Chỉ kích hoạt khi nhận sự kiện đánh trúng; hiệu ứng chỉ mang tính hiển thị.
  */
 public class SwordTrailModule extends Module {
-    private final ModeSetting trigger = add(new ModeSetting("trigger", "Trigger", 0, "On Hit", "On Swing"));
+    private final ModeSetting trigger = add(new ModeSetting("trigger", "Trigger", 0, "On Hit"));
     private final ColorSetting color = add(new ColorSetting("color", "Color", 0x55FFFF));
     private final SliderSetting length = add(new SliderSetting("length", "Trail Length", 380, 100, 1500, 50, " ms"));
     private final SliderSetting opacity = add(new SliderSetting("opacity", "Opacity", 90, 10, 100, 5, "%"));
@@ -87,7 +87,7 @@ public class SwordTrailModule extends Module {
     private final Random rng = new Random();
 
     public SwordTrailModule() {
-        super("swordtrail", "Sword Trail", "Vệt chém sáng khi đánh trúng kẻ địch (hoặc theo đường vung tay).", Category.EFFECT, true);
+        super("swordtrail", "Sword Trail", "Vệt kiếm cong, chớp sáng và bụi phát sáng khi đánh trúng mục tiêu.", Category.EFFECT, true);
         new RainbowSettings(this);
     }
 
@@ -120,14 +120,14 @@ public class SwordTrailModule extends Module {
             spawnSparks(cx, cy, cz, rx * bca + ux * bsa, uy * bsa, rz * bca + uz * bsa, -vx, -vy, -vz);
         }
         if (!trigger.is("On Hit")) return;
-        // một vệt chém THẲNG mỗi lần đánh, góc ngẫu nhiên nhưng hợp lý
+        // A curved, tapered slash sweeps across the target on confirmed hit.
         double ang = Math.toRadians(base);
         double ca = Math.cos(ang), sa = Math.sin(ang);
         double dx = rx * ca + ux * sa, dy = uy * sa, dz = rz * ca + uz * sa;
         double nx = -rx * sa + ux * ca, ny = uy * ca, nz = -rz * sa + uz * ca;
         double off = (rng.nextDouble() - 0.5) * 0.2;
         slashes.add(new Slash(cx + nx * off, cy + ny * off, cz + nz * off, dx, dy, dz, nx, ny, nz,
-                0.0, size.get() * (0.9 + rng.nextDouble() * 0.2), nowMs, 0f));
+                0.24 + rng.nextDouble() * 0.10, size.get() * (0.9 + rng.nextDouble() * 0.2), nowMs, 0f));
     }
 
     private int lastSign = 1;
@@ -155,15 +155,18 @@ public class SwordTrailModule extends Module {
             if (i % 2 == 0) { // dọc đường chém, hai chiều
                 double sg = rng.nextBoolean() ? 1 : -1;
                 vx = ax * sg + rng.nextGaussian() * 0.25; vy = ay * sg + rng.nextGaussian() * 0.25; vz = az * sg + rng.nextGaussian() * 0.25;
-                speed = 3.0 + rng.nextDouble() * 4.0;
+                speed = 2.2 + rng.nextDouble() * 3.8;
             } else {
-                vx = rng.nextGaussian() + bx * 0.7; vy = rng.nextGaussian() * 0.8 + 0.3 + by * 0.7; vz = rng.nextGaussian() + bz * 0.7;
-                speed = 1.2 + rng.nextDouble() * 3.0;
+                // Softer, slower motes create a dust-like halo around the bright impact.
+                vx = rng.nextGaussian() * 0.72 + bx * 0.45;
+                vy = rng.nextGaussian() * 0.62 + 0.18 + by * 0.45;
+                vz = rng.nextGaussian() * 0.72 + bz * 0.45;
+                speed = 0.65 + rng.nextDouble() * 1.9;
             }
             double l = Math.sqrt(vx * vx + vy * vy + vz * vz) + 1.0E-6;
             double k = speed / l;
             sparkList.add(new Spark(cx, cy, cz, vx * k, vy * k, vz * k, now,
-                    380f + rng.nextFloat() * 380f, 0.5f + rng.nextFloat() * 0.7f, i * 23f));
+                    300f + rng.nextFloat() * 420f, 0.35f + rng.nextFloat() * 0.65f, i * 23f));
         }
     }
 
@@ -175,8 +178,8 @@ public class SwordTrailModule extends Module {
         if (!enabled || p == null || cam == null || mc.theWorld == null) { pts.clear(); slashes.clear(); sparkList.clear(); flashes.clear(); return; }
 
         long now = System.currentTimeMillis();
-        if (trigger.is("On Swing")) recordSwing(p, pt, now);
-        else pts.clear();
+        // VCraft-style impact effect: emit only from onAttack(), never from a normal swing.
+        pts.clear();
 
         float len = length.getFloat();
         Iterator<Pt> it = pts.iterator();
@@ -187,7 +190,7 @@ public class SwordTrailModule extends Module {
         while (ki.hasNext()) { Spark k = ki.next(); if (now - k.t > k.life) ki.remove(); }
         Iterator<Flash> fi = flashes.iterator();
         while (fi.hasNext()) if (now - fi.next().t > FLASH_MS) fi.remove();
-        if (pts.size() < 2 && slashes.isEmpty() && sparkList.isEmpty() && flashes.isEmpty()) return;
+        if (slashes.isEmpty() && sparkList.isEmpty() && flashes.isEmpty()) return;
 
         double cx = EffectUtil.lerp(cam.lastTickPosX, cam.posX, pt);
         double cy = EffectUtil.lerp(cam.lastTickPosY, cam.posY, pt);
@@ -200,7 +203,6 @@ public class SwordTrailModule extends Module {
         GlStateManager.disableCull();
         GlStateManager.depthMask(false);
 
-        if (pts.size() >= 2) drawSwing(now, len, cx, cy, cz);
         for (Slash s : slashes) drawSlash(s, now, len, cx, cy, cz);
         if (!flashes.isEmpty() || !sparkList.isEmpty()) drawImpact(now, cx, cy, cz);
         GL11.glLineWidth(1f);
@@ -219,23 +221,32 @@ public class SwordTrailModule extends Module {
         float age = now - s.t;
         if (age < 0f) return;
         float k = Math.min(1f, age / SWEEP_MS);
-        float head = -1f + 2f * (1f - (1f - k) * (1f - k));            // đầu vệt lao nhanh rồi chậm lại
-        float tail = age > SWEEP_MS ? -1f + 2f * Math.min(1f, (age - SWEEP_MS) / Math.max(1f, len - SWEEP_MS)) : -1f;
+        // Quét nhanh ở đầu, giảm tốc mượt ở cuối; phần đuôi rút dần.
+        float head = -1f + 2f * (1f - (1f - k) * (1f - k));
+        float tail = age > SWEEP_MS
+                ? -1f + 2f * Math.min(1f, (age - SWEEP_MS) / Math.max(1f, len - SWEEP_MS))
+                : -1f;
         if (head - tail < 0.02f) return;
         float rest = age > SWEEP_MS ? (age - SWEEP_MS) / Math.max(1f, len - SWEEP_MS) : 0f;
-        float fade = 1f - rest * rest * 0.85f;                          // giữ sáng lâu hơn rồi tắt dần mượt
+        float fade = (1f - rest) * (1f - rest);
         float maxA = opacity.getFloat() / 100f * fade;
         double half = 1.35 * s.scale;
-        double thick = 0.22 * s.scale;
+        double thick = 0.20 * s.scale;
 
         int c = rainbow.resolve(color.rgb(), s.hue);
         int r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
-        // lõi: trộn màu về phía trắng
-        int lr = r + (255 - r) * 3 / 4, lg = g + (255 - g) * 3 / 4, lb = b + (255 - b) * 3 / 4;
+        // Lõi gần trắng tạo cảm giác bloom như hiệu ứng chém fantasy.
+        int lr = r + (255 - r) * 4 / 5;
+        int lg = g + (255 - g) * 4 / 5;
+        int lb = b + (255 - b) * 4 / 5;
 
-        if (glow.value) strip(s, tail, head, half, thick * 2.4, r, g, b, maxA * 0.32f, cx, cy, cz);
-        strip(s, tail, head, half, thick, r, g, b, maxA * 0.9f, cx, cy, cz);
-        strip(s, tail, head, half, thick * 0.38, lr, lg, lb, maxA, cx, cy, cz);
+        if (glow.value) {
+            strip(s, tail, head, half * 1.04, thick * 3.8, r, g, b, maxA * 0.13f, cx, cy, cz);
+            strip(s, tail, head, half, thick * 2.2, r, g, b, maxA * 0.28f, cx, cy, cz);
+        }
+        // Dải màu chính và đường lõi sáng mảnh ở giữa.
+        strip(s, tail, head, half, thick, r, g, b, maxA * 0.82f, cx, cy, cz);
+        strip(s, tail, head, half * 0.985, thick * 0.30, lr, lg, lb, maxA, cx, cy, cz);
     }
 
     /** Vẽ dải cong từ u = from đến u = to; nhọn ở hai đầu, đuôi mờ dần, đầu sáng nhất. */
@@ -331,7 +342,7 @@ public class SwordTrailModule extends Module {
         tess.draw();
     }
 
-    // ---------------------------------------------------------------- vệt theo đường vung tay (On Swing)
+    // ---------------------------------------------------------------- legacy swing helpers (not called in hit-only mode)
 
     private void recordSwing(EntityPlayer p, float pt, long now) {
         boolean fp = Minecraft.getMinecraft().gameSettings.thirdPersonView == 0;
