@@ -4,6 +4,9 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonParser;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.ChatLine;
+import net.minecraft.command.CommandBase;
+import net.minecraft.command.CommandException;
+import net.minecraft.command.ICommandSender;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.GuiChat;
 import net.minecraft.client.gui.GuiNewChat;
@@ -19,9 +22,11 @@ import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.ChatComponentTranslation;
 import net.minecraft.util.EnumChatFormatting;
 import net.minecraft.util.IChatComponent;
+import net.minecraftforge.client.ClientCommandHandler;
 import net.minecraftforge.client.event.ClientChatReceivedEvent;
 import net.minecraftforge.client.event.GuiOpenEvent;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
+import net.minecraftforge.event.world.WorldEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.relauncher.ReflectionHelper;
@@ -33,11 +38,11 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
-import java.text.SimpleDateFormat;
-import java.util.Date;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
@@ -49,7 +54,7 @@ import java.util.regex.Pattern;
  * - Thanh chat bo góc, nền mờ, viền màu accent
  * - Hiệu ứng trượt lên + fade khi mở chat
  * - Bộ đếm ký tự (x/100)
- * - Timestamp [HH:mm] trước mỗi tin nhắn
+ * - Tối ưu Bedwars: giữ tin sự kiện quan trọng, avatar + giường màu team, giường bị phá thì giường xám
  *
  * Đăng ký: new ChatBarModule().register();
  */
@@ -57,19 +62,47 @@ public class ChatBarModule {
 
     // ===== Cấu hình =====
     public static boolean enabled = true;
-    public static boolean timestamps = true;
+    public static boolean bedwars = true;      // giữ tin sự kiện Bedwars (phá giường, final kill...) khi playerOnly
     public static boolean charCounter = true;
     public static boolean playerHeads = true;  // avatar + giường màu team trước tin nhắn
+    public static int iconSize = 8;            // kích thước avatar (px), 6..14
+    public static int iconX = 0;               // dịch icon ngang (px)
+    public static int iconY = 0;               // dịch icon dọc (px, âm = lên)
     public static boolean autoTranslate = true; // tự dịch tin người chơi sang tiếng Việt
     public static String translateTo = "vi";
     public static boolean playerOnly = true;   // chỉ hiện tin người chơi, chặn tin hệ thống
     public static int accent = 0xFF55AAFF;     // ARGB
     public static int background = 0x90000000; // ARGB
 
-    private static final SimpleDateFormat TIME = new SimpleDateFormat("HH:mm");
-
     public void register() {
         MinecraftForge.EVENT_BUS.register(this);
+        ClientCommandHandler.instance.registerCommand(new CommandBase() {
+            @Override public String getCommandName() { return "chatbar"; }
+            @Override public String getCommandUsage(ICommandSender s) { return "/chatbar <size|x|y> <số> | reset"; }
+            @Override public int getRequiredPermissionLevel() { return 0; }
+            @Override public boolean canCommandSenderUseCommand(ICommandSender s) { return true; }
+            @Override public void processCommand(ICommandSender s, String[] a) throws CommandException {
+                String msg;
+                try {
+                    if (a.length == 1 && a[0].equalsIgnoreCase("reset")) {
+                        iconSize = 8; iconX = 0; iconY = 0;
+                        msg = "Đã reset icon chat.";
+                    } else if (a.length == 2) {
+                        int v = Integer.parseInt(a[1]);
+                        if (a[0].equalsIgnoreCase("size")) iconSize = Math.max(6, Math.min(14, v));
+                        else if (a[0].equalsIgnoreCase("x")) iconX = Math.max(-20, Math.min(20, v));
+                        else if (a[0].equalsIgnoreCase("y")) iconY = Math.max(-10, Math.min(10, v));
+                        else { s.addChatMessage(new ChatComponentText(getCommandUsage(s))); return; }
+                        msg = "size=" + iconSize + " x=" + iconX + " y=" + iconY + " (áp dụng cho tin mới)";
+                    } else {
+                        msg = getCommandUsage(s);
+                    }
+                } catch (NumberFormatException ex) {
+                    msg = getCommandUsage(s);
+                }
+                s.addChatMessage(new ChatComponentText(EnumChatFormatting.AQUA + msg));
+            }
+        });
     }
 
     // Thay GuiChat mặc định bằng GuiChat của module
@@ -179,7 +212,7 @@ public class ChatBarModule {
                         @Override public void run() {
                             if (m.thePlayer == null) return;
                             m.thePlayer.addChatMessage(new ChatComponentText(
-                                    (playerHeads ? ICON_SPACE : "") + EnumChatFormatting.AQUA + "[VI] "
+                                    (playerHeads ? iconSpace() : "") + EnumChatFormatting.AQUA + "[VI] "
                                             + EnumChatFormatting.GRAY + r[0]));
                         }
                     });
@@ -190,10 +223,58 @@ public class ChatBarModule {
         });
     }
 
+    // ===== Bedwars =====
+    private static final Pattern BED_BROKEN = Pattern.compile("BED DESTRUCTION\\s*>\\s*(\\w+) Bed");
+    private static final Pattern TEAM_TAG = Pattern.compile("\\[(RED|BLUE|GREEN|YELLOW|AQUA|WHITE|PINK|GRAY)\\]");
+    /** Tin hệ thống được giữ lại khi playerOnly bật. Thêm/bớt từ khóa tại đây. */
+    private static final Pattern BW_EVENT = Pattern.compile(
+            "BED DESTRUCTION|FINAL KILL|TEAM ELIMINATED|has been eliminated|You have been eliminated"
+                    + "|Protect your bed|The game starts in|Victory|Your bed was");
+    private static final Set<Integer> DEAD_BEDS = new HashSet<Integer>(); // màu RGB của team đã mất giường
+
+    private static int colorByName(String n) {
+        if (n.equals("RED")) return MC_COLORS[12];
+        if (n.equals("BLUE")) return MC_COLORS[9];
+        if (n.equals("GREEN")) return MC_COLORS[10];
+        if (n.equals("YELLOW")) return MC_COLORS[14];
+        if (n.equals("AQUA")) return MC_COLORS[11];
+        if (n.equals("WHITE")) return MC_COLORS[15];
+        if (n.equals("PINK")) return MC_COLORS[13];
+        if (n.equals("GRAY")) return MC_COLORS[8];
+        return -1;
+    }
+
+    private static void trackBeds(String plain) {
+        Matcher m = BED_BROKEN.matcher(plain);
+        if (!m.find()) return;
+        String t = m.group(1);
+        int c;
+        if (t.equalsIgnoreCase("Your")) {
+            Minecraft mc = Minecraft.getMinecraft();
+            NetworkPlayerInfo me = mc.thePlayer == null || mc.getNetHandler() == null
+                    ? null : mc.getNetHandler().getPlayerInfo(mc.thePlayer.getName());
+            c = me == null ? -1 : teamColor(me);
+        } else {
+            c = colorByName(t.toUpperCase());
+        }
+        if (c != -1) DEAD_BEDS.add(c);
+    }
+
+    @SubscribeEvent
+    public void onWorldLoad(WorldEvent.Load e) {
+        DEAD_BEDS.clear(); // sang ván mới
+    }
+
     // ===== Avatar + giường =====
     private static final String S = "\u00A7";
     private static final String SENT = S + "r" + S + "r" + S + "r";
-    private static final String ICON_SPACE = "     "; // 5 dấu cách = 20px chừa chỗ cho icon
+    /** Chừa chỗ cho icon: đầu + bed + khoảng cách, mỗi dấu cách rộng 4px. */
+    private static String iconSpace() {
+        int w = iconSize + 2 + (int) Math.ceil(9 * iconSize / 8f) + 1;
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < (w + 3) / 4; i++) sb.append(' ');
+        return sb.toString();
+    }
     private static final int[] MC_COLORS = {
             0x000000, 0x0000AA, 0x00AA00, 0x00AAAA, 0xAA0000, 0xAA00AA, 0xFFAA00, 0xAAAAAA,
             0x555555, 0x5555FF, 0x55FF55, 0x55FFFF, 0xFF5555, 0xFF55FF, 0xFFFF55, 0xFFFFFF};
@@ -222,20 +303,28 @@ public class ChatBarModule {
     }
 
     /** Tạo marker ẩn (chỉ gồm mã màu, rộng 0px) + khoảng trống cho icon. */
-    private static String makeMarker(String name) {
+    private static String makeMarker(String name, String plain) {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.getNetHandler() == null) return "";
         NetworkPlayerInfo info = mc.getNetHandler().getPlayerInfo(name);
         if (info == null) return "";
         int id = nextId++ & 0xFFF;
-        ICONS.put(id, new Icon(name, teamColor(info)));
+        int color = teamColor(info);
+        if (color == -1) { // chưa có team scoreboard: lấy từ tag [RED]/[BLUE]... trong tin
+            Matcher tm = TEAM_TAG.matcher(plain);
+            if (tm.find()) color = colorByName(tm.group(1));
+        }
+        ICONS.put(id, new Icon(name, color));
         String h = String.format("%03x", id);
-        return SENT + S + h.charAt(0) + S + h.charAt(1) + S + h.charAt(2) + S + "r" + ICON_SPACE;
+        return SENT + S + h.charAt(0) + S + h.charAt(1) + S + h.charAt(2) + S + "r" + iconSpace();
     }
 
     private static Icon decode(String s) {
-        int p = SENT.length();
-        if (!s.startsWith(SENT) || s.length() < p + 6) return null;
+        // getFormattedText() của dòng chat có thể mở đầu bằng "§r" (component rỗng) -> tìm marker trong vài ký tự đầu
+        int i = s.indexOf(SENT);
+        if (i < 0 || i > 8) return null;
+        int p = i + SENT.length();
+        if (s.length() < p + 6) return null;
         try {
             return ICONS.get(Integer.parseInt("" + s.charAt(p + 1) + s.charAt(p + 3) + s.charAt(p + 5), 16));
         } catch (NumberFormatException ex) {
@@ -245,18 +334,26 @@ public class ChatBarModule {
 
     private static void drawIcon(Minecraft mc, Icon ic, int y, int a) {
         NetworkPlayerInfo info = mc.getNetHandler().getPlayerInfo(ic.name);
+        int sz = iconSize;
+        int top = y - 8 + (8 - sz) / 2 + iconY;
         GlStateManager.enableTexture2D();
         GlStateManager.color(1f, 1f, 1f, a / 255f);
         if (info != null) {
             mc.getTextureManager().bindTexture(info.getLocationSkin());
-            Gui.drawScaledCustomSizeModalRect(0, y - 8, 8f, 8f, 8, 8, 8, 8, 64f, 64f);   // mặt
-            Gui.drawScaledCustomSizeModalRect(0, y - 8, 40f, 8f, 8, 8, 8, 8, 64f, 64f);  // lớp mũ
+            Gui.drawScaledCustomSizeModalRect(iconX, top, 8f, 8f, 8, 8, sz, sz, 64f, 64f);   // mặt
+            Gui.drawScaledCustomSizeModalRect(iconX, top, 40f, 8f, 8, 8, sz, sz, 64f, 64f);  // lớp mũ
         }
         if (ic.color != -1) {
-            int x = 10, t = y - 7, al = a << 24;
-            Gui.drawRect(x, t + 2, x + 9, t + 6, al | 0x8B5A2B);        // khung gỗ
-            Gui.drawRect(x + 3, t + 1, x + 9, t + 4, al | ic.color);    // chăn màu team
-            Gui.drawRect(x, t + 1, x + 3, t + 3, al | 0xFFFFFF);        // gối
+            float k = sz / 8f;
+            int al = a << 24;
+            GlStateManager.pushMatrix();
+            GlStateManager.translate(iconX + sz + 2, top + sz / 2f - 3f * k, 0f);
+            GlStateManager.scale(k, k, 1f);
+            boolean dead = DEAD_BEDS.contains(ic.color);
+            Gui.drawRect(0, 2, 9, 6, al | (dead ? 0x444444 : 0x8B5A2B));   // khung gỗ
+            Gui.drawRect(3, 1, 9, 4, al | (dead ? 0x777777 : ic.color));   // chăn: xám nếu mất giường
+            Gui.drawRect(0, 1, 3, 3, al | (dead ? 0x999999 : 0xFFFFFF));   // gối
+            GlStateManager.popMatrix();
         }
         GlStateManager.color(1f, 1f, 1f, 1f);
     }
@@ -302,28 +399,28 @@ public class ChatBarModule {
         GlStateManager.popMatrix();
     }
 
-    // Lọc tin hệ thống + timestamp + marker icon
+    // Lọc tin hệ thống (giữ sự kiện Bedwars) + marker icon
     @SubscribeEvent
     public void onChat(ClientChatReceivedEvent e) {
         if (!enabled || e.type == 2) return; // 2 = action bar, giữ nguyên
 
+        String plain = EnumChatFormatting.getTextWithoutFormattingCodes(e.message.getUnformattedText());
+        if (plain == null) plain = "";
+        if (bedwars) trackBeds(plain);
+
         String[] pc = parsePlayerChat(e);
         String name = pc == null ? null : pc[0];
-        if (playerOnly && name == null) {
+        if (playerOnly && name == null && !(bedwars && BW_EVENT.matcher(plain).find())) {
             e.setCanceled(true);
             return;
         }
 
         if (autoTranslate && pc != null) requestTranslate(pc[0], pc[1]);
 
-        String marker = (playerHeads && name != null) ? makeMarker(name) : "";
-        if (marker.isEmpty() && !timestamps) return;
+        String marker = (playerHeads && name != null) ? makeMarker(name, plain) : "";
+        if (marker.isEmpty()) return;
 
         IChatComponent root = new ChatComponentText(marker);
-        if (timestamps) {
-            root.appendSibling(new ChatComponentText(
-                    EnumChatFormatting.GRAY + "[" + TIME.format(new Date()) + "] " + EnumChatFormatting.RESET));
-        }
         root.appendSibling(e.message);
         e.message = root;
     }
