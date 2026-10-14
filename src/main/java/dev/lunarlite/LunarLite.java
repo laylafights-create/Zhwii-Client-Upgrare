@@ -47,6 +47,7 @@ public class LunarLite {
     public static BowTrajectoryModule BOW_TRAJECTORY;
     public static AnimationsModule ANIM;
     public static HotbarAnimationModule HOTBAR;
+    public static ChatBarModule CHAT_BAR;
 
     private static Configuration config;
 
@@ -65,6 +66,7 @@ public class LunarLite {
         BOW_TRAJECTORY = new BowTrajectoryModule();
         ANIM = new AnimationsModule();
         HOTBAR = new HotbarAnimationModule();
+        CHAT_BAR = new ChatBarModule();
 
         // PvP / HUD
         MODULES.add(new FpsModule());
@@ -90,6 +92,7 @@ public class LunarLite {
         MODULES.add(new ItemPhysicsModule());
         MODULES.add(ANIM);
         MODULES.add(HOTBAR);
+        MODULES.add(CHAT_BAR);
         MODULES.add(new ThemeModule());
 
         config.load();
@@ -103,8 +106,8 @@ public class LunarLite {
         ClientRegistry.registerKeyBinding(keyZoom);
         ClientRegistry.registerKeyBinding(keyAim);
 
-        // Chat bar: chỉ tin người chơi + avatar/giường team + tự dịch tiếng Việt
-        new ChatBarModule().register();
+        // Chat bar: chỉ tin người chơi + avatar/giường team + tự dịch tiếng Việt (cài đặt nằm trong menu)
+        CHAT_BAR.register();
 
         MinecraftForge.EVENT_BUS.register(this);
         FMLCommonHandler.instance().bus().register(this);
