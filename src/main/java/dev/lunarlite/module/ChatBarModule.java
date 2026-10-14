@@ -122,7 +122,6 @@ public class ChatBarModule extends Module {
         add(SHOW_KILLS, SEC_CHAT);
         add(AUTO_TRANSLATE, SEC_CHAT);
         add(TRANSLATE_OUT, SEC_CHAT);
-        add(SHOW_OUT_ECHO, SEC_CHAT, TRANSLATE_OUT);
         add(HIDE_ORIGINAL, SEC_CHAT, AUTO_TRANSLATE);
         add(CHAR_COUNTER, SEC_BAR);
         add(BAR_BORDER, SEC_BAR);
@@ -369,7 +368,6 @@ public class ChatBarModule extends Module {
                 final String translated = translateOut(text);
                 final boolean ok = translated != null;
                 final List<String> parts = splitChat(ok ? translated : text);
-                final boolean echo = ok && SHOW_OUT_ECHO.value && !translated.equalsIgnoreCase(text);
                 final Minecraft m = Minecraft.getMinecraft();
                 for (int i = 0; i < parts.size(); i++) {
                     final String send = parts.get(i);
@@ -378,11 +376,6 @@ public class ChatBarModule extends Module {
                         @Override public void run() {
                             if (m.thePlayer == null) return;
                             m.thePlayer.sendChatMessage(send);
-                            if (echo && last) {
-                                m.thePlayer.addChatMessage(new ChatComponentText(EnumChatFormatting.AQUA + "[EN] "
-                                        + EnumChatFormatting.GRAY + "Đã gửi: " + EnumChatFormatting.WHITE
-                                        + (translated.length() > 300 ? translated.substring(0, 300) : translated)));
-                            }
                         }
                     });
                     if (!last) {
@@ -908,13 +901,24 @@ public class ChatBarModule extends Module {
         return new int[]{x1, y2 - h, x1 + w, y2};
     }
 
+    static final String TOG_LABEL = "VI>EN";
+
+    /** Bề rộng nút VI>EN (nằm ngoài thanh nhập, bên phải). */
+    static int togBtnW() {
+        return Minecraft.getMinecraft().fontRendererObj.getStringWidth(TOG_LABEL) + 10;
+    }
+
+    /** Chỗ chừa bên phải thanh nhập: nút + khoảng cách 4px. */
+    static int togReserve() { return togBtnW() + 4; }
+
     static final int BAR_H = 16, BAR_BASE = 18; // cao thanh nhập / mốc mặc định cách đáy màn hình
 
     /** Thanh nhập: {x1, y1, x2, y2}, đã kẹp trong màn hình. */
     static int[] barRect(int sw, int sh) {
-        int bw = BAR_WIDTH.getInt() > 0 ? BAR_WIDTH.getInt() : sw - 4 - Math.max(0, barX);
-        bw = Math.max(60, Math.min(sw - 4, bw));
-        int x1 = Math.max(0, Math.min(sw - bw - 2, 2 + barX));
+        int rs = togReserve(); // chừa chỗ bên phải thanh cho nút VI>EN
+        int bw = BAR_WIDTH.getInt() > 0 ? BAR_WIDTH.getInt() : sw - 4 - rs - Math.max(0, barX);
+        bw = Math.max(140, Math.min(sw - 4 - rs, bw));
+        int x1 = Math.max(0, Math.min(sw - bw - 2 - rs, 2 + barX));
         int y1 = Math.max(0, Math.min(sh - BAR_H, sh - BAR_BASE + barY));
         return new int[]{x1, y1, x1 + bw, y1 + BAR_H};
     }
@@ -1319,7 +1323,7 @@ public class ChatBarModule extends Module {
             String t = inputField.getText();
             int[] r = barRect(width, height);
             inputField = new GuiTextField(0, fontRendererObj, r[0] + 18, r[1] + 4,
-                    r[2] - r[0] - 22 - (CHAR_COUNTER.value ? 48 : 0) - togW() - 4, 12);
+                    r[2] - r[0] - 22 - (CHAR_COUNTER.value ? 48 : 0) - 4, 12);
             inputField.setMaxStringLength(100);
             inputField.setEnableBackgroundDrawing(false);
             inputField.setFocused(true);
@@ -1344,14 +1348,9 @@ public class ChatBarModule extends Module {
         }
 
         // Nút bật/tắt dịch tin gửi đi, nằm ngay trên thanh nhập (bên trái bộ đếm ký tự)
-        private static final String TOG_LABEL = "VI>EN";
-
-        private int togW() { return fontRendererObj.getStringWidth(TOG_LABEL) + 8; }
-
         private int[] toggleRect() {
             int[] r = barRect(width, height);
-            int right = r[2] - 5 - (CHAR_COUNTER.value ? fontRendererObj.getStringWidth("100/100") + 8 + 3 : 0);
-            return new int[]{right - togW(), r[1] + 3, right, r[3] - 3};
+            return new int[]{r[2] + 4, r[1], r[2] + 4 + togBtnW(), r[3]};
         }
 
         @Override
@@ -1406,8 +1405,14 @@ public class ChatBarModule extends Module {
             // ô nhập (+ chữ gợi ý khi còn trống)
             inputField.drawTextBox();
             if (inputField.getText().isEmpty()) {
-                fontRendererObj.drawStringWithShadow(TRANSLATE_OUT.value ? "Gõ tiếng Việt, tự dịch sang tiếng Anh..." : "Nhập tin nhắn...",
-                        x1 + 18, y1 + 4, mulA(0xFFFFFFFF, 0.32f * p));
+                String hint = TRANSLATE_OUT.value ? "Gõ tiếng Việt, tự dịch sang tiếng Anh..." : "Nhập tin nhắn...";
+                int hx = x1 + 18;
+                int maxW = x2 - 5 - (CHAR_COUNTER.value ? fontRendererObj.getStringWidth("100/100") + 8 + 3 : 0) - hx;
+                if (fontRendererObj.getStringWidth(hint) > maxW) {
+                    int dotsW = fontRendererObj.getStringWidth("...");
+                    hint = maxW > dotsW ? fontRendererObj.trimStringToWidth(hint, maxW - dotsW) + "..." : "";
+                }
+                if (!hint.isEmpty()) fontRendererObj.drawStringWithShadow(hint, hx, y1 + 4, mulA(0xFFFFFFFF, 0.32f * p));
             }
 
             // nút VI>EN: xanh = đang dịch tin gửi, xám = tắt
@@ -1415,8 +1420,9 @@ public class ChatBarModule extends Module {
             boolean on = TRANSLATE_OUT.value;
             boolean hov = mouseX >= tg[0] && mouseX < tg[2] && mouseY >= tg[1] && mouseY < tg[3];
             int tcol = on ? 0xFF55FF88 : 0xFF7A8499;
-            dev.lunarlite.gui.Draw.rrect(tg[0], tg[1], tg[2], tg[3], 4, mulA(0xFF000000 | (tcol & 0xFFFFFF), (hov ? 0.30f : 0.16f) * p));
-            fontRendererObj.drawStringWithShadow(TOG_LABEL, tg[0] + 4, tg[1] + 1, mulA(tcol, p));
+            if (!HIDE_BAR_BACKGROUND.value) dev.lunarlite.gui.Draw.rrect(tg[0], tg[1], tg[2], tg[3], 4, mulA(0xFF000000, 0.45f * p));
+            dev.lunarlite.gui.Draw.rrect(tg[0], tg[1], tg[2], tg[3], 4, mulA(0xFF000000 | (tcol & 0xFFFFFF), (hov ? 0.35f : 0.20f) * p));
+            fontRendererObj.drawStringWithShadow(TOG_LABEL, tg[0] + 5, tg[1] + 4, mulA(tcol, p));
 
             // bộ đếm ký tự (viên thuốc màu theo mức) + vạch tiến độ ở đáy thanh
             if (CHAR_COUNTER.value) {
@@ -1434,13 +1440,6 @@ public class ChatBarModule extends Module {
             }
 
             GlStateManager.popMatrix();
-
-            if (hov) {
-                List<String> tip = new ArrayList<String>();
-                tip.add("Dịch tin gửi sang tiếng Anh: " + (on ? EnumChatFormatting.GREEN + "BẬT" : EnumChatFormatting.RED + "TẮT"));
-                tip.add(EnumChatFormatting.GRAY + "Bấm để " + (on ? "tắt" : "bật"));
-                drawHoveringText(tip, mouseX, mouseY);
-            }
 
             // hover component (link, item...)
             IChatComponent comp = mc.ingameGUI.getChatGUI().getChatComponent(rawMouseX(mc), rawMouseY(mc));
