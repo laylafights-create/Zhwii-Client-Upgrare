@@ -127,6 +127,9 @@ jobs:
         run: |
           set -euo pipefail
 
+          # ForgeGradle 2.1 cần chuẩn bị workspace trước khi build, nếu không sẽ lỗi thiếu Minecraft/Forge.
+          gradle --no-daemon --stacktrace setupCIWorkspace
+
           if [ "$CLEAN_BUILD" = "true" ] && [ "$BUILD_TASK" != "clean" ]; then
             gradle --no-daemon --stacktrace clean
           fi
