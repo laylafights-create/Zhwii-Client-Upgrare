@@ -20,8 +20,8 @@ import net.minecraft.entity.player.EntityPlayer;
 import org.lwjgl.opengl.GL11;
 
 /**
- * Vệt chém sáng. Chế độ "On Hit": mỗi lần chém trúng kẻ địch sẽ quét ra vài vệt chém cong (có lõi sáng + hào quang)
- * ngay tại mục tiêu. Chỉ kích hoạt khi nhận sự kiện đánh trúng; hiệu ứng chỉ mang tính hiển thị.
+ * Vệt chém sáng thẳng. Chế độ "On Hit": khi đánh trúng kẻ địch, vệt chém hiện ở mặt trước mục tiêu, hướng về phía người chơi.
+ * Chỉ kích hoạt khi nhận sự kiện đánh trúng; hiệu ứng chỉ mang tính hiển thị.
  */
 public class SwordTrailModule extends Module {
     private final ModeSetting trigger = add(new ModeSetting("trigger", "Trigger", 0, "On Hit"));
@@ -45,7 +45,7 @@ public class SwordTrailModule extends Module {
         }
     }
 
-    /** Một vệt chém cong tại mục tiêu: tâm c, trục d (hướng chém), pháp tuyến n (bề ngang vệt). */
+    /** Một vệt chém thẳng ở mặt trước mục tiêu: tâm c, trục d (hướng chém), pháp tuyến n (bề ngang vệt). */
     private static final class Slash {
         final double cx, cy, cz, dx, dy, dz, nx, ny, nz, bulge, scale;
         final long t;
@@ -87,7 +87,7 @@ public class SwordTrailModule extends Module {
     private final Random rng = new Random();
 
     public SwordTrailModule() {
-        super("swordtrail", "Sword Trail", "Vệt kiếm cong, chớp sáng và bụi phát sáng khi đánh trúng mục tiêu.", Category.EFFECT, true);
+        super("swordtrail", "Sword Trail", "Vệt kiếm thẳng ở phía trước mục tiêu khi đánh trúng, kèm chớp sáng và bụi phát sáng.", Category.EFFECT, true);
         new RainbowSettings(this);
     }
 
@@ -106,6 +106,12 @@ public class SwordTrailModule extends Module {
         double vl = Math.sqrt(vx * vx + vy * vy + vz * vz);
         if (vl < 1.0E-4) return;
         vx /= vl; vy /= vl; vz /= vl;
+        // Đẩy điểm hiệu ứng ra khỏi tâm hitbox về phía người chơi để vệt nằm trên mặt trước mục tiêu.
+        // Hướng v (vx, vy, vz) đi từ người chơi tới mục tiêu, nên trừ v để dịch về phía người chơi.
+        double frontOffset = 0.38;
+        cx -= vx * frontOffset;
+        cy -= vy * frontOffset;
+        cz -= vz * frontOffset;
         // r = ngang-phải so với hướng nhìn, u = hướng "lên" của mặt phẳng nhìn
         double rx = -vz, rz = vx, rl = Math.sqrt(rx * rx + rz * rz);
         if (rl < 1.0E-4) { rx = 1; rz = 0; rl = 1; }
@@ -120,7 +126,7 @@ public class SwordTrailModule extends Module {
             spawnSparks(cx, cy, cz, rx * bca + ux * bsa, uy * bsa, rz * bca + uz * bsa, -vx, -vy, -vz);
         }
         if (!trigger.is("On Hit")) return;
-        // A curved, tapered slash sweeps across the target on confirmed hit.
+        // A straight, tapered slash sweeps across the front face of the target on confirmed hit.
         double ang = Math.toRadians(base);
         double ca = Math.cos(ang), sa = Math.sin(ang);
         double dx = rx * ca + ux * sa, dy = uy * sa, dz = rz * ca + uz * sa;
@@ -166,7 +172,7 @@ public class SwordTrailModule extends Module {
             double l = Math.sqrt(vx * vx + vy * vy + vz * vz) + 1.0E-6;
             double k = speed / l;
             sparkList.add(new Spark(cx, cy, cz, vx * k, vy * k, vz * k, now,
-                    300f + rng.nextFloat() * 420f, 0.35f + rng.nextFloat() * 0.65f, i * 23f));
+                    420f + rng.nextFloat() * 480f, 0.70f + rng.nextFloat() * 0.55f, i * 23f));
         }
     }
 
@@ -249,7 +255,7 @@ public class SwordTrailModule extends Module {
         strip(s, tail, head, half * 0.985, thick * 0.30, lr, lg, lb, maxA, cx, cy, cz);
     }
 
-    /** Vẽ dải cong từ u = from đến u = to; nhọn ở hai đầu, đuôi mờ dần, đầu sáng nhất. */
+    /** Vẽ dải chém thẳng từ u = from đến u = to; nhọn ở hai đầu, đuôi mờ dần, đầu sáng nhất. */
     private void strip(Slash s, float from, float to, double half, double thick,
                        int r, int g, int b, float maxA, double cx, double cy, double cz) {
         Tessellator tess = Tessellator.getInstance();
@@ -314,18 +320,18 @@ public class SwordTrailModule extends Module {
             int c = rainbow.resolve(color.rgb(), k.hue);
             int r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
             int wr2 = r + (255 - r) * 3 / 4, wg = g + (255 - g) * 3 / 4, wb = b + (255 - b) * 3 / 4;
-            GL11.glLineWidth(2.4f);
+            GL11.glLineWidth(3.2f);
             wr.begin(1, DefaultVertexFormats.POSITION_COLOR);
             wr.pos(tx, ty, tz).color(r, g, b, 0).endVertex();
             wr.pos(hx, hy, hz).color(r, g, b, Math.round(255f * a * 0.8f)).endVertex();
             tess.draw();
-            GL11.glLineWidth(1.2f);
+            GL11.glLineWidth(1.8f);
             wr.begin(1, DefaultVertexFormats.POSITION_COLOR);
             wr.pos(tx, ty, tz).color(wr2, wg, wb, 0).endVertex();
             wr.pos(hx, hy, hz).color(wr2, wg, wb, Math.round(255f * a)).endVertex();
             tess.draw();
-            double gs = 0.06 * k.size * (1.0 - 0.4 * lifeK);
-            fan(wr, tess, hx, hy, hz, rx, 0, rz, ux, uy, uz, gs * 2.2, gs * 2.2, r, g, b, a * 0.5f, wr2, wg, wb);
+            double gs = 0.09 * k.size * (1.0 - 0.25 * lifeK);
+            fan(wr, tess, hx, hy, hz, rx, 0, rz, ux, uy, uz, gs * 2.6, gs * 2.6, r, g, b, a * 0.75f, wr2, wg, wb);
         }
     }
 
