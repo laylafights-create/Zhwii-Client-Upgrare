@@ -48,6 +48,7 @@ public class LunarLite {
     public static AnimationsModule ANIM;
     public static HotbarAnimationModule HOTBAR;
     public static BowEffectModule BOW_EFFECT;
+    public static ThrowableTrailModule THROW_FX;
 
     private static Configuration config;
 
@@ -67,6 +68,7 @@ public class LunarLite {
         ANIM = new AnimationsModule();
         HOTBAR = new HotbarAnimationModule();
         BOW_EFFECT = new BowEffectModule();
+        THROW_FX = new ThrowableTrailModule();
 
         // PvP / HUD
         MODULES.add(new FpsModule());
@@ -94,6 +96,7 @@ public class LunarLite {
         MODULES.add(HOTBAR);
         // Hiệu ứng
         MODULES.add(BOW_EFFECT);
+        MODULES.add(THROW_FX);
         MODULES.add(new ThemeModule());
 
         config.load();
@@ -187,6 +190,7 @@ public class LunarLite {
         if (BOW_TRAJECTORY != null) BOW_TRAJECTORY.render(e.partialTicks);
         if (ENEMY_DETECTOR != null) ENEMY_DETECTOR.renderMarkers(e.partialTicks);
         if (BOW_EFFECT != null) BOW_EFFECT.render(e.partialTicks);
+        if (THROW_FX != null) THROW_FX.render(e.partialTicks);
     }
 
     @SubscribeEvent
