@@ -29,7 +29,7 @@ public class SwordTrailModule extends Module {
     private final ColorSetting color = add(new ColorSetting("color", "Color", 0x55FFFF));
     private final SliderSetting length = add(new SliderSetting("length", "Trail Length", 420, 100, 1500, 50, " ms"));
     private final SliderSetting opacity = add(new SliderSetting("opacity", "Opacity", 90, 10, 100, 5, "%"));
-    private final SliderSetting size = add(new SliderSetting("size", "Slash Size", 1.1, 0.4, 2.5, 0.1, "x"));
+    private final SliderSetting size = add(new SliderSetting("size", "Slash Size", 0.9, 0.4, 2.5, 0.1, "x"));
     private final BoolSetting glow = add(new BoolSetting("glow", "Glow", true));
     private final BoolSetting streak = add(new BoolSetting("streak", "Anamorphic Streak", true));
     private final BoolSetting shockwave = add(new BoolSetting("shockwave", "Shockwave Ring", true));
@@ -167,13 +167,13 @@ public class SwordTrailModule extends Module {
             if (i % 2 == 0) { // tia lửa dọc đường chém, hai chiều, nhanh
                 double sg = rng.nextBoolean() ? 1 : -1;
                 vx = ax * sg + rng.nextGaussian() * 0.22; vy = ay * sg + rng.nextGaussian() * 0.22; vz = az * sg + rng.nextGaussian() * 0.22;
-                speed = 2.8 + rng.nextDouble() * 4.6;
+                speed = 1.8 + rng.nextDouble() * 2.8;
             } else {
                 // Bụi sáng chậm tạo quầng halo quanh điểm va chạm.
                 vx = rng.nextGaussian() * 0.72 + bx * 0.5;
                 vy = rng.nextGaussian() * 0.62 + 0.22 + by * 0.5;
                 vz = rng.nextGaussian() * 0.72 + bz * 0.5;
-                speed = 0.55 + rng.nextDouble() * 1.7;
+                speed = 0.4 + rng.nextDouble() * 1.1;
             }
             double l = Math.sqrt(vx * vx + vy * vy + vz * vz) + 1.0E-6;
             double k = speed / l;
@@ -242,8 +242,8 @@ public class SwordTrailModule extends Module {
         float pop = 1f + 0.55f * (float) Math.exp(-age / 45f);
         float fade = (1f - rest) * (1f - rest);
         float maxA = Math.min(1f, opacity.getFloat() / 100f * fade * pop);
-        double half = 1.35 * s.scale;
-        double thick = 0.105 * s.scale * (1.0 + 0.35 * Math.exp(-age / 60.0)); // lúc đầu dày hơn rồi thanh lại
+        double half = 0.8 * s.scale;
+        double thick = 0.045 * s.scale * (1.0 + 0.2 * Math.exp(-age / 60.0)); // mảnh, lúc đầu hơi dày rồi thanh lại
 
         int c = rainbow.resolve(color.rgb(), s.hue);
         int r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
@@ -252,9 +252,9 @@ public class SwordTrailModule extends Module {
         int dr = r * 3 / 4, dg = g * 3 / 4, db = Math.min(255, b + 30);
 
         if (glow.value) {
-            strip(s, tail, head, half * 1.03, thick * 4.2, 0.0, dr, dg, db, maxA * 0.08f, cx, cy, cz);
-            strip(s, tail, head, half * 1.01, thick * 2.6, 0.0, r, g, b, maxA * 0.14f, cx, cy, cz);
-            strip(s, tail, head, half, thick * 1.6, 0.0, r, g, b, maxA * 0.24f, cx, cy, cz);
+            strip(s, tail, head, half * 1.03, thick * 3.0, 0.0, dr, dg, db, maxA * 0.08f, cx, cy, cz);
+            strip(s, tail, head, half * 1.01, thick * 2.0, 0.0, r, g, b, maxA * 0.14f, cx, cy, cz);
+            strip(s, tail, head, half, thick * 1.4, 0.0, r, g, b, maxA * 0.24f, cx, cy, cz);
         }
         if (chromatic.value) {
             // Viền lệch kênh màu (đỏ / lam) hai bên nhát chém, mô phỏng sắc sai của ống kính.
@@ -312,7 +312,7 @@ public class SwordTrailModule extends Module {
             if (k < 0f || k >= 1f) continue;
             float fast = Math.min(1f, k * 1.6f);                    // chớp lõi tắt nhanh hơn vòng xung kích
             float a = (1f - fast) * (1f - fast) * maxA;
-            double sz = size.get() * (0.20 + 0.34 * easeOutCubic(fast));
+            double sz = size.get() * (0.09 + 0.15 * easeOutCubic(fast));
             int c = rainbow.resolve(color.rgb(), 0f);
             int r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
             double px = f.x - cx, py = f.y - cy, pz = f.z - cz;
@@ -325,7 +325,7 @@ public class SwordTrailModule extends Module {
             // Vệt sáng anamorphic ngang (đặc trưng ống kính điện ảnh), ngả lam.
             if (streak.value && a > 0f) {
                 int sr = Math.min(255, r / 2 + 70), sg = Math.min(255, g / 2 + 110), sb = 255;
-                double len = size.get() * (1.5 + 2.2 * easeOutCubic(fast));
+                double len = size.get() * (0.6 + 0.9 * easeOutCubic(fast));
                 fan(wr, tess, px, py, pz, rx, 0, rz, ux, uy, uz, len, sz * 0.045, sr, sg, sb, a * 0.85f, 255, 255, 255);
                 fan(wr, tess, px, py, pz, rx, 0, rz, ux, uy, uz, len * 0.55, sz * 0.10, sr, sg, sb, a * 0.35f, 255, 255, 255);
             }
@@ -341,9 +341,9 @@ public class SwordTrailModule extends Module {
             // Vòng sóng xung kích lan ra, mờ dần.
             if (shockwave.value) {
                 float rk = easeOutCubic(k);
-                double rad = size.get() * (0.15 + 1.05 * rk);
-                float ra = (1f - k) * (1f - k) * maxA * 0.55f;
-                ring(wr, tess, px, py, pz, rx, 0, rz, ux, uy, uz, rad, size.get() * 0.045 * (1.0 - 0.5 * k), r, g, b, ra);
+                double rad = size.get() * (0.08 + 0.42 * rk);
+                float ra = (1f - k) * (1f - k) * maxA * 0.45f;
+                ring(wr, tess, px, py, pz, rx, 0, rz, ux, uy, uz, rad, size.get() * 0.02 * (1.0 - 0.5 * k), r, g, b, ra);
             }
         }
 
@@ -369,7 +369,7 @@ public class SwordTrailModule extends Module {
             wr.pos(tx, ty, tz).color(r, g, b, 0).endVertex();
             wr.pos(hx, hy, hz).color(hr, hg, hb, Math.round(255f * a * 0.95f)).endVertex();
             tess.draw();
-            double gs = 0.15 * k.size * (1.0 - 0.3 * lifeK);
+            double gs = 0.075 * k.size * (1.0 - 0.3 * lifeK);
             fan(wr, tess, hx, hy, hz, rx, 0, rz, ux, uy, uz, gs * 2.6, gs * 2.6, r, g, b, a * 0.8f, hr, hg, hb);
         }
     }
