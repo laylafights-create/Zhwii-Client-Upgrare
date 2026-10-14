@@ -237,7 +237,7 @@ public class SwordTrailModule extends Module {
         float fade = (1f - rest) * (1f - rest);
         float maxA = opacity.getFloat() / 100f * fade;
         double half = 1.35 * s.scale;
-        double thick = 0.20 * s.scale;
+        double thick = 0.115 * s.scale; // vệt chém thanh mảnh hơn
 
         int c = rainbow.resolve(color.rgb(), s.hue);
         int r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
@@ -247,12 +247,12 @@ public class SwordTrailModule extends Module {
         int lb = b + (255 - b) * 4 / 5;
 
         if (glow.value) {
-            strip(s, tail, head, half * 1.04, thick * 3.8, r, g, b, maxA * 0.13f, cx, cy, cz);
-            strip(s, tail, head, half, thick * 2.2, r, g, b, maxA * 0.28f, cx, cy, cz);
+            strip(s, tail, head, half * 1.02, thick * 2.5, r, g, b, maxA * 0.10f, cx, cy, cz);
+            strip(s, tail, head, half, thick * 1.55, r, g, b, maxA * 0.20f, cx, cy, cz);
         }
         // Dải màu chính và đường lõi sáng mảnh ở giữa.
         strip(s, tail, head, half, thick, r, g, b, maxA * 0.82f, cx, cy, cz);
-        strip(s, tail, head, half * 0.985, thick * 0.30, lr, lg, lb, maxA, cx, cy, cz);
+        strip(s, tail, head, half * 0.985, thick * 0.22, lr, lg, lb, maxA, cx, cy, cz);
     }
 
     /** Vẽ dải chém thẳng từ u = from đến u = to; nhọn ở hai đầu, đuôi mờ dần, đầu sáng nhất. */
@@ -320,18 +320,16 @@ public class SwordTrailModule extends Module {
             int c = rainbow.resolve(color.rgb(), k.hue);
             int r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
             int wr2 = r + (255 - r) * 3 / 4, wg = g + (255 - g) * 3 / 4, wb = b + (255 - b) * 3 / 4;
-            GL11.glLineWidth(3.2f);
+            // Chỉ vẽ một đuôi màu; bỏ lớp đuôi trắng gây cảm giác có mảng/nền trắng.
+            GL11.glLineWidth(2.2f);
             wr.begin(1, DefaultVertexFormats.POSITION_COLOR);
             wr.pos(tx, ty, tz).color(r, g, b, 0).endVertex();
-            wr.pos(hx, hy, hz).color(r, g, b, Math.round(255f * a * 0.8f)).endVertex();
+            wr.pos(hx, hy, hz).color(r, g, b, Math.round(255f * a * 0.9f)).endVertex();
             tess.draw();
-            GL11.glLineWidth(1.8f);
-            wr.begin(1, DefaultVertexFormats.POSITION_COLOR);
-            wr.pos(tx, ty, tz).color(wr2, wg, wb, 0).endVertex();
-            wr.pos(hx, hy, hz).color(wr2, wg, wb, Math.round(255f * a)).endVertex();
-            tess.draw();
-            double gs = 0.09 * k.size * (1.0 - 0.25 * lifeK);
-            fan(wr, tess, hx, hy, hz, rx, 0, rz, ux, uy, uz, gs * 2.6, gs * 2.6, r, g, b, a * 0.75f, wr2, wg, wb);
+            // Hạt lớn hơn rõ rệt, lõi dùng màu hiệu ứng thay vì trắng gắt.
+            double gs = 0.17 * k.size * (1.0 - 0.18 * lifeK);
+            fan(wr, tess, hx, hy, hz, rx, 0, rz, ux, uy, uz, gs * 2.8, gs * 2.8,
+                    r, g, b, a, wr2, wg, wb);
         }
     }
 
