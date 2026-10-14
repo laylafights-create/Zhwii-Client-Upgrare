@@ -62,6 +62,7 @@ public class ChatBarModule {
 
     // ===== Cấu hình =====
     public static boolean enabled = true;
+    public static boolean showKills = true;    // tin giết người: [avt người giết] giết [avt người bị giết]
     public static boolean bedwars = true;      // giữ tin sự kiện Bedwars (phá giường, final kill...) khi playerOnly
     public static boolean charCounter = true;
     public static boolean playerHeads = true;  // avatar + giường màu team trước tin nhắn
@@ -212,7 +213,7 @@ public class ChatBarModule {
                         @Override public void run() {
                             if (m.thePlayer == null) return;
                             m.thePlayer.addChatMessage(new ChatComponentText(
-                                    (playerHeads ? iconSpace() : "") + EnumChatFormatting.AQUA + "[VI] "
+                                    (playerHeads ? iconSpace(true) : "") + EnumChatFormatting.AQUA + "[VI] "
                                             + EnumChatFormatting.GRAY + r[0]));
                         }
                     });
@@ -265,12 +266,60 @@ public class ChatBarModule {
         DEAD_BEDS.clear(); // sang ván mới
     }
 
+    // ===== Tin giết người =====
+    private static final Pattern WORD = Pattern.compile("[A-Za-z0-9_]{3,16}");
+    private static final Pattern KILL_VERB = Pattern.compile(
+            "\\b(killed|shot|knocked|struck|fell|died|burned|drowned|exploded|blown|suffocated|starved|squashed"
+                    + "|withered|perished|slain|slaughtered|thrown|pushed|punched|fireballed|melted|zapped|hit)\\b");
+
+    /** {người bị giết, người giết hoặc null} nếu là tin chết/giết, ngược lại null. */
+    private static String[] parseKill(String plain) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.getNetHandler() == null || !KILL_VERB.matcher(plain).find()) return null;
+        Matcher m = WORD.matcher(plain);
+        String victim = null, killer = null;
+        while (m.find()) {
+            String w = m.group();
+            if (mc.getNetHandler().getPlayerInfo(w) == null) continue;
+            if (victim == null) {
+                if (m.start() != 0) return null; // tin chết luôn bắt đầu bằng tên người bị giết
+                victim = w;
+            } else if (!w.equals(victim)) {
+                killer = w;
+            }
+        }
+        return victim == null ? null : new String[]{victim, killer};
+    }
+
+    private static String colorCode(int rgb) {
+        for (int i = 0; i < 16; i++) if (MC_COLORS[i] == rgb) return S + "0123456789abcdef".charAt(i);
+        return S + "7";
+    }
+
+    private static String teamColorOf(String name) {
+        NetworkPlayerInfo info = Minecraft.getMinecraft().getNetHandler().getPlayerInfo(name);
+        int c = info == null ? -1 : teamColor(info);
+        return c == -1 ? S + "7" : colorCode(c);
+    }
+
+    /** [avt người giết] Tên giết [avt người bị giết] Tên */
+    private static IChatComponent buildKill(String victim, String killer, boolean fin, String plain) {
+        String mk = playerHeads ? makeMarker(killer, plain, false) : "";
+        String mv = playerHeads ? makeMarker(victim, plain, false) : "";
+        StringBuilder sb = new StringBuilder();
+        sb.append(mk).append(teamColorOf(killer)).append(killer);
+        sb.append(S).append("c giết ");
+        sb.append(mv).append(teamColorOf(victim)).append(victim);
+        if (fin) sb.append(S).append("6").append(S).append("l FINAL KILL!");
+        return new ChatComponentText(sb.toString());
+    }
+
     // ===== Avatar + giường =====
     private static final String S = "\u00A7";
     private static final String SENT = S + "r" + S + "r" + S + "r";
     /** Chừa chỗ cho icon: đầu + bed + khoảng cách, mỗi dấu cách rộng 4px. */
-    private static String iconSpace() {
-        int w = iconSize + 2 + (int) Math.ceil(9 * iconSize / 8f) + 1;
+    private static String iconSpace(boolean bed) {
+        int w = iconSize + 2 + (bed ? (int) Math.ceil(9 * iconSize / 8f) + 1 : 0);
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < (w + 3) / 4; i++) sb.append(' ');
         return sb.toString();
@@ -280,8 +329,8 @@ public class ChatBarModule {
             0x555555, 0x5555FF, 0x55FF55, 0x55FFFF, 0xFF5555, 0xFF55FF, 0xFFFF55, 0xFFFFFF};
 
     private static class Icon {
-        final String name; final int color;
-        Icon(String name, int color) { this.name = name; this.color = color; }
+        final String name; final int color; final boolean bed;
+        Icon(String name, int color, boolean bed) { this.name = name; this.color = color; this.bed = bed; }
     }
 
     private static final Map<Integer, Icon> ICONS = new LinkedHashMap<Integer, Icon>() {
@@ -303,7 +352,7 @@ public class ChatBarModule {
     }
 
     /** Tạo marker ẩn (chỉ gồm mã màu, rộng 0px) + khoảng trống cho icon. */
-    private static String makeMarker(String name, String plain) {
+    private static String makeMarker(String name, String plain, boolean bed) {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.getNetHandler() == null) return "";
         NetworkPlayerInfo info = mc.getNetHandler().getPlayerInfo(name);
@@ -314,25 +363,30 @@ public class ChatBarModule {
             Matcher tm = TEAM_TAG.matcher(plain);
             if (tm.find()) color = colorByName(tm.group(1));
         }
-        ICONS.put(id, new Icon(name, color));
+        ICONS.put(id, new Icon(name, color, bed));
         String h = String.format("%03x", id);
-        return SENT + S + h.charAt(0) + S + h.charAt(1) + S + h.charAt(2) + S + "r" + iconSpace();
+        return SENT + S + h.charAt(0) + S + h.charAt(1) + S + h.charAt(2) + S + "r" + iconSpace(bed);
     }
 
-    private static Icon decode(String s) {
-        // getFormattedText() của dòng chat có thể mở đầu bằng "§r" (component rỗng) -> tìm marker trong vài ký tự đầu
-        int i = s.indexOf(SENT);
-        if (i < 0 || i > 8) return null;
-        int p = i + SENT.length();
-        if (s.length() < p + 6) return null;
-        try {
-            return ICONS.get(Integer.parseInt("" + s.charAt(p + 1) + s.charAt(p + 3) + s.charAt(p + 5), 16));
-        } catch (NumberFormatException ex) {
-            return null;
+    /** Vẽ mọi icon trong dòng: x = độ rộng chữ đứng trước marker. */
+    private static void drawIcons(Minecraft mc, String fmt, int y, int a) {
+        int from = 0;
+        while (true) {
+            int i = fmt.indexOf(SENT, from);
+            if (i < 0) return;
+            int p = i + SENT.length();
+            if (fmt.length() < p + 6) return;
+            try {
+                Icon ic = ICONS.get(Integer.parseInt("" + fmt.charAt(p + 1) + fmt.charAt(p + 3) + fmt.charAt(p + 5), 16));
+                if (ic != null) drawIcon(mc, ic, y, a, mc.fontRendererObj.getStringWidth(fmt.substring(0, i)));
+            } catch (NumberFormatException ex) {
+                // bỏ qua marker hỏng
+            }
+            from = p + 6;
         }
     }
 
-    private static void drawIcon(Minecraft mc, Icon ic, int y, int a) {
+    private static void drawIcon(Minecraft mc, Icon ic, int y, int a, int x0) {
         NetworkPlayerInfo info = mc.getNetHandler().getPlayerInfo(ic.name);
         int sz = iconSize;
         int top = y - 8 + (8 - sz) / 2 + iconY;
@@ -340,14 +394,14 @@ public class ChatBarModule {
         GlStateManager.color(1f, 1f, 1f, a / 255f);
         if (info != null) {
             mc.getTextureManager().bindTexture(info.getLocationSkin());
-            Gui.drawScaledCustomSizeModalRect(iconX, top, 8f, 8f, 8, 8, sz, sz, 64f, 64f);   // mặt
-            Gui.drawScaledCustomSizeModalRect(iconX, top, 40f, 8f, 8, 8, sz, sz, 64f, 64f);  // lớp mũ
+            Gui.drawScaledCustomSizeModalRect(x0 + iconX, top, 8f, 8f, 8, 8, sz, sz, 64f, 64f);   // mặt
+            Gui.drawScaledCustomSizeModalRect(x0 + iconX, top, 40f, 8f, 8, 8, sz, sz, 64f, 64f);  // lớp mũ
         }
-        if (ic.color != -1) {
+        if (ic.bed && ic.color != -1) {
             float k = sz / 8f;
             int al = a << 24;
             GlStateManager.pushMatrix();
-            GlStateManager.translate(iconX + sz + 2, top + sz / 2f - 3f * k, 0f);
+            GlStateManager.translate(x0 + iconX + sz + 2, top + sz / 2f - 3f * k, 0f);
             GlStateManager.scale(k, k, 1f);
             boolean dead = DEAD_BEDS.contains(ic.color);
             Gui.drawRect(0, 2, 9, 6, al | (dead ? 0x444444 : 0x8B5A2B));   // khung gỗ
@@ -392,8 +446,7 @@ public class ChatBarModule {
             double d = Math.max(0.0, Math.min(1.0, (1.0 - age / 200.0) * 10.0));
             int a = (int) ((open ? 255 : (int) (255 * d * d)) * opacity);
             if (a <= 3) continue;
-            Icon ic = decode(line.getChatComponent().getFormattedText());
-            if (ic != null) drawIcon(mc, ic, -i * 9, a);
+            drawIcons(mc, line.getChatComponent().getFormattedText(), -i * 9, a);
         }
         GlStateManager.disableBlend();
         GlStateManager.popMatrix();
@@ -410,6 +463,21 @@ public class ChatBarModule {
 
         String[] pc = parsePlayerChat(e);
         String name = pc == null ? null : pc[0];
+
+        // tin giết người: viết lại thành [avt] Người giết giết [avt] Người bị giết
+        if (showKills && name == null) {
+            String[] k = parseKill(plain);
+            if (k != null) {
+                if (k[1] != null) {
+                    e.message = buildKill(k[0], k[1], plain.contains("FINAL KILL"), plain);
+                } else if (playerHeads) { // tự chết (rơi hố, cháy...): giữ nguyên tin, thêm avt người chết
+                    IChatComponent r = new ChatComponentText(makeMarker(k[0], plain, false));
+                    r.appendSibling(e.message);
+                    e.message = r;
+                }
+                return;
+            }
+        }
         if (playerOnly && name == null && !(bedwars && BW_EVENT.matcher(plain).find())) {
             e.setCanceled(true);
             return;
@@ -417,7 +485,7 @@ public class ChatBarModule {
 
         if (autoTranslate && pc != null) requestTranslate(pc[0], pc[1]);
 
-        String marker = (playerHeads && name != null) ? makeMarker(name, plain) : "";
+        String marker = (playerHeads && name != null) ? makeMarker(name, plain, true) : "";
         if (marker.isEmpty()) return;
 
         IChatComponent root = new ChatComponentText(marker);
