@@ -84,6 +84,7 @@ public class ChatBarModule extends Module {
     public static final BoolSetting BEDWARS = new BoolSetting("bedwars", "Giữ tin sự kiện Bedwars", true);
     public static final BoolSetting SHOW_KILLS = new BoolSetting("kills", "Tin giết người có avatar", true);
     public static final BoolSetting AUTO_TRANSLATE = new BoolSetting("translate", "Dịch sang tiếng Việt", true);
+    public static final BoolSetting TRANSLATE_OUT = new BoolSetting("translateOut", "Dịch tin gửi sang tiếng Anh", true);
     public static final BoolSetting HIDE_ORIGINAL = new BoolSetting("hideOriginal", "Tự ẩn tin gốc", false);
     public static final BoolSetting CHAR_COUNTER = new BoolSetting("charCounter", "Bộ đếm ký tự", true);
     public static final BoolSetting PLAYER_HEADS = new BoolSetting("heads", "Avatar + giường team", true);
@@ -103,6 +104,7 @@ public class ChatBarModule extends Module {
     public static final BoolSetting HIDE_CHAT_SCROLLBAR = new BoolSetting("hideChatScrollbar", "Ẩn thanh cuộn chat", false);
 
     public static String translateTo = "vi";
+    public static String outLang = "en"; // ngôn ngữ tin gửi đi
     public static int accent = 0xFF55AAFF;     // ARGB
     public static int background = 0x90000000; // ARGB
 
@@ -118,6 +120,7 @@ public class ChatBarModule extends Module {
         add(BEDWARS, SEC_CHAT, PLAYER_ONLY);
         add(SHOW_KILLS, SEC_CHAT);
         add(AUTO_TRANSLATE, SEC_CHAT);
+        add(TRANSLATE_OUT, SEC_CHAT);
         add(HIDE_ORIGINAL, SEC_CHAT, AUTO_TRANSLATE);
         add(CHAR_COUNTER, SEC_BAR);
         add(BAR_BORDER, SEC_BAR);
@@ -273,12 +276,18 @@ public class ChatBarModule extends Module {
 
     /** Gọi Google Translate (endpoint công khai) -> {bản dịch, mã ngôn ngữ gốc}. */
     private static String[] translate(String text) throws IOException {
+        return translate(text, translateTo);
+    }
+
+    /** Dịch sang ngôn ngữ đích tuỳ chọn (vd "en" cho tin gửi đi). */
+    private static String[] translate(String text, String target) throws IOException {
+        final String key = target + "\u0000" + text;
         synchronized (CACHE) {
-            String[] hit = CACHE.get(text);
+            String[] hit = CACHE.get(key);
             if (hit != null) return hit;
         }
         String url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl="
-                + translateTo + "&dt=t&q=" + URLEncoder.encode(text, "UTF-8");
+                + target + "&dt=t&q=" + URLEncoder.encode(text, "UTF-8");
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         c.setConnectTimeout(4000);
         c.setReadTimeout(4000);
@@ -297,8 +306,42 @@ public class ChatBarModule extends Module {
         }
         String lang = root.size() > 2 && !root.get(2).isJsonNull() ? root.get(2).getAsString() : "";
         String[] res = {sb.toString(), lang};
-        synchronized (CACHE) { CACHE.put(text, res); }
+        synchronized (CACHE) { CACHE.put(key, res); }
         return res;
+    }
+
+    /** Dịch tin bạn gõ sang tiếng Anh rồi gửi. Lỗi/timeout thì gửi nguyên văn, không nuốt tin. */
+    static void sendTranslated(final String text) {
+        TRANSLATOR.submit(new Runnable() {
+            @Override public void run() {
+                String out = text;
+                boolean changed = false;
+                try {
+                    String[] r = translate(text, outLang);
+                    String t = r[0].trim();
+                    if (!t.isEmpty()) {
+                        if (t.length() > 100) t = t.substring(0, 100); // giới hạn chat 100 ký tự
+                        changed = !t.equalsIgnoreCase(text);
+                        out = t;
+                    }
+                } catch (Exception ignored) {
+                    // lỗi mạng: gửi nguyên văn
+                }
+                final String send = out;
+                final boolean show = changed;
+                final Minecraft m = Minecraft.getMinecraft();
+                m.addScheduledTask(new Runnable() {
+                    @Override public void run() {
+                        if (m.thePlayer == null) return;
+                        m.thePlayer.sendChatMessage(send);
+                        if (show) {
+                            m.thePlayer.addChatMessage(new ChatComponentText(EnumChatFormatting.AQUA + "[EN] "
+                                    + EnumChatFormatting.GRAY + "Đã gửi: " + EnumChatFormatting.WHITE + send));
+                        }
+                    }
+                });
+            }
+        });
     }
 
     // Tin gốc đã in ra chat (id -> component) để nút [Ẩn gốc] xoá đúng dòng
@@ -1234,6 +1277,21 @@ public class ChatBarModule extends Module {
             inputField.setText(t);
             inputField.setCanLoseFocus(false);
             openTime = System.currentTimeMillis();
+        }
+
+        // Enter: dịch tin tiếng Việt sang tiếng Anh rồi mới gửi (lệnh bắt đầu bằng "/" giữ nguyên)
+        @Override
+        protected void keyTyped(char c, int key) throws IOException {
+            if ((key == Keyboard.KEY_RETURN || key == Keyboard.KEY_NUMPADENTER) && TRANSLATE_OUT.value) {
+                final String s = inputField.getText().trim();
+                if (!s.isEmpty() && !s.startsWith("/") && s.matches(".*\\p{L}.*")) {
+                    mc.ingameGUI.getChatGUI().addToSentMessages(s);
+                    mc.displayGuiScreen(null);
+                    sendTranslated(s);
+                    return;
+                }
+            }
+            super.keyTyped(c, key);
         }
 
         @Override
