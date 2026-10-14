@@ -4,6 +4,7 @@ import dev.lunarlite.gui.HudEditorScreen;
 import dev.lunarlite.gui.MenuScreen;
 import dev.lunarlite.module.*;
 import dev.lunarlite.module.Module;
+import dev.lunarlite.modules.ChatBarModule;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.Minecraft;
@@ -102,6 +103,9 @@ public class LunarLite {
         keyAim = new KeyBinding("Bật/tắt Aim Assist", Keyboard.KEY_R, "Zhwii Client");
         ClientRegistry.registerKeyBinding(keyZoom);
         ClientRegistry.registerKeyBinding(keyAim);
+
+        // Chat bar: chỉ tin người chơi + avatar/giường team + tự dịch tiếng Việt
+        new ChatBarModule().register();
 
         MinecraftForge.EVENT_BUS.register(this);
         FMLCommonHandler.instance().bus().register(this);
