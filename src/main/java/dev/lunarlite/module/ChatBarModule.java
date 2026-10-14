@@ -23,6 +23,8 @@ import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiLabel;
 import net.minecraft.client.renderer.GlStateManager;
+import net.minecraft.client.resources.DefaultPlayerSkin;
+import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.ChatComponentTranslation;
 import net.minecraft.event.ClickEvent;
@@ -76,7 +78,7 @@ import java.util.regex.Pattern;
 public class ChatBarModule extends Module {
 
     // ===== Tùy chỉnh: hiện trong menu Zhwii Client -> Tiện ích -> Chat Bar (lưu chung config của client) =====
-    private static final String SEC_CHAT = "Chat", SEC_ICON = "Avatar", SEC_POS = "Vị trí";
+    private static final String SEC_CHAT = "Chat", SEC_ICON = "Avatar", SEC_BAR = "Thanh nhập", SEC_POS = "Vị trí";
 
     public static final BoolSetting PLAYER_ONLY = new BoolSetting("playerOnly", "Chỉ tin người chơi", true);
     public static final BoolSetting BEDWARS = new BoolSetting("bedwars", "Giữ tin sự kiện Bedwars", true);
@@ -89,6 +91,11 @@ public class ChatBarModule extends Module {
     public static final SliderSetting ICON_X = new SliderSetting("iconX", "Avatar lệch ngang", 0, -20, 20, 1, " px");
     public static final SliderSetting ICON_Y = new SliderSetting("iconY", "Avatar lệch dọc", 0, -10, 10, 1, " px");
     public static final SliderSetting BAR_WIDTH = new SliderSetting("barW", "Rộng thanh nhập (0 = tự động)", 0, 0, 600, 5, " px");
+    public static final SliderSetting CHAT_WIDTH = new SliderSetting("chatWidth", "Rộng mỗi dòng chat", 320, 120, 900, 10, " px");
+    public static final SliderSetting BAR_OPACITY = new SliderSetting("barOpacity", "Độ mờ thanh nhập", 45, 10, 100, 5, "%");
+    public static final BoolSetting ANIM_MESSAGES = new BoolSetting("animMessages", "Animation tin nhắn mới", true);
+    public static final BoolSetting ANIM_BAR = new BoolSetting("animBar", "Animation thanh nhập", true);
+    public static final BoolSetting BAR_BORDER = new BoolSetting("barBorder", "Viền màu thanh nhập", true);
 
     public static String translateTo = "vi";
     public static int accent = 0xFF55AAFF;     // ARGB
@@ -107,12 +114,17 @@ public class ChatBarModule extends Module {
         add(SHOW_KILLS, SEC_CHAT);
         add(AUTO_TRANSLATE, SEC_CHAT);
         add(HIDE_ORIGINAL, SEC_CHAT, AUTO_TRANSLATE);
-        add(CHAR_COUNTER, SEC_CHAT);
+        add(CHAR_COUNTER, SEC_BAR);
+        add(BAR_BORDER, SEC_BAR);
+        add(ANIM_BAR, SEC_BAR);
+        add(ANIM_MESSAGES, SEC_CHAT);
+        add(BAR_OPACITY, SEC_BAR);
         add(PLAYER_HEADS, SEC_ICON);
         add(ICON_SIZE, SEC_ICON, PLAYER_HEADS);
         add(ICON_X, SEC_ICON, PLAYER_HEADS);
         add(ICON_Y, SEC_ICON, PLAYER_HEADS);
         add(BAR_WIDTH, SEC_POS);
+        add(CHAT_WIDTH, SEC_POS);
     }
 
     /** Nút "Kéo thả vị trí chat…" trong bảng tuỳ chỉnh của menu. */
@@ -203,7 +215,7 @@ public class ChatBarModule extends Module {
 
     // ===== Lọc tin người chơi =====
     private static final Pattern PLAYER_CHAT = Pattern.compile(
-            "^(?:\\[[^\\]]{1,20}\\]\\s*)*(?:<([A-Za-z0-9_]{1,16})>\\s*(\\S.*)|([A-Za-z0-9_]{1,16})\\s*[:»>]\\s*(\\S.*))$");
+            "^(?:(?:Guild|Party|Officer|Co-op|From|To)\\s*>?\\s*)?(?:\\[[^\\]]{1,24}\\]\\s*)*(?:<([A-Za-z0-9_]{1,16})>\\s*(\\S.*)|([A-Za-z0-9_]{1,16})\\s*[:»>]\\s*(\\S.*))$");
     private static final Pattern NAME_TAIL = Pattern.compile("([A-Za-z0-9_]{1,16})\\s*$");
 
     private static String argText(Object o) {
@@ -230,8 +242,10 @@ public class ChatBarModule extends Module {
         boolean angle = m.group(1) != null;
         String n = angle ? m.group(1) : m.group(3);
         String body = angle ? m.group(2) : m.group(4);
-        // server tùy biến: tên phải đang online để tránh nhầm "Info: ..."
-        if (mc.getNetHandler() == null || mc.getNetHandler().getPlayerInfo(n) == null) return null;
+        // tên phải đang online, hoặc tin có tag [RANK]/[TEAM] ở đầu (người đã chết rời tab list), để tránh nhầm "Info: ..."
+        if (mc.getNetHandler() == null) return null;
+        boolean tagged = plain.trim().startsWith("[");
+        if (mc.getNetHandler().getPlayerInfo(n) == null && !tagged) return null;
         return new String[]{n, body};
     }
 
@@ -341,7 +355,7 @@ public class ChatBarModule extends Module {
 
     // ===== Bedwars =====
     private static final Pattern BED_BROKEN = Pattern.compile("BED DESTRUCTION\\s*>\\s*(\\w+) Bed");
-    private static final Pattern TEAM_TAG = Pattern.compile("\\[(RED|BLUE|GREEN|YELLOW|AQUA|WHITE|PINK|GRAY)\\]");
+    private static final Pattern TEAM_TAG = Pattern.compile("\\[(RED|BLUE|GREEN|YELLOW|AQUA|WHITE|PINK|GRAY|GREY)\\]", Pattern.CASE_INSENSITIVE);
     /** Tin hệ thống được giữ lại khi "Chỉ tin người chơi" bật. Thêm/bớt từ khóa tại đây. */
     private static final Pattern BW_EVENT = Pattern.compile(
             "BED DESTRUCTION|FINAL KILL|TEAM ELIMINATED|has been eliminated|You have been eliminated"
@@ -356,7 +370,7 @@ public class ChatBarModule extends Module {
         if (n.equals("AQUA")) return MC_COLORS[11];
         if (n.equals("WHITE")) return MC_COLORS[15];
         if (n.equals("PINK")) return MC_COLORS[13];
-        if (n.equals("GRAY")) return MC_COLORS[8];
+        if (n.equals("GRAY") || n.equals("GREY")) return MC_COLORS[8];
         return -1;
     }
 
@@ -378,6 +392,7 @@ public class ChatBarModule extends Module {
 
     @SubscribeEvent
     public void onWorldLoad(WorldEvent.Load e) {
+        WIDTHS.clear();
         DEAD_BEDS.clear(); // sang ván mới
     }
 
@@ -423,7 +438,7 @@ public class ChatBarModule extends Module {
         String mv = PLAYER_HEADS.value ? makeMarker(victim, plain, false) : "";
         StringBuilder sb = new StringBuilder();
         sb.append(mk).append(teamColorOf(killer)).append(killer);
-        sb.append(S).append("c giết ");
+        sb.append(S).append("c giết  ");
         sb.append(mv).append(teamColorOf(victim)).append(victim);
         if (fin) sb.append(S).append("6").append(S).append("l FINAL KILL!");
         return new ChatComponentText(sb.toString());
@@ -445,23 +460,61 @@ public class ChatBarModule extends Module {
     }
 
     private static class Icon {
-        final String name; final int color; final boolean bed;
-        Icon(String name, int color, boolean bed) { this.name = name; this.color = color; this.bed = bed; }
+        final String name; final int color; final boolean bed; final ResourceLocation skin;
+        Icon(String name, int color, boolean bed, ResourceLocation skin) {
+            this.name = name; this.color = color; this.bed = bed; this.skin = skin;
+        }
     }
 
     private static final Map<Integer, Icon> ICONS = new LinkedHashMap<Integer, Icon>() {
-        @Override protected boolean removeEldestEntry(Map.Entry<Integer, Icon> eldest) { return size() > 512; }
+        @Override protected boolean removeEldestEntry(Map.Entry<Integer, Icon> eldest) { return size() > 4096; }
     };
     private static int nextId = 0;
 
-    private static int teamColor(NetworkPlayerInfo info) {
-        ScorePlayerTeam t = info.getPlayerTeam();
-        if (t == null) return -1;
-        String p = t.getColorPrefix();
+    /** Màu RGB (bảng 16 màu MC) của mã § cuối cùng trong chuỗi, hoặc -1. */
+    private static int lastColor(String p) {
+        if (p == null) return -1;
         for (int i = p.length() - 2; i >= 0; i--) {
             if (p.charAt(i) == '\u00A7') {
                 int idx = "0123456789abcdef".indexOf(Character.toLowerCase(p.charAt(i + 1)));
                 if (idx >= 0) return MC_COLORS[idx];
+            }
+        }
+        return -1;
+    }
+
+    private static int teamColor(NetworkPlayerInfo info) {
+        ScorePlayerTeam t = info.getPlayerTeam();
+        int c = -1;
+        if (t != null) {
+            c = lastColor(t.getColorPrefix());                       // prefix: "§cR "
+            if (c == -1) c = lastColor(ScorePlayerTeam.formatPlayerName(t, info.getGameProfile().getName())); // prefix + tên + suffix
+            if (c == -1) c = lastColor(t.getColorSuffix());
+        }
+        if (c == -1 && info.getDisplayName() != null) c = lastColor(info.getDisplayName().getFormattedText());
+        return c;
+    }
+
+    /** Màu đội theo màu giáp da đã nhuộm của người chơi đang ở gần (Bedwars nhuộm giáp theo đội), hoặc -1. */
+    private static int armorColor(String name) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.theWorld == null) return -1;
+        EntityPlayer p = mc.theWorld.getPlayerEntityByName(name);
+        if (p == null) return -1;
+        for (int slot = 3; slot >= 0; slot--) {
+            net.minecraft.item.ItemStack st = p.inventory.armorInventory[slot];
+            if (st == null || !(st.getItem() instanceof net.minecraft.item.ItemArmor)) continue;
+            net.minecraft.item.ItemArmor ia = (net.minecraft.item.ItemArmor) st.getItem();
+            if (ia.getArmorMaterial() == net.minecraft.item.ItemArmor.ArmorMaterial.LEATHER && ia.hasColor(st)) {
+                int rgb = ia.getColor(st) & 0xFFFFFF;
+                int best = -1, bd = Integer.MAX_VALUE;
+                for (int mcCol : MC_COLORS) {
+                    int dr = ((rgb >> 16) & 255) - ((mcCol >> 16) & 255), dg = ((rgb >> 8) & 255) - ((mcCol >> 8) & 255),
+                            db = (rgb & 255) - (mcCol & 255);
+                    int d = dr * dr + dg * dg + db * db;
+                    if (d < bd) { bd = d; best = mcCol; }
+                }
+                return best;
             }
         }
         return -1;
@@ -472,14 +525,16 @@ public class ChatBarModule extends Module {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.getNetHandler() == null) return "";
         NetworkPlayerInfo info = mc.getNetHandler().getPlayerInfo(name);
-        if (info == null) return "";
+        // người không còn trong tab list (đã chết / thoát): vẫn chừa chỗ và vẽ skin mặc định
+        ResourceLocation skin = info != null ? info.getLocationSkin() : DefaultPlayerSkin.getDefaultSkinLegacy();
         int id = nextId++ & 0xFFF;
-        int color = teamColor(info);
+        int color = info != null ? teamColor(info) : -1;
         if (color == -1) { // chưa có team scoreboard: lấy từ tag [RED]/[BLUE]... trong tin
             Matcher tm = TEAM_TAG.matcher(plain);
-            if (tm.find()) color = colorByName(tm.group(1));
+            if (tm.find()) color = colorByName(tm.group(1).toUpperCase());
         }
-        ICONS.put(id, new Icon(name, color, bed));
+        if (color == -1) color = armorColor(name); // dự phòng: màu giáp da
+        ICONS.put(id, new Icon(name, color, bed, skin));
         String h = String.format("%03x", id);
         return SENT + S + h.charAt(0) + S + h.charAt(1) + S + h.charAt(2) + S + "r" + iconSpace(bed);
     }
@@ -500,7 +555,7 @@ public class ChatBarModule extends Module {
             try {
                 Icon ic = ICONS.get(Integer.parseInt("" + fmt.charAt(p + 1) + fmt.charAt(p + 3) + fmt.charAt(p + 5), 16));
                 if (ic != null) {
-                    drawIcon(mc, ic, y, a, mc.fontRendererObj.getStringWidth(fmt.substring(0, i)));
+                    drawIcon(mc, ic, y, a, i == 0 ? 0 : measure(mc, fmt.substring(0, i)));
                     from = p + 6;
                 }
             } catch (NumberFormatException ex) {
@@ -509,17 +564,34 @@ public class ChatBarModule extends Module {
         }
     }
 
+    private static final Map<String, Integer> WIDTHS = new LinkedHashMap<String, Integer>() {
+        @Override protected boolean removeEldestEntry(Map.Entry<String, Integer> eldest) { return size() > 1024; }
+    };
+
+    /**
+     * Độ rộng thật của đoạn chữ: vẽ nó ra ngoài màn hình và lấy toạ độ x kết thúc mà FontRenderer trả về.
+     * Chính xác hơn getStringWidth (lệch với chữ có dấu / font resource pack, làm avatar dính vào chữ "giết").
+     */
+    private static int measure(Minecraft mc, String s) {
+        Integer c = WIDTHS.get(s);
+        if (c != null) return c;
+        GlStateManager.pushMatrix();
+        GlStateManager.translate(-30000f, -30000f, 0f);
+        int w = mc.fontRendererObj.drawString(s, 0, 0, 0x01FFFFFF, false);
+        GlStateManager.popMatrix();
+        WIDTHS.put(s, w);
+        return w;
+    }
+
     private static void drawIcon(Minecraft mc, Icon ic, int y, int a, int x0) {
         NetworkPlayerInfo info = mc.getNetHandler().getPlayerInfo(ic.name);
         int sz = ICON_SIZE.getInt();
         int top = y - 8 + (8 - sz) / 2 + ICON_Y.getInt();
         GlStateManager.enableTexture2D();
         GlStateManager.color(1f, 1f, 1f, a / 255f);
-        if (info != null) {
-            mc.getTextureManager().bindTexture(info.getLocationSkin());
-            Gui.drawScaledCustomSizeModalRect(x0 + ICON_X.getInt(), top, 8f, 8f, 8, 8, sz, sz, 64f, 64f);   // mặt
-            Gui.drawScaledCustomSizeModalRect(x0 + ICON_X.getInt(), top, 40f, 8f, 8, 8, sz, sz, 64f, 64f);  // lớp mũ
-        }
+        mc.getTextureManager().bindTexture(info != null ? info.getLocationSkin() : ic.skin);
+        Gui.drawScaledCustomSizeModalRect(x0 + ICON_X.getInt(), top, 8f, 8f, 8, 8, sz, sz, 64f, 64f);   // mặt
+        Gui.drawScaledCustomSizeModalRect(x0 + ICON_X.getInt(), top, 40f, 8f, 8, 8, sz, sz, 64f, 64f);  // lớp mũ
         if (ic.bed && ic.color != -1) {
             float k = sz / 8f;
             int al = a << 24;
@@ -535,12 +607,65 @@ public class ChatBarModule extends Module {
         GlStateManager.color(1f, 1f, 1f, 1f);
     }
 
+    // ===== Animation tin nhắn mới =====
+    private static java.lang.reflect.Field F_LINES, F_SCROLL;
+    private static Object lastNewest;
+    private static float slideY;      // độ lệch dọc còn lại (px GUI), về 0 dần
+    private static int curSlide;      // giá trị đã làm tròn của khung hình này (icon dùng chung)
+    private static long lastFrame;
+
+    /** Có dòng mới ở cuối thì đẩy cả khung xuống đúng số dòng đó, rồi cho trượt lên về vị trí cũ. */
+    private static void updateSlide() {
+        Minecraft mc = Minecraft.getMinecraft();
+        long now = System.nanoTime();
+        float dt = lastFrame == 0 ? 0f : Math.min(0.1f, (now - lastFrame) / 1e9f);
+        lastFrame = now;
+        slideY *= (float) Math.exp(-dt * 16f * dev.lunarlite.module.AnimationsModule.speed());
+        if (Math.abs(slideY) < 0.4f) slideY = 0f;
+
+        try {
+            GuiNewChat chat = mc.ingameGUI.getChatGUI();
+            if (F_LINES == null) {
+                F_LINES = ReflectionHelper.findField(GuiNewChat.class, "drawnChatLines", "field_146253_i");
+                F_SCROLL = ReflectionHelper.findField(GuiNewChat.class, "scrollPos", "field_146250_j");
+            }
+            List<?> lines = (List<?>) F_LINES.get(chat);
+            if (lines.isEmpty()) { lastNewest = null; curSlide = Math.round(slideY); return; }
+            Object newest = lines.get(0);
+            if (newest != lastNewest) {
+                if (lastNewest != null && F_SCROLL.getInt(chat) == 0) {
+                    int idx = -1;
+                    for (int i = 0; i < lines.size() && i < 8; i++) {
+                        if (lines.get(i) == lastNewest) { idx = i; break; }
+                    }
+                    if (idx > 0) slideY = Math.min(40f, slideY + 9f * idx * chat.getChatScale());
+                }
+                lastNewest = newest;
+            }
+        } catch (Exception ignored) {
+        }
+        curSlide = Math.round(slideY);
+    }
+
     // Dời khung hiển thị tin nhắn tới vị trí người dùng chọn
     @SubscribeEvent
     public void onChatPosition(RenderGameOverlayEvent.Chat e) {
         if (!enabled) return;
+        applyChatWidth();
+        if (ANIM_MESSAGES.value && AnimationsModule.hud()) updateSlide();
+        else { slideY = 0f; curSlide = 0; }
         e.posX += windowX;
-        e.posY += windowY;
+        e.posY += windowY + curSlide;
+    }
+
+    /** Đặt độ rộng khung chat theo thanh trượt (px). Game cho phép > 320 px nếu gán thẳng giá trị float. */
+    static void applyChatWidth() {
+        Minecraft mc = Minecraft.getMinecraft();
+        float want = (CHAT_WIDTH.getInt() - 40f) / 280f;
+        if (Math.abs(mc.gameSettings.chatWidth - want) > 0.0005f) {
+            mc.gameSettings.chatWidth = want;
+            mc.ingameGUI.getChatGUI().refreshChat(); // ngắt dòng lại theo độ rộng mới
+        }
     }
 
     // ===== Hình học khung chat / thanh nhập (dùng chung cho chat thật và màn hình kéo thả) =====
@@ -584,13 +709,18 @@ public class ChatBarModule extends Module {
 
         GuiNewChat chat = mc.ingameGUI.getChatGUI();
         List<ChatLine> lines;
-        Integer scroll;
+        int scroll;
         try {
-            lines = ReflectionHelper.getPrivateValue(GuiNewChat.class, chat, "drawnChatLines", "field_146253_i");
-            scroll = ReflectionHelper.getPrivateValue(GuiNewChat.class, chat, "scrollPos", "field_146250_j");
+            if (F_LINES == null) {
+                F_LINES = ReflectionHelper.findField(GuiNewChat.class, "drawnChatLines", "field_146253_i");
+                F_SCROLL = ReflectionHelper.findField(GuiNewChat.class, "scrollPos", "field_146250_j");
+            }
+            lines = (List<ChatLine>) F_LINES.get(chat);
+            scroll = F_SCROLL.getInt(chat);
         } catch (Exception ex) {
             return;
         }
+        if (lines == null || lines.isEmpty()) return;
 
         boolean open = chat.getChatOpen();
         float opacity = mc.gameSettings.chatOpacity * 0.9f + 0.1f;
@@ -598,12 +728,14 @@ public class ChatBarModule extends Module {
         float sc = chat.getChatScale();
 
         GlStateManager.pushMatrix();
-        GlStateManager.translate(2f + windowX, e.resolution.getScaledHeight() - 48 + 20f + windowY, 0f);
+        GlStateManager.translate(2f + windowX, e.resolution.getScaledHeight() - 48 + 20f + windowY + curSlide, 0f);
         GlStateManager.scale(sc, sc, 1f);
         GlStateManager.enableBlend();
+        try {
         for (int i = 0; i + scroll < lines.size() && i < chat.getLineCount(); i++) {
-            ChatLine line = lines.get(i + scroll);
-            if (line == null) continue;
+            ChatLine line;
+            try { line = lines.get(i + scroll); } catch (IndexOutOfBoundsException ex) { break; } // chat đổi giữa chừng
+            if (line == null || line.getChatComponent() == null) continue;
             int age = tick - line.getUpdatedCounter();
             if (age >= 200 && !open) continue;
             double d = Math.max(0.0, Math.min(1.0, (1.0 - age / 200.0) * 10.0));
@@ -611,14 +743,28 @@ public class ChatBarModule extends Module {
             if (a <= 3) continue;
             drawIcons(mc, line.getChatComponent().getFormattedText(), -i * 9, a);
         }
-        GlStateManager.disableBlend();
-        GlStateManager.popMatrix();
+        } catch (RuntimeException ex) {
+            // lỗi vẽ icon không được làm sập game / hỏng chat
+        } finally {
+            GlStateManager.enableTexture2D(); // Gui.drawRect tắt texture, trả lại cho phần HUD vẽ sau
+            GlStateManager.color(1f, 1f, 1f, 1f);
+            GlStateManager.disableBlend();
+            GlStateManager.popMatrix();
+        }
     }
 
     // Lọc tin hệ thống (giữ sự kiện Bedwars) + marker icon
     @SubscribeEvent(priority = EventPriority.LOWEST)
     public void onChat(ClientChatReceivedEvent e) {
         if (!enabled || e.type == 2) return; // 2 = action bar, giữ nguyên
+        try {
+            handleChat(e);
+        } catch (RuntimeException ex) {
+            // lỗi xử lý không được làm mất tin nhắn: giữ nguyên tin gốc
+        }
+    }
+
+    private void handleChat(ClientChatReceivedEvent e) {
 
         String plain = EnumChatFormatting.getTextWithoutFormattingCodes(e.message.getUnformattedText());
         if (plain == null) plain = "";
@@ -657,6 +803,50 @@ public class ChatBarModule extends Module {
         if (AUTO_TRANSLATE.value && pc != null) requestTranslate(pc[0], pc[1], plain, e.message);
     }
 
+    /** Thanh trượt gắn với một SliderSetting (dùng trong màn hình kéo thả). */
+    static class SettingSlider extends GuiButton {
+        private final SliderSetting s;
+        private boolean dragging;
+
+        SettingSlider(int id, int x, int y, int w, SliderSetting s) {
+            super(id, x, y, w, 20, "");
+            this.s = s;
+            refresh();
+        }
+
+        private void refresh() { displayString = s.label + ": " + s.display(); }
+
+        private void fromMouse(int mx) {
+            s.setRatio((mx - (xPosition + 4)) / (double) (width - 8));
+            refresh();
+        }
+
+        @Override
+        protected int getHoverState(boolean mouseOver) { return 0; }
+
+        @Override
+        protected void mouseDragged(Minecraft mc, int mouseX, int mouseY) {
+            if (!visible) return;
+            if (dragging) fromMouse(mouseX);
+            mc.getTextureManager().bindTexture(buttonTextures);
+            GlStateManager.color(1f, 1f, 1f, 1f);
+            int hx = xPosition + (int) (s.ratio() * (width - 8));
+            drawTexturedModalRect(hx, yPosition, 0, 66, 4, 20);
+            drawTexturedModalRect(hx + 4, yPosition, 196, 66, 4, 20);
+        }
+
+        @Override
+        public boolean mousePressed(Minecraft mc, int mouseX, int mouseY) {
+            if (!super.mousePressed(mc, mouseX, mouseY)) return false;
+            dragging = true;
+            fromMouse(mouseX);
+            return true;
+        }
+
+        @Override
+        public void mouseReleased(int mouseX, int mouseY) { dragging = false; }
+    }
+
     /** Màn hình kéo thả: kéo khung tin nhắn và thanh nhập tới bất kỳ đâu. */
     public static class PositionScreen extends GuiScreen {
         private final GuiScreen parent;
@@ -673,7 +863,7 @@ public class ChatBarModule extends Module {
             // Kích thước khung chat: thanh kéo gốc của game (lưu vào options.txt khi thoát)
             int lx = width / 2 - 156, rx = width / 2 + 6, y = height / 2 + 46;
             buttonList.add(new GuiOptionSlider(20, lx, y, GameSettings.Options.CHAT_SCALE));
-            buttonList.add(new GuiOptionSlider(21, rx, y, GameSettings.Options.CHAT_WIDTH));
+            buttonList.add(new SettingSlider(21, rx, y, 150, CHAT_WIDTH));
             buttonList.add(new GuiOptionSlider(22, lx, y + 22, GameSettings.Options.CHAT_HEIGHT_FOCUSED));
             buttonList.add(new GuiOptionSlider(23, rx, y + 22, GameSettings.Options.CHAT_OPACITY));
         }
@@ -753,6 +943,7 @@ public class ChatBarModule extends Module {
 
         @Override
         public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+            applyChatWidth(); // thanh trượt độ rộng đổi khung xem trước ngay
             drawDefaultBackground();
             drawCenteredString(fontRendererObj, "Kéo khung chat và thanh nhập tới vị trí bạn muốn",
                     width / 2, height / 2 - 12, 0xFFFFFF);
@@ -766,9 +957,8 @@ public class ChatBarModule extends Module {
             fontRendererObj.drawStringWithShadow("Khung tin nhắn", win[0] + 4, win[1] + 4, 0xFFFFFF);
 
             int[] bar = barRect(width, height);
-            roundRect(bar[0] - 1, bar[1] - 1, bar[2] + 1, bar[3] + 1, accent);
-            roundRect(bar[0], bar[1], bar[2], bar[3], background);
-            fontRendererObj.drawStringWithShadow("Thanh nhập", bar[0] + 4, bar[1] + 3, 0xFFAAAAAA);
+            drawBarBox(bar, 1f);
+            fontRendererObj.drawStringWithShadow("Thanh nhập", bar[0] + 4, bar[1] + 3, 0x99FFFFFF);
 
             super.drawScreen(mouseX, mouseY, partialTicks);
         }
@@ -777,6 +967,45 @@ public class ChatBarModule extends Module {
         public boolean doesGuiPauseGame() {
             return false;
         }
+    }
+
+    static int mulA(int argb, float m) {
+        int a = (int) (((argb >> 24) & 0xFF) * Math.max(0f, Math.min(1f, m)));
+        return (a << 24) | (argb & 0xFFFFFF);
+    }
+
+    /** Viền 1px theo hình bo góc của roundRect (không đè lên phần nền nên không bị đục). */
+    static void ring(int x1, int y1, int x2, int y2, int c) {
+        Gui.drawRect(x1 + 2, y1, x2 - 2, y1 + 1, c);
+        Gui.drawRect(x1 + 2, y2 - 1, x2 - 2, y2, c);
+        Gui.drawRect(x1, y1 + 2, x1 + 1, y2 - 2, c);
+        Gui.drawRect(x2 - 1, y1 + 2, x2, y2 - 2, c);
+        Gui.drawRect(x1 + 1, y1 + 1, x1 + 2, y1 + 2, c);
+        Gui.drawRect(x2 - 2, y1 + 1, x2 - 1, y1 + 2, c);
+        Gui.drawRect(x1 + 1, y2 - 2, x1 + 2, y2 - 1, c);
+        Gui.drawRect(x2 - 2, y2 - 2, x2 - 1, y2 - 1, c);
+    }
+
+    /** Nền thanh nhập: kính mờ tối nhẹ, viền màu mảnh, bóng đổ rất nhẹ. p = 0..1 (mờ dần khi mở). */
+    static void drawBarBox(int[] r, float p) {
+        drawBarBox(r, p, 0f);
+    }
+
+    static void drawBarBox(int[] r, float p, float glow) {
+        int x1 = r[0], y1 = r[1], x2 = r[2], y2 = r[3];
+        float op = BAR_OPACITY.getInt() / 100f;
+        ring(x1 - 1, y1 - 1, x2 + 1, y2 + 1, mulA(0xFF000000, 0.22f * p));               // bóng
+        if (BAR_BORDER.value) {
+            ring(x1, y1, x2, y2, mulA(accent | 0xFF000000, (0.55f + 0.40f * glow) * p));                  // viền
+            roundRect(x1 + 1, y1 + 1, x2 - 1, y2 - 1, mulA(0xFF0A0F1C, op * p));         // nền
+        } else {
+            roundRect(x1, y1, x2, y2, mulA(0xFF0A0F1C, op * p));
+        }
+        // lớp nền sáng nhẹ nửa trên -> cảm giác kính / chiều sâu
+        Gui.drawRect(x1 + 2, y1 + 1, x2 - 2, y1 + 1 + (y2 - y1) / 2, mulA(0xFFFFFFFF, 0.045f * p));
+        Gui.drawRect(x1 + 3, y1 + 1, x2 - 3, y1 + 2, mulA(0xFFFFFFFF, 0.12f * p));       // vệt sáng mép trên
+        // dải nhấn bên trái, sáng lên khi đang gõ
+        Gui.drawRect(x1 + 3, y1 + 3, x1 + 5, y2 - 3, mulA(accent | 0xFF000000, (0.55f + 0.45f * glow) * p));
     }
 
     static void roundRect(int x1, int y1, int x2, int y2, int color) {
@@ -799,8 +1028,8 @@ public class ChatBarModule extends Module {
             // dựng lại ô nhập theo vị trí/độ rộng người dùng chọn
             String t = inputField.getText();
             int[] r = barRect(width, height);
-            inputField = new GuiTextField(0, fontRendererObj, r[0] + 3, r[1] + 3,
-                    r[2] - r[0] - 6 - (CHAR_COUNTER.value ? 36 : 0), 12);
+            inputField = new GuiTextField(0, fontRendererObj, r[0] + 9, r[1] + 3,
+                    r[2] - r[0] - 12 - (CHAR_COUNTER.value ? 40 : 0), 12);
             inputField.setMaxStringLength(100);
             inputField.setEnableBackgroundDrawing(false);
             inputField.setFocused(true);
@@ -818,7 +1047,10 @@ public class ChatBarModule extends Module {
             inputField.mouseClicked(mx, my, btn);
         }
 
+        private float glow; // 0..1: viền sáng dần khi đang gõ
+
         private float progress() {
+            if (!ANIM_BAR.value || !AnimationsModule.hud()) return 1f;
             float t = Math.min(1f, (System.currentTimeMillis() - openTime) / 180f);
             return 1f - (float) Math.pow(1f - t, 3); // ease-out cubic
         }
@@ -846,20 +1078,26 @@ public class ChatBarModule extends Module {
             GlStateManager.pushMatrix();
             GlStateManager.translate(0, offset, 0);
 
-            // viền accent + nền
-            roundRect(x1 - 1, y1 - 1, x2 + 1, y2 + 1, withAlpha(accent, p * 0.9f));
-            roundRect(x1, y1, x2, y2, withAlpha(background, p));
+            glow += ((inputField.getText().isEmpty() ? 0f : 1f) - glow) * 0.25f;
+            drawBarBox(r, p, glow);
 
-            // ô nhập
+            // ô nhập (+ chữ gợi ý khi còn trống)
             inputField.drawTextBox();
+            if (inputField.getText().isEmpty()) {
+                fontRendererObj.drawStringWithShadow("Nhập tin nhắn...", x1 + 10, y1 + 3, mulA(0xFFFFFFFF, 0.35f * p));
+            }
 
-            // bộ đếm ký tự
+            // bộ đếm ký tự (viên thuốc nhỏ) + vạch tiến độ ở đáy thanh
             if (CHAR_COUNTER.value) {
                 int len = inputField.getText().length();
                 String s = len + "/100";
-                int col = len >= 100 ? 0xFFFF5555 : 0xFFAAAAAA;
-                fontRendererObj.drawStringWithShadow(s, x2 - fontRendererObj.getStringWidth(s) - 4,
-                        y1 + 3, col);
+                int col = len >= 100 ? 0xFFFF5555 : len >= 80 ? 0xFFFFD866 : 0xCCFFFFFF;
+                int tw = fontRendererObj.getStringWidth(s);
+                int px2 = x2 - 4, px1 = px2 - tw - 6;
+                dev.lunarlite.gui.Draw.rrect(px1, y1 + 2, px2, y2 - 2, 3, mulA(0xFF000000, 0.35f * p));
+                fontRendererObj.drawStringWithShadow(s, px1 + 3, y1 + 3, mulA(col, p));
+                int fw = Math.round((x2 - x1 - 8) * Math.min(1f, len / 100f));
+                if (fw > 0) Gui.drawRect(x1 + 4, y2 - 2, x1 + 4 + fw, y2 - 1, mulA(col, 0.85f * p));
             }
 
             GlStateManager.popMatrix();
