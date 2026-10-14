@@ -623,7 +623,7 @@ public class ChatBarModule extends Module {
     private static float slideY;      // độ lệch dọc còn lại (px GUI), về 0 dần
     private static int curSlide;      // giá trị đã làm tròn của khung hình này (icon dùng chung)
     private static long lastFrame;
-    private static final String GAP_MARKER = "\\u200B";
+    private static final String GAP_MARKER = "\u200B";
     private static boolean spacingApplied;
 
     /** Có dòng mới ở cuối thì đẩy cả khung xuống đúng số dòng đó, rồi cho trượt lên về vị trí cũ. */
