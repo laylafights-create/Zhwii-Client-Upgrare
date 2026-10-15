@@ -95,7 +95,7 @@ public class ChatBarModule extends Module {
     public static final BoolSetting TRANSLATE_OUT = new BoolSetting("translateOut", "Dịch tin gửi sang tiếng Anh", true);
     public static final BoolSetting SHOW_OUT_ECHO = new BoolSetting("showOutEcho", "Hiện bản dịch đã gửi", true);
     public static final BoolSetting HIDE_ORIGINAL = new BoolSetting("hideOriginal", "Tự ẩn tin gốc", false);
-    public static final BoolSetting CHAR_COUNTER = new BoolSetting("charCounter", "Bộ đếm ký tự", true);
+    public static final BoolSetting CHAR_COUNTER = new BoolSetting("charCounter", "Bộ đếm ký tự", false);
     public static final BoolSetting PLAYER_HEADS = new BoolSetting("heads", "Avatar + giường team", true);
     public static final SliderSetting ICON_SIZE = new SliderSetting("iconSize", "Cỡ avatar", 8, 6, 14, 1, " px");
     public static final SliderSetting ICON_X = new SliderSetting("iconX", "Avatar lệch ngang", 0, -20, 20, 1, " px");
@@ -107,7 +107,7 @@ public class ChatBarModule extends Module {
     public static final BoolSetting ANIM_MESSAGES = new BoolSetting("animMessages", "Animation tin nhắn mới", true);
     public static final BoolSetting ANIM_BAR = new BoolSetting("animBar", "Animation thanh nhập", true);
     public static final BoolSetting ANIM_TYPING = new BoolSetting("animTyping", "Animation gõ / xoá chữ", true);
-    public static final BoolSetting BAR_BORDER = new BoolSetting("barBorder", "Viền màu thanh nhập", true);
+    public static final BoolSetting BAR_BORDER = new BoolSetting("barBorder", "Viền màu thanh nhập", false);
     public static final BoolSetting HIDE_BAR_BACKGROUND = new BoolSetting("hideBarBackground", "Ẩn nền thanh nhập", false);
     public static final BoolSetting HIDE_CHAT_BACKGROUND = new BoolSetting("hideChatBackground", "Ẩn nền khung chat", false);
     public static final BoolSetting FIT_CHAT_BACKGROUND = new BoolSetting("fitChatBackground", "Nền chat vừa chiều dài chữ", false);
@@ -1500,7 +1500,7 @@ public class ChatBarModule extends Module {
 
             int[] bar = barRect(width, height);
             if (!HIDE_BAR_BACKGROUND.value) drawBarBox(bar, 1f);
-            fontRendererObj.drawStringWithShadow("Thanh nhập", bar[0] + 18, bar[1] + 4, 0x99FFFFFF);
+            fontRendererObj.drawStringWithShadow("Thanh nhập", bar[0] + 4, bar[1] + 4, 0x99FFFFFF);
 
             super.drawScreen(mouseX, mouseY, partialTicks);
         }
@@ -1550,20 +1550,9 @@ public class ChatBarModule extends Module {
         }
     }
 
+    /** Thanh nhập: chỉ có nền đen mờ, không viền, không biểu tượng. */
     static void drawBarBox(int[] r, float p, float glow) {
-        int x1 = r[0], y1 = r[1], x2 = r[2], y2 = r[3];
-        float op = BAR_OPACITY.getInt() / 100f;
-        int acc = accent | 0xFF000000;
-        // nền đen bo góc, cùng tông với nền các dòng chat
-        roundRect(x1, y1, x2, y2, mulA(0xFF000000, op * p));
-        // viền mảnh: trắng mờ khi nghỉ, ngả màu accent khi đang gõ
-        if (BAR_BORDER.value) ring(x1, y1, x2, y2, mulA(0xFF000000 | lerpColor(0xFFFFFF, accent & 0xFFFFFF, glow), (0.10f + 0.42f * glow) * p));
-        // biểu tượng ">" (prompt) bên trái: vẽ bằng pixel cho nét sắc, sáng + nhích sang phải khi đang gõ
-        int cx = x1 + 7 + Math.round(glow), cy = y1 + (y2 - y1 - 7) / 2;
-        int[] off = {0, 1, 2, 3, 2, 1, 0};
-        for (int i = 0; i < 7; i++) {
-            Gui.drawRect(cx + off[i], cy + i, cx + off[i] + 2, cy + i + 1, mulA(acc, (0.65f + 0.35f * glow) * p));
-        }
+        Gui.drawRect(r[0], r[1], r[2], r[3], mulA(0xFF000000, BAR_OPACITY.getInt() / 100f * p));
     }
 
     private static float panelA;
@@ -1635,8 +1624,8 @@ public class ChatBarModule extends Module {
             // dựng lại ô nhập theo vị trí/độ rộng người dùng chọn
             String t = inputField.getText();
             int[] r = barRect(width, height);
-            textX = r[0] + 18;
-            textW = r[2] - r[0] - 22 - (CHAR_COUNTER.value ? 48 : 0) - 4;
+            textX = r[0] + 4;
+            textW = r[2] - r[0] - 8 - (CHAR_COUNTER.value ? 48 : 0);
             inputField = new GuiTextField(0, fontRendererObj, textX, r[1] + 4, textW, 12);
             inputField.setMaxStringLength(100);
             inputField.setEnableBackgroundDrawing(false);
@@ -1904,24 +1893,6 @@ public class ChatBarModule extends Module {
 
             // chữ đang nhập (animation gõ / xoá)
             drawTypedText(r, p, offset, dt, spd, anim, now);
-
-            // chữ gợi ý: mờ dần + trượt nhẹ sang phải khi bắt đầu gõ
-            hintA += ((empty ? 1f : 0f) - hintA) * k(dt, 18f);
-            if (hintA > 0.02f) {
-                String hint = TRANSLATE_OUT.value ? "Gõ tiếng Việt, tự dịch sang tiếng Anh..." : "Nhập tin nhắn...";
-                int hx = x1 + 18 + 3 + Math.round((1f - hintA) * 8f);
-                int maxW = x2 - 5 - (CHAR_COUNTER.value ? fontRendererObj.getStringWidth("100/100") + 8 + 3 : 0) - hx;
-                if (fontRendererObj.getStringWidth(hint) > maxW) {
-                    int dotsW = fontRendererObj.getStringWidth("...");
-                    hint = maxW > dotsW ? fontRendererObj.trimStringToWidth(hint, maxW - dotsW) + "..." : "";
-                }
-                if (!hint.isEmpty()) {
-                    GlStateManager.enableBlend();
-                    GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0);
-                    int ha = mulA(0xFFFFFFFF, 0.32f * hintA * p);
-                    if (((ha >> 24) & 0xFF) >= 8) fontRendererObj.drawStringWithShadow(hint, hx, y1 + 4, ha);
-                }
-            }
 
             // nút VI>EN: xanh = đang dịch tin gửi, xám = tắt (đổi màu / hover mượt)
             int[] tg = toggleRect();
