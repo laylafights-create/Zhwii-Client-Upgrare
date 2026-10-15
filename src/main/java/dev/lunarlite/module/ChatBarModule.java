@@ -493,7 +493,8 @@ public class ChatBarModule extends Module {
     private static final Set<String> KEEP_WORDS = new HashSet<String>(java.util.Arrays.asList(
             "gg", "ez", "wp", "gl", "hf", "bed", "bw", "rush", "pls", "plz", "afk", "lol", "ping", "lag",
             "noob", "pro", "team", "final", "kill", "void", "diamond", "emerald", "iron", "gold", "ok", "oke",
-            "xp", "op", "hp", "pvp", "gm", "brb", "wtf", "omg", "fps", "dm", "tp", "bridge", "invis"));
+            "xp", "op", "hp", "pvp", "gm", "brb", "wtf", "omg", "fps", "dm", "tp", "bridge", "invis",
+            "minecraft", "hypixel", "bedwars", "skywars", "discord", "youtube", "tiktok", "facebook", "server"));
 
     /** Từ tiếng Anh phổ biến (đã loại các từ trùng tiếng Việt không dấu như me, do, to, no, can, day, may...). */
     private static final Set<String> EN_COMMON = new HashSet<String>(java.util.Arrays.asList(
@@ -575,7 +576,119 @@ public class ChatBarModule extends Module {
     /** Chuẩn hoá tin tiếng Việt trước khi dịch: không dấu -> mở rộng viết tắt -> khôi phục dấu. */
     private static String normalizeVi(String text) {
         if (!needsRestore(text)) return text;
+        String decoded = telexDecode(text);
+        if (!decoded.equals(text)) {
+            // có gõ kiểu Telex ("ddang baor veej giuowng"): giải mã chỗ đã gõ dấu, rồi nhờ Input Tools bù dấu còn thiếu
+            String restored = restoreDiacritics(expandSlang(stripMarks(decoded)));
+            return mergeMarks(decoded, restored);
+        }
         return restoreDiacritics(expandSlang(text));
+    }
+
+    // ===== Telex: "ddang baor veej giuowng" -> "đang bảo vệ giương" (dấu thanh còn thiếu do Input Tools bù) =====
+    private static final String[] TONE_ROWS = {"aáàảãạ", "ăắằẳẵặ", "âấầẩẫậ", "eéèẻẽẹ", "êếềểễệ", "iíìỉĩị",
+            "oóòỏõọ", "ôốồổỗộ", "ơớờởỡợ", "uúùủũụ", "ưứừửữự", "yýỳỷỹỵ"};
+    private static final String VI_VOWELS = "aăâeêioôơuưy";
+    private static final Pattern FINAL_CONS = Pattern.compile("c|ch|m|n|ng|nh|p|t|");
+
+    private static char withTone(char v, int tone) {
+        for (String row : TONE_ROWS) if (row.charAt(0) == v) return row.charAt(tone);
+        return v;
+    }
+
+    /** Ký tự thứ i có phải nguyên âm không ("u" sau "q" và "i" trong "gi" + nguyên âm là phụ âm). */
+    private static boolean isVowelAt(String s, int i) {
+        char c = s.charAt(i);
+        if (VI_VOWELS.indexOf(c) < 0) return false;
+        if (c == 'u' && i > 0 && s.charAt(i - 1) == 'q') return false;
+        if (c == 'i' && i > 0 && s.charAt(i - 1) == 'g' && i + 1 < s.length() && VI_VOWELS.indexOf(s.charAt(i + 1)) >= 0) return false;
+        return true;
+    }
+
+    /** Giải mã một từ Telex: dd->đ, aa/ee/oo->â/ê/ô, aw/ow/uw/uow->ă/ơ/ư/ươ, s f r x j -> sắc huyền hỏi ngã nặng. */
+    private static String telexWord(String w) {
+        String s = w.toLowerCase();
+        if (KEEP_WORDS.contains(s) || EN_COMMON.contains(s) || VI_SLANG.containsKey(s)) return w;
+        s = s.replace("dd", "đ");
+        int tone = 0;
+        for (int k = 1; k < s.length() && tone == 0; k++) {
+            int t = "sfrxj".indexOf(s.charAt(k)) + 1;
+            if (t == 0) continue;
+            boolean vowelBefore = false;
+            for (int i = 0; i < k; i++) if (isVowelAt(s, i) || s.charAt(i) == 'w') vowelBefore = true;
+            // phím dấu phải đứng sau nguyên âm và chỉ còn phụ âm cuối (c, ch, m, n, ng, nh, p, t) phía sau
+            if (vowelBefore && FINAL_CONS.matcher(s.substring(k + 1)).matches()) {
+                tone = t;
+                s = s.substring(0, k) + s.substring(k + 1);
+            }
+        }
+        s = s.replace("uwow", "ươ").replace("uow", "ươ");
+        s = s.replace("aa", "â").replace("ee", "ê").replace("oo", "ô")
+                .replace("aw", "ă").replace("ow", "ơ").replace("uw", "ư").replace('w', 'ư');
+        if (tone > 0) {
+            int a = -1, b = -1;
+            for (int i = 0; i < s.length(); i++) {
+                if (isVowelAt(s, i)) { if (a < 0) a = i; b = i; }
+                else if (a >= 0) break;
+            }
+            if (a >= 0) {
+                int pick = -1;
+                for (int i = b; i >= a; i--) {
+                    if ("ăâêôơư".indexOf(s.charAt(i)) >= 0) { pick = i; break; }
+                }
+                if (pick < 0) {
+                    int len = b - a + 1;
+                    if (len == 1) pick = a;
+                    else if (len == 2) {
+                        String pair = s.substring(a, b + 1);
+                        boolean closed = b < s.length() - 1;
+                        pick = (closed || pair.equals("oa") || pair.equals("oe") || pair.equals("uy")) ? b : a;
+                    } else pick = a + 1;
+                }
+                char[] cs = s.toCharArray();
+                cs[pick] = withTone(cs[pick], tone);
+                s = new String(cs);
+            }
+        }
+        if (s.equals(w.toLowerCase())) return w; // không có gì để giải mã
+        if (Character.isUpperCase(w.charAt(0))) s = Character.toUpperCase(s.charAt(0)) + s.substring(1);
+        return s;
+    }
+
+    private static String telexDecode(String text) {
+        Matcher m = WORD_TOKEN.matcher(text);
+        StringBuffer sb = new StringBuffer();
+        while (m.find()) m.appendReplacement(sb, Matcher.quoteReplacement(telexWord(m.group())));
+        m.appendTail(sb);
+        return sb.toString();
+    }
+
+    /** Bỏ toàn bộ dấu (kể cả â ê ô ơ ư ă đ). */
+    private static String stripMarks(String s) {
+        String d = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD).replaceAll("\\p{M}+", "");
+        return d.replace('đ', 'd').replace('Đ', 'D');
+    }
+
+    /** Bỏ dấu thanh, giữ dấu mũ / móc / trăng và đ ("giường" -> "giương"). */
+    private static String shape(String s) {
+        String d = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD)
+                .replaceAll("[\\u0300\\u0301\\u0309\\u0303\\u0323]", "");
+        return java.text.Normalizer.normalize(d, java.text.Normalizer.Form.NFC);
+    }
+
+    /** Ghép: từ nào bạn đã gõ đủ dấu thì giữ, còn thiếu dấu thanh / dấu mũ thì lấy bản Input Tools đoán. */
+    private static String mergeMarks(String decoded, String restored) {
+        String[] d = splitWords(decoded), r = splitWords(restored);
+        if (d.length != r.length) return restored; // viết tắt làm đổi số từ: dùng bản bù dấu
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < d.length; i++) {
+            String dw = d[i], rw = r[i];
+            boolean hasTone = !shape(dw).equals(dw);
+            boolean hasMark = !stripMarks(dw).equals(dw);
+            String pick = shape(rw).equals(shape(dw)) ? (hasTone ? dw : rw) : (hasMark ? dw : rw);
+            sb.append(i > 0 ? " " : "").append(pick);
+        }
+        return sb.toString();
     }
 
     /** Cắt bản dịch thành tối đa 3 tin <= 100 ký tự, ưu tiên cắt ở dấu cách để không đứt giữa từ. */
