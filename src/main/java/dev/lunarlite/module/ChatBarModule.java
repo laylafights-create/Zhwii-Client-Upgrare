@@ -103,7 +103,7 @@ public class ChatBarModule extends Module {
     public static final SliderSetting BAR_WIDTH = new SliderSetting("barW", "Rộng thanh nhập (0 = tự động)", 0, 0, 600, 5, " px");
     public static final SliderSetting CHAT_WIDTH = new SliderSetting("chatWidth", "Rộng mỗi dòng chat", 320, 120, 900, 10, " px");
     public static final SliderSetting CHAT_GAP = new SliderSetting("chatGap", "Khoảng cách dòng chat", 0, 0, 4, 1, " dòng");
-    public static final SliderSetting BAR_OPACITY = new SliderSetting("barOpacity", "Độ mờ thanh nhập", 45, 10, 100, 5, "%");
+    public static final SliderSetting BAR_OPACITY = new SliderSetting("barOpacity", "Độ mờ thanh nhập", 55, 10, 100, 5, "%");
     public static final BoolSetting ANIM_MESSAGES = new BoolSetting("animMessages", "Animation tin nhắn mới", true);
     public static final BoolSetting ANIM_BAR = new BoolSetting("animBar", "Animation thanh nhập", true);
     public static final BoolSetting ANIM_TYPING = new BoolSetting("animTyping", "Animation gõ / xoá chữ", true);
@@ -1100,7 +1100,7 @@ public class ChatBarModule extends Module {
                 if (glass) {
                     // đóng chat: mỗi dòng là một viên bo góc ôm sát chữ; mở chat: nền do khung kính đảm nhiệm
                     if (!open && !isGap(line) && !EnumChatFormatting.getTextWithoutFormattingCodes(text).trim().isEmpty()) {
-                        roundRect(-3, -i * 9 - 9, lc.width + 6, -i * 9 + 1, (((int) (a * 0.62f)) << 24) | 0x0B1020);
+                        roundRect(-3, -i * 9 - 9, lc.width + 6, -i * 9 + 1, (((int) (a * 0.62f)) << 24) | 0x000000);
                     }
                 } else if (!HIDE_CHAT_BACKGROUND.value && FIT_CHAT_BACKGROUND.value && !isGap(line)
                         && !EnumChatFormatting.getTextWithoutFormattingCodes(text).trim().isEmpty()) {
@@ -1554,33 +1554,15 @@ public class ChatBarModule extends Module {
         int x1 = r[0], y1 = r[1], x2 = r[2], y2 = r[3];
         float op = BAR_OPACITY.getInt() / 100f;
         int acc = accent | 0xFF000000;
-        // bóng đổ mềm 2 lớp (đậm hơn khi đang gõ)
-        ring(x1 - 2, y1 - 2, x2 + 2, y2 + 2, mulA(0xFF000000, (0.10f + 0.05f * glow) * p));
-        ring(x1 - 1, y1 - 1, x2 + 1, y2 + 1, mulA(0xFF000000, 0.24f * p));
-        // quầng sáng màu accent khi đang gõ
-        if (glow > 0.02f && BAR_BORDER.value) ring(x1 - 1, y1 - 1, x2 + 1, y2 + 1, mulA(acc, 0.22f * glow * p));
-        // nền kính: gradient xanh đen từ trên xuống
-        int botCol = lerpColor(0x070A14, accent & 0xFFFFFF, 0.14f * glow); // đáy ngả màu accent khi đang gõ
-        if (BAR_BORDER.value) fillGradient(x1 + 1, y1 + 1, x2 - 1, y2 - 1, 0x182038, botCol, op * p);
-        else fillGradient(x1, y1, x2, y2, 0x182038, botCol, op * p);
-        // viền mảnh: dịu khi nghỉ, sáng khi đang gõ
-        if (BAR_BORDER.value) ring(x1, y1, x2, y2, mulA(acc, (0.40f + 0.55f * glow) * p));
-        // vệt sáng mép trên
-        Gui.drawRect(x1 + 4, y1 + 1, x2 - 4, y1 + 2, mulA(0xFFFFFFFF, 0.13f * p));
-        // vệt sáng chạy dọc mép trên khi đang gõ
-        if (glow > 0.05f) {
-            int span = x2 - x1 - 8, sw = Math.max(16, span / 5);
-            float ph = (System.currentTimeMillis() % 2200L) / 2200f;
-            int sx = x1 + 4 + Math.round((span + sw) * ph) - sw;
-            int a = Math.max(x1 + 4, sx), b = Math.min(x2 - 4, sx + sw);
-            if (b > a) Gui.drawRect(a, y1 + 1, b, y1 + 2, mulA(acc, 0.55f * glow * p));
-        }
+        // nền đen bo góc, cùng tông với nền các dòng chat
+        roundRect(x1, y1, x2, y2, mulA(0xFF000000, op * p));
+        // viền mảnh: trắng mờ khi nghỉ, ngả màu accent khi đang gõ
+        if (BAR_BORDER.value) ring(x1, y1, x2, y2, mulA(0xFF000000 | lerpColor(0xFFFFFF, accent & 0xFFFFFF, glow), (0.10f + 0.42f * glow) * p));
         // biểu tượng ">" (prompt) bên trái: vẽ bằng pixel cho nét sắc, sáng + nhích sang phải khi đang gõ
         int cx = x1 + 7 + Math.round(glow), cy = y1 + (y2 - y1 - 7) / 2;
         int[] off = {0, 1, 2, 3, 2, 1, 0};
         for (int i = 0; i < 7; i++) {
-            Gui.drawRect(cx + off[i] + 1, cy + i + 1, cx + off[i] + 3, cy + i + 2, mulA(0xFF000000, 0.35f * p)); // bóng
-            Gui.drawRect(cx + off[i], cy + i, cx + off[i] + 2, cy + i + 1, mulA(acc, (0.75f + 0.25f * glow) * p));
+            Gui.drawRect(cx + off[i], cy + i, cx + off[i] + 2, cy + i + 1, mulA(acc, (0.65f + 0.35f * glow) * p));
         }
     }
 
@@ -1597,14 +1579,11 @@ public class ChatBarModule extends Module {
         while (y < h) { // dải 3px cho nhanh, 2 hàng đầu/cuối vát góc
             int step = (y < 2 || y >= h - 2) ? 1 : Math.min(3, h - 2 - y);
             int inset = (y == 0 || y == h - 1) ? 2 : (y == 1 || y == h - 2) ? 1 : 0;
-            int rgb = lerpColor(0x182038, 0x070A14, h <= 1 ? 0f : (y + step / 2f) / h);
+            int rgb = lerpColor(0x121212, 0x000000, h <= 1 ? 0f : (y + step / 2f) / h);
             Gui.drawRect(ix1 + inset, iy1 + y, ix2 - inset, iy1 + y + step, mulA(0xFF000000 | rgb, fillA));
             y += step;
         }
-        ring(x1, y1, x2, y2, mulA(acc, 0.45f * fx));
-        Gui.drawRect(x1 + 4, y1 + 1, x2 - 4, y1 + 2, mulA(0xFFFFFFFF, 0.12f * fx));
-        // vạch accent mờ dần ở đáy khung, nối với thanh nhập bên dưới
-        Gui.drawRect(x1 + 6, y2 - 2, x2 - 6, y2 - 1, mulA(acc, 0.28f * fx));
+        ring(x1, y1, x2, y2, mulA(0xFFFFFFFF, 0.10f * fx));
     }
 
     static void roundRect(int x1, int y1, int x2, int y2, int color) {
@@ -1965,7 +1944,7 @@ public class ChatBarModule extends Module {
                 int col = 0xFF000000 | cntRgb;
                 int tw = fontRendererObj.getStringWidth(s);
                 int px2 = x2 - 5, px1 = px2 - tw - 8;
-                dev.lunarlite.gui.Draw.rrect(px1, y1 + 3, px2, y2 - 3, 4, mulA(col, 0.16f * p));
+                dev.lunarlite.gui.Draw.rrect(px1, y1 + 3, px2, y2 - 3, 4, mulA(0xFFFFFFFF, 0.07f * p));
                 fontRendererObj.drawStringWithShadow(s, px1 + 4, y1 + 4, mulA(col, p));
                 int trackW = x2 - x1 - 12;
                 fillF += (Math.min(1f, len / 100f) - fillF) * k(dt, 14f);
