@@ -9,7 +9,12 @@ import java.util.List;
 import java.util.Random;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.inventory.GuiChest;
+import net.minecraft.client.gui.inventory.GuiInventory;
 import net.minecraft.client.particle.EffectRenderer;
+import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.inventory.ContainerChest;
+import net.minecraft.inventory.IInventory;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.client.renderer.Tessellator;
@@ -56,6 +61,10 @@ public class LunarLite {
 
     // Rung block khi đào + tắt hạt vỡ block
     public static boolean blockShake = true;
+    // Bỏ nền đen khi mở kho đồ / rương
+    public static boolean cleanInv = true;
+    private static final float INV_ANIM_MS = 150f;
+    private static final float INV_ANIM_START = 0.85f;
     private static final float SHAKE = 0.05f; // độ rung, tăng/giảm tuỳ ý
     private final Random shakeRand = new Random();
 
@@ -118,6 +127,7 @@ public class LunarLite {
         config.load();
         for (Module m : MODULES) m.load(config);
         blockShake = config.getBoolean("blockShake", "general", true, "Rung block khi đào và tắt hạt vỡ block");
+        cleanInv = config.getBoolean("cleanInv", "general", true, "Bỏ nền đen khi mở kho đồ / rương");
         config.save();
 
         keyMenu = new KeyBinding("Mở menu Zhwii Client", Keyboard.KEY_RSHIFT, "Zhwii Client");
@@ -140,6 +150,7 @@ public class LunarLite {
         if (config == null) return;
         for (Module m : MODULES) m.save(config);
         config.get("general", "blockShake", true).set(blockShake);
+        config.get("general", "cleanInv", true).set(cleanInv);
         config.save();
     }
 
@@ -193,7 +204,64 @@ public class LunarLite {
 
     @SubscribeEvent
     public void onGuiOpen(GuiOpenEvent e) {
+        if (cleanInv && e.gui != null) {
+            Minecraft mc = Minecraft.getMinecraft();
+            if (e.gui.getClass() == GuiInventory.class && mc.thePlayer != null) {
+                e.gui = new CleanInventory(mc.thePlayer);
+            } else if (e.gui.getClass() == GuiChest.class && mc.thePlayer != null) {
+                ContainerChest c = (ContainerChest) ((GuiChest) e.gui).inventorySlots;
+                e.gui = new CleanChest(mc.thePlayer.inventory, c.getLowerChestInventory());
+            }
+        }
         AnimationsModule.guiOpened(e.gui);
+    }
+
+    /** Bắt đầu animation phóng to (nếu AnimationsModule không tự làm). Trả về {scale, cx, cy}; luôn phải popMatrix sau đó. */
+    static float[] pushInvAnim(long start, int w, int h) {
+        float s = 1f;
+        if (ANIM == null || !ANIM.enabled) {
+            float t = Math.min(1f, (System.currentTimeMillis() - start) / INV_ANIM_MS);
+            float inv = 1f - t;
+            s = INV_ANIM_START + (1f - INV_ANIM_START) * (1f - inv * inv * inv);
+        }
+        float cx = w / 2f, cy = h / 2f;
+        GlStateManager.pushMatrix();
+        GlStateManager.translate(cx, cy, 0);
+        GlStateManager.scale(s, s, 1f);
+        GlStateManager.translate(-cx, -cy, 0);
+        return new float[]{s, cx, cy};
+    }
+
+    /** Kho đồ không có nền đen. */
+    public static class CleanInventory extends GuiInventory {
+        private final long start = System.currentTimeMillis();
+        public CleanInventory(EntityPlayer p) { super(p); }
+
+        @Override
+        public void drawDefaultBackground() { }
+
+        @Override
+        public void drawScreen(int mx, int my, float pt) {
+            float[] a = pushInvAnim(start, width, height);
+            super.drawScreen((int) ((mx - a[1]) / a[0] + a[1]), (int) ((my - a[2]) / a[0] + a[2]), pt);
+            GlStateManager.popMatrix();
+        }
+    }
+
+    /** Rương không có nền đen. */
+    public static class CleanChest extends GuiChest {
+        private final long start = System.currentTimeMillis();
+        public CleanChest(IInventory upper, IInventory lower) { super(upper, lower); }
+
+        @Override
+        public void drawDefaultBackground() { }
+
+        @Override
+        public void drawScreen(int mx, int my, float pt) {
+            float[] a = pushInvAnim(start, width, height);
+            super.drawScreen((int) ((mx - a[1]) / a[0] + a[1]), (int) ((my - a[2]) / a[0] + a[2]), pt);
+            GlStateManager.popMatrix();
+        }
     }
 
     @SubscribeEvent
