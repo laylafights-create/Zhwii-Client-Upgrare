@@ -18,7 +18,7 @@ import net.minecraft.client.gui.GuiEnchantment;
 import net.minecraft.client.gui.inventory.GuiFurnace;
 import net.minecraft.client.gui.inventory.GuiInventory;
 import net.minecraft.client.gui.GuiRepair;
-import net.minecraft.client.gui.inventory.GuiHopper;
+import net.minecraft.client.gui.GuiHopper;
 import net.minecraft.entity.IMerchant;
 import net.minecraft.entity.passive.EntityHorse;
 import net.minecraft.entity.player.EntityPlayer;
