@@ -47,6 +47,7 @@ import net.minecraftforge.fml.relauncher.ReflectionHelper;
 import net.minecraft.client.gui.ScaledResolution;
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
+import org.lwjgl.opengl.GL11;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -77,6 +78,7 @@ import java.util.regex.Pattern;
  * - Thanh chat bo góc, nền mờ, viền màu accent
  * - Hiệu ứng trượt lên + fade khi mở chat
  * - Bộ đếm ký tự (x/100)
+ * - Animation gõ chữ (ký tự nảy lên + đổi màu), xoá chữ (rơi xuống + mờ dần), con trỏ trượt mượt
  * - Tối ưu Bedwars: giữ tin sự kiện quan trọng, avatar + giường màu team, giường bị phá thì giường xám
  *
  * Đăng ký: new ChatBarModule().register();
@@ -104,10 +106,12 @@ public class ChatBarModule extends Module {
     public static final SliderSetting BAR_OPACITY = new SliderSetting("barOpacity", "Độ mờ thanh nhập", 45, 10, 100, 5, "%");
     public static final BoolSetting ANIM_MESSAGES = new BoolSetting("animMessages", "Animation tin nhắn mới", true);
     public static final BoolSetting ANIM_BAR = new BoolSetting("animBar", "Animation thanh nhập", true);
+    public static final BoolSetting ANIM_TYPING = new BoolSetting("animTyping", "Animation gõ / xoá chữ", true);
     public static final BoolSetting BAR_BORDER = new BoolSetting("barBorder", "Viền màu thanh nhập", true);
     public static final BoolSetting HIDE_BAR_BACKGROUND = new BoolSetting("hideBarBackground", "Ẩn nền thanh nhập", false);
     public static final BoolSetting HIDE_CHAT_BACKGROUND = new BoolSetting("hideChatBackground", "Ẩn nền khung chat", false);
     public static final BoolSetting FIT_CHAT_BACKGROUND = new BoolSetting("fitChatBackground", "Nền chat vừa chiều dài chữ", false);
+    public static final BoolSetting CHAT_GLASS = new BoolSetting("chatGlass", "Khung chat kiểu kính (bo góc, viền màu)", true);
     public static final BoolSetting HIDE_CHAT_SCROLLBAR = new BoolSetting("hideChatScrollbar", "Ẩn thanh cuộn chat", false);
 
     public static String translateTo = "vi";
@@ -133,7 +137,9 @@ public class ChatBarModule extends Module {
         add(BAR_BORDER, SEC_BAR);
         add(HIDE_BAR_BACKGROUND, SEC_BAR);
         add(ANIM_BAR, SEC_BAR);
+        add(ANIM_TYPING, SEC_BAR, ANIM_BAR);
         add(ANIM_MESSAGES, SEC_CHAT);
+        add(CHAT_GLASS, SEC_CHAT);
         add(HIDE_CHAT_BACKGROUND, SEC_CHAT);
         add(FIT_CHAT_BACKGROUND, SEC_CHAT);
         add(HIDE_CHAT_SCROLLBAR, SEC_CHAT);
@@ -1032,7 +1038,7 @@ public class ChatBarModule extends Module {
         else { slideY = 0f; curSlide = 0; }
         e.posX += windowX;
         e.posY += windowY + curSlide;
-        if (HIDE_CHAT_BACKGROUND.value || FIT_CHAT_BACKGROUND.value || HIDE_CHAT_SCROLLBAR.value) {
+        if (CHAT_GLASS.value || HIDE_CHAT_BACKGROUND.value || FIT_CHAT_BACKGROUND.value || HIDE_CHAT_SCROLLBAR.value) {
             e.setCanceled(true);          // chặn cách vẽ gốc (có nền đen)
             drawChatNoBackground(e);      // tự vẽ lại chữ + icon, không có nền
         }
@@ -1055,9 +1061,11 @@ public class ChatBarModule extends Module {
         } catch (Exception ex) {
             return;
         }
-        if (lines == null || lines.isEmpty()) return;
-
         boolean open = chat.getChatOpen();
+        boolean glass = CHAT_GLASS.value && !HIDE_CHAT_BACKGROUND.value && !FIT_CHAT_BACKGROUND.value;
+        if (lines == null) return;
+        if (lines.isEmpty() && !(glass && open)) return;
+
         float opacity = mc.gameSettings.chatOpacity * 0.9f + 0.1f;
         int tick = mc.ingameGUI.getUpdateCounter();
         float sc = chat.getChatScale();
@@ -1068,6 +1076,14 @@ public class ChatBarModule extends Module {
         GlStateManager.pushMatrix();
         GlStateManager.translate(e.posX + 2f, e.posY + 20f, 0f);
         GlStateManager.scale(sc, sc, 1f);
+        // khung kính: hiện/ẩn mượt theo trạng thái mở chat
+        long pn = System.nanoTime();
+        float pdt = panelLast == 0L ? 0.016f : Math.min(0.1f, (pn - panelLast) / 1e9f);
+        panelLast = pn;
+        float pTarget = open ? 1f : 0f;
+        panelA = (AnimationsModule.hud() && ANIM_MESSAGES.value) ? panelA + (pTarget - panelA) * (1f - (float) Math.exp(-pdt * 14f)) : pTarget;
+        if (Math.abs(pTarget - panelA) < 0.01f) panelA = pTarget;
+        if (glass && panelA > 0.02f) glassPanel(-4, -max * 9 - 4, fullW + 4, 3, 0.58f * opacity * panelA, panelA);
         try {
             for (int i = 0; i + scroll < lines.size() && i < max; i++) {
                 ChatLine line;
@@ -1081,7 +1097,12 @@ public class ChatBarModule extends Module {
                 if (a <= 3) continue;
                 LineCache lc = cached(mc, line);
                 String text = lc.text;
-                if (!HIDE_CHAT_BACKGROUND.value && FIT_CHAT_BACKGROUND.value && !isGap(line)
+                if (glass) {
+                    // đóng chat: mỗi dòng là một viên bo góc ôm sát chữ; mở chat: nền do khung kính đảm nhiệm
+                    if (!open && !isGap(line) && !EnumChatFormatting.getTextWithoutFormattingCodes(text).trim().isEmpty()) {
+                        roundRect(-3, -i * 9 - 9, lc.width + 6, -i * 9 + 1, (((int) (a * 0.62f)) << 24) | 0x0B1020);
+                    }
+                } else if (!HIDE_CHAT_BACKGROUND.value && FIT_CHAT_BACKGROUND.value && !isGap(line)
                         && !EnumChatFormatting.getTextWithoutFormattingCodes(text).trim().isEmpty()) {
                     // nền ôm sát chữ của từng dòng (bỏ qua dòng đệm rỗng)
                     roundRect(-3, -i * 9 - 9, lc.width + 6, -i * 9 + 1, (a / 2) << 24); // đệm 3px hai bên, avatar nằm gọn trong nền
@@ -1105,10 +1126,17 @@ public class ChatBarModule extends Module {
                     int j3 = scroll * i3 / total;
                     int k1 = i3 * i3 / l2;
                     int k3 = j3 > 0 ? 170 : 96;
+                    if (glass) {
+                        // thanh cuộn mảnh: rãnh mờ + con trượt màu accent khi đã cuộn
+                        int sx = fullW - 1;
+                        Gui.drawRect(sx, -i3, sx + 2, 0, 0x14FFFFFF);
+                        Gui.drawRect(sx, -j3 - k1, sx + 2, -j3, scroll > 0 ? (accent & 0xFFFFFF) | 0xDD000000 : 0x66FFFFFF);
+                    } else {
                     int col = scroll > 0 ? 13382451 : 3355562;
                     GlStateManager.translate(-3f, 0f, 0f);
                     Gui.drawRect(0, -j3, 2, -j3 - k1, col + (k3 << 24));
                     Gui.drawRect(2, -j3, 1, -j3 - k1, 13421772 + (k3 << 24));
+                    }
                 }
             }
         } catch (RuntimeException ex) {
@@ -1532,12 +1560,21 @@ public class ChatBarModule extends Module {
         // quầng sáng màu accent khi đang gõ
         if (glow > 0.02f && BAR_BORDER.value) ring(x1 - 1, y1 - 1, x2 + 1, y2 + 1, mulA(acc, 0.22f * glow * p));
         // nền kính: gradient xanh đen từ trên xuống
-        if (BAR_BORDER.value) fillGradient(x1 + 1, y1 + 1, x2 - 1, y2 - 1, 0x182038, 0x070A14, op * p);
-        else fillGradient(x1, y1, x2, y2, 0x182038, 0x070A14, op * p);
+        int botCol = lerpColor(0x070A14, accent & 0xFFFFFF, 0.14f * glow); // đáy ngả màu accent khi đang gõ
+        if (BAR_BORDER.value) fillGradient(x1 + 1, y1 + 1, x2 - 1, y2 - 1, 0x182038, botCol, op * p);
+        else fillGradient(x1, y1, x2, y2, 0x182038, botCol, op * p);
         // viền mảnh: dịu khi nghỉ, sáng khi đang gõ
         if (BAR_BORDER.value) ring(x1, y1, x2, y2, mulA(acc, (0.40f + 0.55f * glow) * p));
         // vệt sáng mép trên
         Gui.drawRect(x1 + 4, y1 + 1, x2 - 4, y1 + 2, mulA(0xFFFFFFFF, 0.13f * p));
+        // vệt sáng chạy dọc mép trên khi đang gõ
+        if (glow > 0.05f) {
+            int span = x2 - x1 - 8, sw = Math.max(16, span / 5);
+            float ph = (System.currentTimeMillis() % 2200L) / 2200f;
+            int sx = x1 + 4 + Math.round((span + sw) * ph) - sw;
+            int a = Math.max(x1 + 4, sx), b = Math.min(x2 - 4, sx + sw);
+            if (b > a) Gui.drawRect(a, y1 + 1, b, y1 + 2, mulA(acc, 0.55f * glow * p));
+        }
         // biểu tượng ">" (prompt) bên trái: vẽ bằng pixel cho nét sắc, sáng + nhích sang phải khi đang gõ
         int cx = x1 + 7 + Math.round(glow), cy = y1 + (y2 - y1 - 7) / 2;
         int[] off = {0, 1, 2, 3, 2, 1, 0};
@@ -1545,6 +1582,29 @@ public class ChatBarModule extends Module {
             Gui.drawRect(cx + off[i] + 1, cy + i + 1, cx + off[i] + 3, cy + i + 2, mulA(0xFF000000, 0.35f * p)); // bóng
             Gui.drawRect(cx + off[i], cy + i, cx + off[i] + 2, cy + i + 1, mulA(acc, (0.75f + 0.25f * glow) * p));
         }
+    }
+
+    private static float panelA;
+    private static long panelLast;
+
+    /** Khung kính cho cửa sổ chat: bóng đổ mềm, nền gradient xanh đen, viền accent mảnh, vệt sáng mép trên. */
+    static void glassPanel(int x1, int y1, int x2, int y2, float fillA, float fx) {
+        int acc = accent | 0xFF000000;
+        ring(x1 - 2, y1 - 2, x2 + 2, y2 + 2, mulA(0xFF000000, 0.10f * fx));
+        ring(x1 - 1, y1 - 1, x2 + 1, y2 + 1, mulA(0xFF000000, 0.22f * fx));
+        int ix1 = x1 + 1, iy1 = y1 + 1, ix2 = x2 - 1, iy2 = y2 - 1, h = iy2 - iy1;
+        int y = 0;
+        while (y < h) { // dải 3px cho nhanh, 2 hàng đầu/cuối vát góc
+            int step = (y < 2 || y >= h - 2) ? 1 : Math.min(3, h - 2 - y);
+            int inset = (y == 0 || y == h - 1) ? 2 : (y == 1 || y == h - 2) ? 1 : 0;
+            int rgb = lerpColor(0x182038, 0x070A14, h <= 1 ? 0f : (y + step / 2f) / h);
+            Gui.drawRect(ix1 + inset, iy1 + y, ix2 - inset, iy1 + y + step, mulA(0xFF000000 | rgb, fillA));
+            y += step;
+        }
+        ring(x1, y1, x2, y2, mulA(acc, 0.45f * fx));
+        Gui.drawRect(x1 + 4, y1 + 1, x2 - 4, y1 + 2, mulA(0xFFFFFFFF, 0.12f * fx));
+        // vạch accent mờ dần ở đáy khung, nối với thanh nhập bên dưới
+        Gui.drawRect(x1 + 6, y2 - 2, x2 - 6, y2 - 1, mulA(acc, 0.28f * fx));
     }
 
     static void roundRect(int x1, int y1, int x2, int y2, int color) {
@@ -1557,6 +1617,35 @@ public class ChatBarModule extends Module {
     public static class FancyChat extends GuiChat {
         private long openTime;
 
+        // ---- animation gõ / xoá chữ ----
+        /** Một ký tự đang hiển thị. x = vị trí hiện tại (px, không gian chữ) đang trượt về vị trí đích; x < 0 = chưa đặt. */
+        private static final class Glyph {
+            final char c; float x; final long born;
+            Glyph(char c, float x, long born) { this.c = c; this.x = x; this.born = born; }
+        }
+
+        /** Ký tự vừa bị xoá, đang rơi xuống và mờ dần. */
+        private static final class Ghost {
+            final char c; final float x; final long died;
+            Ghost(char c, float x, long died) { this.c = c; this.x = x; this.died = died; }
+        }
+
+        private final List<Glyph> glyphs = new ArrayList<Glyph>();
+        private final List<Ghost> ghosts = new ArrayList<Ghost>();
+        private String prevText = "";
+        private int textX, textW;               // vùng chữ (px GUI)
+        private float scrollX, scrollTarget;    // cuộn ngang khi chữ dài hơn ô nhập
+        private float caretX = -1f;             // vị trí con trỏ đang trượt
+        private int lastCursor = -1;
+        private long lastAct;                   // lần cuối gõ / di chuyển con trỏ (con trỏ đứng yên không nhấp nháy)
+        private long lastFrame;
+        private boolean dragging;
+        private float glow;                     // 0..1: viền sáng dần khi đang gõ
+        private float hintA = 1f;               // độ hiện của chữ gợi ý
+        private float tgOn = -1f, tgHov;        // trạng thái mượt của nút VI>EN
+        private float fillF;                    // vạch tiến độ ký tự (mượt)
+        private int cntRgb = 0xB8C4DC;          // màu bộ đếm (mượt)
+
         public FancyChat(String text) {
             super(text);
         }
@@ -1567,14 +1656,32 @@ public class ChatBarModule extends Module {
             // dựng lại ô nhập theo vị trí/độ rộng người dùng chọn
             String t = inputField.getText();
             int[] r = barRect(width, height);
-            inputField = new GuiTextField(0, fontRendererObj, r[0] + 18, r[1] + 4,
-                    r[2] - r[0] - 22 - (CHAR_COUNTER.value ? 48 : 0) - 4, 12);
+            textX = r[0] + 18;
+            textW = r[2] - r[0] - 22 - (CHAR_COUNTER.value ? 48 : 0) - 4;
+            inputField = new GuiTextField(0, fontRendererObj, textX, r[1] + 4, textW, 12);
             inputField.setMaxStringLength(100);
             inputField.setEnableBackgroundDrawing(false);
             inputField.setFocused(true);
             inputField.setText(t);
             inputField.setCanLoseFocus(false);
             openTime = System.currentTimeMillis();
+            lastAct = openTime;
+            resetGlyphs(t);
+        }
+
+        private void resetGlyphs(String t) {
+            glyphs.clear();
+            ghosts.clear();
+            float x = 0f;
+            for (int i = 0; i < t.length(); i++) {
+                char c = t.charAt(i);
+                glyphs.add(new Glyph(c, x, 0L));
+                x += fontRendererObj.getCharWidth(c);
+            }
+            prevText = t;
+            scrollX = scrollTarget = 0f;
+            caretX = -1f;
+            lastCursor = -1;
         }
 
         // Enter: dịch tin tiếng Việt sang tiếng Anh rồi mới gửi (lệnh bắt đầu bằng "/" giữ nguyên)
@@ -1598,6 +1705,18 @@ public class ChatBarModule extends Module {
             return new int[]{r[2] + 4, r[1], r[2] + 4 + togBtnW(), r[3]};
         }
 
+        /** Vị trí con trỏ (chỉ số ký tự) tương ứng toạ độ x của chuột. */
+        private int indexAt(int mx) {
+            float rel = mx - textX + scrollX;
+            float w = 0f;
+            for (int i = 0; i < glyphs.size(); i++) {
+                float cw = fontRendererObj.getCharWidth(glyphs.get(i).c);
+                if (rel < w + cw / 2f) return i;
+                w += cw;
+            }
+            return glyphs.size();
+        }
+
         @Override
         protected void mouseClicked(int mx, int my, int btn) throws IOException {
             if (btn == 0) {
@@ -1609,11 +1728,28 @@ public class ChatBarModule extends Module {
                 }
                 IChatComponent c = mc.ingameGUI.getChatGUI().getChatComponent(rawMouseX(mc), rawMouseY(mc));
                 if (handleComponentClick(c)) return;
+                int[] r = barRect(width, height);
+                if (mx >= textX && mx < textX + textW && my >= r[1] && my < r[3]) {
+                    inputField.setCursorPosition(Math.min(indexAt(mx), inputField.getText().length()));
+                    dragging = true;
+                    return;
+                }
             }
             inputField.mouseClicked(mx, my, btn);
         }
 
-        private float glow; // 0..1: viền sáng dần khi đang gõ
+        // kéo chuột để bôi chọn chữ
+        @Override
+        protected void mouseClickMove(int mx, int my, int btn, long time) {
+            if (dragging) inputField.setSelectionPos(Math.min(indexAt(mx), inputField.getText().length()));
+            super.mouseClickMove(mx, my, btn, time);
+        }
+
+        @Override
+        protected void mouseReleased(int mx, int my, int state) {
+            dragging = false;
+            super.mouseReleased(mx, my, state);
+        }
 
         private float progress() {
             if (!ANIM_BAR.value || !AnimationsModule.hud()) return 1f;
@@ -1621,15 +1757,146 @@ public class ChatBarModule extends Module {
             return 1f - (float) Math.pow(1f - t, 3); // ease-out cubic
         }
 
-        private static int withAlpha(int argb, float mul) {
-            int a = (int) (((argb >> 24) & 0xFF) * mul);
-            return (a << 24) | (argb & 0xFFFFFF);
+        private static float k(float dt, float rate) {
+            return 1f - (float) Math.exp(-dt * rate);
         }
 
-        private static void roundRect(int x1, int y1, int x2, int y2, int color) {
-            drawRect(x1 + 2, y1, x2 - 2, y2, color);
-            drawRect(x1 + 1, y1 + 1, x2 - 1, y2 - 1, color);
-            drawRect(x1, y1 + 2, x2, y2 - 2, color);
+        private static float easeOutBack(float t) {
+            float c1 = 1.70158f, c3 = c1 + 1f, u = t - 1f;
+            return 1f + c3 * u * u * u + c1 * u * u;
+        }
+
+        /** So sánh chữ cũ/mới: ký tự thêm vào nảy lên, ký tự bị xoá rơi xuống + mờ dần. */
+        private void syncText(boolean anim, long now) {
+            String cur = inputField.getText();
+            if (cur.equals(prevText)) return;
+            if (glyphs.size() != prevText.length()) { resetGlyphs(cur); return; }
+            int max = Math.min(prevText.length(), cur.length());
+            int pl = 0;
+            while (pl < max && prevText.charAt(pl) == cur.charAt(pl)) pl++;
+            int sl = 0;
+            while (sl < max - pl && prevText.charAt(prevText.length() - 1 - sl) == cur.charAt(cur.length() - 1 - sl)) sl++;
+            for (int i = prevText.length() - sl - 1; i >= pl; i--) {
+                Glyph g = glyphs.remove(i);
+                if (anim) ghosts.add(new Ghost(g.c, Math.max(0f, g.x), now));
+            }
+            while (ghosts.size() > 40) ghosts.remove(0);
+            int addEnd = cur.length() - sl;
+            for (int i = pl; i < addEnd; i++) {
+                // dán nhiều ký tự một lúc: nảy lên lần lượt thành một làn sóng
+                long born = anim ? now + Math.min(i - pl, 24) * 14L : 0L;
+                glyphs.add(i, new Glyph(cur.charAt(i), -1f, born));
+            }
+            prevText = cur;
+            lastAct = now;
+        }
+
+        private void drawGlyph(char c, float gx, float gy, float scale, int color) {
+            if (c == ' ' || ((color >> 24) & 0xFF) < 8) return; // alpha quá thấp sẽ bị FontRenderer vẽ đặc
+            float w = fontRendererObj.getCharWidth(c);
+            GlStateManager.enableBlend();
+            GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0);
+            GlStateManager.pushMatrix();
+            GlStateManager.translate(gx + w / 2f, gy + 4f, 0f);
+            GlStateManager.scale(scale, scale, 1f);
+            GlStateManager.translate(-w / 2f, -4f, 0f);
+            fontRendererObj.drawStringWithShadow(String.valueOf(c), 0f, 0f, color);
+            GlStateManager.popMatrix();
+        }
+
+        /** Vẽ chữ đang nhập (thay cho GuiTextField.drawTextBox): animation từng ký tự, chọn chữ, con trỏ mượt. */
+        private void drawTypedText(int[] r, float p, float offset, float dt, float spd, boolean anim, long now) {
+            syncText(anim, now);
+            int n = glyphs.size();
+            int y1 = r[1];
+            int acc = accent | 0xFF000000;
+
+            // vị trí đích của từng ký tự
+            float[] tx = new float[n + 1];
+            float w = 0f;
+            for (int i = 0; i < n; i++) {
+                tx[i] = w;
+                w += fontRendererObj.getCharWidth(glyphs.get(i).c);
+            }
+            tx[n] = w;
+            float slide = k(dt, 24f * spd);
+            for (int i = 0; i < n; i++) {
+                Glyph g = glyphs.get(i);
+                if (g.x < 0f || !anim) g.x = tx[i];
+                else {
+                    g.x += (tx[i] - g.x) * slide;
+                    if (Math.abs(tx[i] - g.x) < 0.05f) g.x = tx[i];
+                }
+            }
+
+            int cur = Math.max(0, Math.min(n, inputField.getCursorPosition()));
+            int sel = Math.max(0, Math.min(n, inputField.getSelectionEnd()));
+            if (cur != lastCursor) { lastCursor = cur; lastAct = now; }
+            float caretTarget = tx[cur];
+            if (caretX < 0f || !anim) caretX = caretTarget;
+            else {
+                caretX += (caretTarget - caretX) * k(dt, 30f * spd);
+                if (Math.abs(caretTarget - caretX) < 0.05f) caretX = caretTarget;
+            }
+
+            // cuộn ngang để con trỏ luôn nằm trong ô
+            float maxScroll = Math.max(0f, w - textW + 6f);
+            if (caretTarget - scrollTarget > textW - 6f) scrollTarget = caretTarget - textW + 6f;
+            if (caretTarget - scrollTarget < 6f) scrollTarget = caretTarget - 6f;
+            scrollTarget = Math.max(0f, Math.min(maxScroll, scrollTarget));
+            if (anim) {
+                scrollX += (scrollTarget - scrollX) * k(dt, 20f * spd);
+                if (Math.abs(scrollTarget - scrollX) < 0.05f) scrollX = scrollTarget;
+            } else scrollX = scrollTarget;
+
+            // cắt phần chữ tràn ra ngoài ô nhập
+            int f = new ScaledResolution(mc).getScaleFactor();
+            int top = r[1] + 1 + Math.round(offset), bot = r[3] - 1 + Math.round(offset);
+            boolean clip = textW > 0 && bot > top;
+            if (clip) {
+                GL11.glEnable(GL11.GL_SCISSOR_TEST);
+                GL11.glScissor(textX * f, (height - bot) * f, textW * f, (bot - top) * f);
+            }
+
+            // vùng chọn
+            int lo = Math.min(cur, sel), hi = Math.max(cur, sel);
+            if (lo != hi) {
+                int sx1 = textX + Math.round(tx[lo] - scrollX), sx2 = textX + Math.round(tx[hi] - scrollX);
+                drawRect(sx1, y1 + 3, sx2, y1 + 13, mulA(acc, 0.38f * p));
+            }
+
+            // ký tự đang hiện: nảy lên + đổi từ màu accent sang trắng
+            for (int i = 0; i < n; i++) {
+                Glyph g = glyphs.get(i);
+                long age = now - g.born;
+                if (age < 0) continue;
+                float t = anim ? Math.min(1f, age * spd / 190f) : 1f;
+                float e = anim ? easeOutBack(t) : 1f;
+                float ct = anim ? Math.min(1f, age * spd / 380f) : 1f;
+                int rgb = lerpColor(accent & 0xFFFFFF, 0xEAF0FF, ct);
+                float alpha = Math.min(1f, t * 3f) * p;
+                drawGlyph(glyphs.get(i).c, textX + g.x - scrollX, y1 + 4 + (1f - e) * 5f, 0.55f + 0.45f * e,
+                        mulA(0xFF000000 | rgb, alpha));
+            }
+
+            // ký tự vừa xoá: rơi xuống, thu nhỏ, ngả đỏ rồi tan biến
+            for (Iterator<Ghost> it = ghosts.iterator(); it.hasNext(); ) {
+                Ghost gh = it.next();
+                float t = (now - gh.died) * spd / 210f;
+                if (t >= 1f) { it.remove(); continue; }
+                int rgb = lerpColor(0xEAF0FF, 0xFF6B6B, t);
+                drawGlyph(gh.c, textX + gh.x - scrollX, y1 + 4 + t * t * 6f, 1f - 0.45f * t,
+                        mulA(0xFF000000 | rgb, (1f - t) * p));
+            }
+
+            // con trỏ: trượt mượt, đứng yên một chút sau khi gõ rồi mới nhấp nháy
+            long idle = now - lastAct;
+            float ca = idle < 450 ? 1f : 0.5f + 0.5f * (float) Math.cos((idle - 450) * 2.0 * Math.PI / 1100.0);
+            int cx = textX + Math.round(caretX - scrollX);
+            drawRect(cx - 1, y1 + 2, cx + 2, y1 + 14, mulA(acc, 0.14f * ca * p));
+            drawRect(cx, y1 + 3, cx + 1, y1 + 13, mulA(0xFFFFFFFF, 0.95f * ca * p));
+
+            if (clip) GL11.glDisable(GL11.GL_SCISSOR_TEST);
         }
 
         @Override
@@ -1637,50 +1904,73 @@ public class ChatBarModule extends Module {
             float p = progress();
             float offset = (1f - p) * 16f;
 
+            long nowN = System.nanoTime();
+            float dt = lastFrame == 0L ? 0.016f : Math.min(0.1f, (nowN - lastFrame) / 1e9f);
+            lastFrame = nowN;
+            float spd = (float) AnimationsModule.speed();
+            if (!(spd > 0f)) spd = 1f;
+            boolean anim = ANIM_TYPING.value && AnimationsModule.hud();
+            long now = System.currentTimeMillis();
+
             int[] r = barRect(width, height);
             int x1 = r[0], x2 = r[2];
             int y1 = r[1], y2 = r[3];
+            boolean empty = inputField.getText().isEmpty();
 
             GlStateManager.pushMatrix();
             GlStateManager.translate(0, offset, 0);
 
-            glow += ((inputField.getText().isEmpty() ? 0f : 1f) - glow) * 0.25f;
+            glow += ((empty ? 0f : 1f) - glow) * k(dt, 16f);
             if (!HIDE_BAR_BACKGROUND.value) drawBarBox(r, p, glow);
 
-            // ô nhập (+ chữ gợi ý khi còn trống)
-            inputField.drawTextBox();
-            if (inputField.getText().isEmpty()) {
+            // chữ đang nhập (animation gõ / xoá)
+            drawTypedText(r, p, offset, dt, spd, anim, now);
+
+            // chữ gợi ý: mờ dần + trượt nhẹ sang phải khi bắt đầu gõ
+            hintA += ((empty ? 1f : 0f) - hintA) * k(dt, 18f);
+            if (hintA > 0.02f) {
                 String hint = TRANSLATE_OUT.value ? "Gõ tiếng Việt, tự dịch sang tiếng Anh..." : "Nhập tin nhắn...";
-                int hx = x1 + 18;
+                int hx = x1 + 18 + 3 + Math.round((1f - hintA) * 8f);
                 int maxW = x2 - 5 - (CHAR_COUNTER.value ? fontRendererObj.getStringWidth("100/100") + 8 + 3 : 0) - hx;
                 if (fontRendererObj.getStringWidth(hint) > maxW) {
                     int dotsW = fontRendererObj.getStringWidth("...");
                     hint = maxW > dotsW ? fontRendererObj.trimStringToWidth(hint, maxW - dotsW) + "..." : "";
                 }
-                if (!hint.isEmpty()) fontRendererObj.drawStringWithShadow(hint, hx, y1 + 4, mulA(0xFFFFFFFF, 0.32f * p));
+                if (!hint.isEmpty()) {
+                    GlStateManager.enableBlend();
+                    GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0);
+                    int ha = mulA(0xFFFFFFFF, 0.32f * hintA * p);
+                    if (((ha >> 24) & 0xFF) >= 8) fontRendererObj.drawStringWithShadow(hint, hx, y1 + 4, ha);
+                }
             }
 
-            // nút VI>EN: xanh = đang dịch tin gửi, xám = tắt
+            // nút VI>EN: xanh = đang dịch tin gửi, xám = tắt (đổi màu / hover mượt)
             int[] tg = toggleRect();
             boolean on = TRANSLATE_OUT.value;
             boolean hov = mouseX >= tg[0] && mouseX < tg[2] && mouseY >= tg[1] && mouseY < tg[3];
-            int tcol = on ? 0xFF55FF88 : 0xFF7A8499;
+            if (tgOn < 0f) tgOn = on ? 1f : 0f;
+            tgOn += ((on ? 1f : 0f) - tgOn) * k(dt, 14f);
+            tgHov += ((hov ? 1f : 0f) - tgHov) * k(dt, 18f);
+            int tcol = lerpColor(0x7A8499, 0x55FF88, tgOn);
             if (!HIDE_BAR_BACKGROUND.value) dev.lunarlite.gui.Draw.rrect(tg[0], tg[1], tg[2], tg[3], 4, mulA(0xFF000000, 0.45f * p));
-            dev.lunarlite.gui.Draw.rrect(tg[0], tg[1], tg[2], tg[3], 4, mulA(0xFF000000 | (tcol & 0xFFFFFF), (hov ? 0.35f : 0.20f) * p));
-            fontRendererObj.drawStringWithShadow(TOG_LABEL, tg[0] + 5, tg[1] + 4, mulA(tcol, p));
+            dev.lunarlite.gui.Draw.rrect(tg[0], tg[1], tg[2], tg[3], 4, mulA(0xFF000000 | tcol, (0.20f + 0.15f * tgHov) * p));
+            fontRendererObj.drawStringWithShadow(TOG_LABEL, tg[0] + 5, tg[1] + 4, mulA(0xFF000000 | tcol, p));
 
-            // bộ đếm ký tự (viên thuốc màu theo mức) + vạch tiến độ ở đáy thanh
+            // bộ đếm ký tự (viên thuốc đổi màu mượt theo mức) + vạch tiến độ ở đáy thanh
             if (CHAR_COUNTER.value) {
                 int len = inputField.getText().length();
                 String s = len + "/100";
-                int col = len >= 100 ? 0xFFFF5555 : len >= 80 ? 0xFFFFD866 : 0xFFB8C4DC;
+                int target = len >= 100 ? 0xFF5555 : len >= 80 ? 0xFFD866 : 0xB8C4DC;
+                cntRgb = lerpColor(cntRgb, target, k(dt, 12f));
+                int col = 0xFF000000 | cntRgb;
                 int tw = fontRendererObj.getStringWidth(s);
                 int px2 = x2 - 5, px1 = px2 - tw - 8;
-                dev.lunarlite.gui.Draw.rrect(px1, y1 + 3, px2, y2 - 3, 4, mulA(0xFF000000 | (col & 0xFFFFFF), 0.16f * p));
+                dev.lunarlite.gui.Draw.rrect(px1, y1 + 3, px2, y2 - 3, 4, mulA(col, 0.16f * p));
                 fontRendererObj.drawStringWithShadow(s, px1 + 4, y1 + 4, mulA(col, p));
                 int trackW = x2 - x1 - 12;
+                fillF += (Math.min(1f, len / 100f) - fillF) * k(dt, 14f);
                 Gui.drawRect(x1 + 6, y2 - 3, x1 + 6 + trackW, y2 - 2, mulA(0xFFFFFFFF, 0.07f * p));
-                int fw = Math.round(trackW * Math.min(1f, len / 100f));
+                int fw = Math.round(trackW * fillF);
                 if (fw > 0) Gui.drawRect(x1 + 6, y2 - 3, x1 + 6 + fw, y2 - 2, mulA(col, 0.9f * p));
             }
 
