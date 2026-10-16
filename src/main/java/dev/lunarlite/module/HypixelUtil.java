@@ -25,7 +25,7 @@ public final class HypixelUtil {
         if (now - hostStamp > 1000L) {
             hostStamp = now;
             ServerData sd = Minecraft.getMinecraft().getCurrentServerData();
-            host = sd != null && sd.serverIP != null && sd.serverIP.toLowerCase().contains("hypixel.net");
+            host = sd != null && sd.serverIP != null && sd.serverIP.toLowerCase().contains("hypixel");
         }
         return host;
     }
@@ -50,18 +50,25 @@ public final class HypixelUtil {
         return lobby;
     }
 
-    /** Người chơi thật: có trong tab list; trên Hypixel còn phải có UUID v4 và tên hợp lệ (3-16 ký tự). */
-    public static boolean isRealPlayer(EntityPlayer p) {
-        NetHandlerPlayClient nh = Minecraft.getMinecraft().getNetHandler();
-        if (nh == null || nh.getPlayerInfo(p.getUniqueID()) == null) return false;
-        if (!isHypixel()) return true;
-        if (p.getUniqueID().version() != 4) return false;
-        String n = p.getName();
+    private static boolean validName(String n) {
         if (n == null || n.length() < 3 || n.length() > 16) return false;
         for (int i = 0; i < n.length(); i++) {
             char c = n.charAt(i);
             if (!(c == '_' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'))) return false;
         }
         return true;
+    }
+
+    /**
+     * Người chơi thật.
+     *  - Hypixel: UUID v4 + tên hợp lệ (tab list hay nháy nên không bắt buộc).
+     *  - Server khác: có trong tab list là đủ; nếu server ẩn / ghi đè tab list thì vẫn nhận khi UUID không phải kiểu NPC (v2) và tên hợp lệ.
+     */
+    public static boolean isRealPlayer(EntityPlayer p) {
+        NetHandlerPlayClient nh = Minecraft.getMinecraft().getNetHandler();
+        boolean inTab = nh != null && nh.getPlayerInfo(p.getUniqueID()) != null;
+        int ver = p.getUniqueID().version();
+        if (!isHypixel()) return inTab || (ver != 2 && validName(p.getName()));
+        return ver == 4 && validName(p.getName());
     }
 }

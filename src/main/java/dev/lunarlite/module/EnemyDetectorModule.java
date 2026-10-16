@@ -11,7 +11,10 @@ import net.minecraft.client.entity.AbstractClientPlayer;
 import net.minecraft.client.model.ModelBase;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.OpenGlHelper;
+import net.minecraft.client.renderer.culling.Frustum;
+import net.minecraft.client.renderer.entity.RenderManager;
 import net.minecraft.client.renderer.entity.RenderPlayer;
+import net.minecraft.entity.Entity;
 import net.minecraft.client.renderer.entity.RendererLivingEntity;
 import net.minecraft.client.renderer.entity.layers.LayerRenderer;
 import net.minecraft.client.shader.Framebuffer;
@@ -76,7 +79,7 @@ public class EnemyDetectorModule extends HudModule {
     private final SliderSetting outWidth = add(new SliderSetting("outline_width", "Line Width", 3.0, 1.0, 10.0, 0.5, "px"), "Outline", outline);
     private final SliderSetting outSmooth = add(new SliderSetting("outline_smooth", "Smoothness", 8, 8, 32, 2, ""), "Outline", outline);
     private final BoolSetting outGlow = add(new BoolSetting("outline_glow", "Glow", true), "Outline", outline);
-    private final SliderSetting outMax = add(new SliderSetting("outline_max", "Max Players", 3, 1, 10, 1, ""), "Outline", outline);
+    private final SliderSetting outMax = add(new SliderSetting("outline_max", "Max Players", 5, 1, 10, 1, ""), "Outline", outline);
     private final BoolSetting throughWalls = add(new BoolSetting("outline_walls", "Through Walls", true), "Outline", outline);
     private final BoolSetting outNearHi = add(new BoolSetting("outline_near_hi", "Highlight Nearest", false), "Outline", outline);
     private final ColorSetting outNearColor = add(new ColorSetting("outline_near_color", "Nearest Color", 0xFF3B3B), "Outline", outline);
@@ -147,6 +150,9 @@ public class EnemyDetectorModule extends HudModule {
             lobbyTicks = 0;
             releaseSilhouette();
             flash = 0;
+            reachedIds.clear();
+            drawnIds.clear();
+            forcing = false;
             return;
         }
         if (cooldown > 0) cooldown--;
@@ -546,7 +552,7 @@ public class EnemyDetectorModule extends HudModule {
     private int lobbyTicks;
 
     // ---- số liệu chẩn đoán (bật "Debug" để in ra chat mỗi giây)
-    private int dbgTick, dbgPre, dbgArmed, dbgDrawn, dbgOff, dbgErr;
+    private int dbgTick, dbgPre, dbgArmed, dbgDrawn, dbgOff, dbgErr, dbgForced;
     private String dbgLastErr = "";
 
     /** Còn sống: không dựa vào getHealth() vì Hypixel đôi khi báo máu 0 khi entity vừa spawn / chưa đồng bộ. */
@@ -645,11 +651,31 @@ public class EnemyDetectorModule extends HudModule {
     private void printDebug(Minecraft mc) {
         String fbInfo = silFb == null ? "chưa tạo" : silFb.framebufferWidth + "x" + silFb.framebufferHeight;
         String s = "\u00a7b[Outline]\u00a7r mục tiêu=" + outlineIds.size() + " sảnh=" + lobbyTicks
-                + " | onPre=" + dbgPre + " armed=" + dbgArmed + " vẽ=" + dbgDrawn + " ngoàiMH=" + dbgOff + " lỗi=" + dbgErr
+                + " | ép=" + dbgForced + " onPre=" + dbgPre + " armed=" + dbgArmed + " vẽ=" + dbgDrawn + " ngoàiMH=" + dbgOff + " lỗi=" + dbgErr
                 + " | stencil=" + (stencilOk ? "OK" : "TẮT") + " fb=" + fbInfo
                 + (dbgLastErr.length() > 0 ? " | lỗi cuối: " + dbgLastErr : "");
         mc.thePlayer.addChatMessage(new ChatComponentText(s));
-        dbgPre = 0; dbgArmed = 0; dbgDrawn = 0; dbgOff = 0; dbgErr = 0;
+        // Lý do từng người chơi trong bán kính có / không được viền
+        StringBuilder sb = new StringBuilder("\u00a7b[Outline]\u00a7r gần: ");
+        int cnt = 0;
+        for (EntityPlayer q : mc.theWorld.playerEntities) {
+            if (q == mc.thePlayer) continue;
+            float dd = mc.thePlayer.getDistanceToEntity(q);
+            if (dd > radius.value + STICKY_RANGE) continue;
+            String why;
+            if (q.isDead || q.deathTime > 0) why = "chết";
+            else if (q.isSpectator()) why = "spectator";
+            else if (q.isInvisible() && !outInvisible.value) why = "tàng hình(tắt)";
+            else if (ignoreNpc.value && !HypixelUtil.isRealPlayer(q)) why = "bị coi là NPC(uuid v" + q.getUniqueID().version() + ")";
+            else if (ignoreTeam.value && TeamUtil.isTeammate(mc.thePlayer, q)) why = "bị coi là ĐỒNG ĐỘI";
+            else if (dd > radius.value) why = "ngoài bán kính";
+            else if (outlineIds.contains(q.getEntityId())) why = "OK(có trong danh sách viền)";
+            else why = "hợp lệ nhưng không vào danh sách";
+            sb.append(q.getName()).append(" ").append(Math.round(dd)).append("m=").append(why).append("; ");
+            if (++cnt >= 4) break;
+        }
+        if (cnt > 0) mc.thePlayer.addChatMessage(new ChatComponentText(sb.toString()));
+        dbgForced = 0; dbgPre = 0; dbgArmed = 0; dbgDrawn = 0; dbgOff = 0; dbgErr = 0;
     }
 
     // ======================================================================= viền kẻ địch
@@ -847,28 +873,97 @@ public class EnemyDetectorModule extends HudModule {
         outlineIds.add(best);
     }
 
-    /** LunarLite gọi mỗi khung hình ở RenderWorldLast. Hiện chưa vẽ gì. */
+    // ---- Vá lỗi "địch gần mà không có viền":
+    // Vanilla 1.8 KHÔNG vẽ entity nằm ở chunk bị che (sau tường / dưới sàn / phòng bên cạnh) hay xa hơn ~64 block,
+    // nên onPre không bao giờ chạy => không có viền dù "Through Walls" đang bật. Ta tự ép vẽ những người đó ở cuối khung hình.
+    // Người bị ép vẽ chỉ để lại viền: màu bị tắt (colorMask) trong lúc vanilla vẽ model / tên / bóng.
+    private final Set<Integer> reachedIds = new HashSet<Integer>(); // đã đi qua onPre trong khung này
+    private final Set<Integer> drawnIds = new HashSet<Integer>();   // đã được vẽ viền xong trong khung này
+    private int[] forceBuf = new int[16];
+    private boolean forcing;
+
+    /** LunarLite gọi mỗi khung hình ở RenderWorldLast: vẽ viền cho người mà vanilla bỏ qua. */
     public void renderMarkers(float partialTicks) {
+        try {
+            forceMissing(partialTicks);
+        } catch (Throwable t) {
+            dbgErr++;
+            dbgLastErr = "ép: " + t.getClass().getSimpleName() + ": " + t.getMessage();
+        } finally {
+            forcing = false;
+            GL11.glColorMask(true, true, true, true);
+            reachedIds.clear();
+            drawnIds.clear();
+        }
+    }
+
+    private void forceMissing(float pt) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (!enabled || !outline.value || layersField == null || mc.theWorld == null || mc.thePlayer == null) return;
+        Entity view = mc.getRenderViewEntity();
+        if (view == null) return;
+        refreshNearestLive(mc, pt);
+        int n = 0;
+        if (forceBuf.length < outlineIds.size()) forceBuf = new int[outlineIds.size() + 8];
+        for (int id : outlineIds) forceBuf[n++] = id;
+        if (n == 0) return;
+
+        Frustum fr = new Frustum();
+        fr.setPosition(view.lastTickPosX + (view.posX - view.lastTickPosX) * pt,
+                view.lastTickPosY + (view.posY - view.lastTickPosY) * pt,
+                view.lastTickPosZ + (view.posZ - view.lastTickPosZ) * pt);
+        RenderManager rm = mc.getRenderManager();
+        for (int i = 0; i < n; i++) {
+            int id = forceBuf[i];
+            if (drawnIds.contains(id)) continue;
+            // Tắt "Through Walls": người bị che thì không cần viền; chỉ bù cho người vanilla đã vẽ nhưng lỡ nhịp.
+            if (!throughWalls.value && !reachedIds.contains(id)) continue;
+            Entity ent = mc.theWorld.getEntityByID(id);
+            if (!(ent instanceof EntityPlayer) || ent.isDead) continue;
+            if (!fr.isBoundingBoxInFrustum(ent.getEntityBoundingBox().expand(0.5, 0.5, 0.5))) continue; // ngoài tầm nhìn
+            forcing = true;
+            try {
+                dbgForced++;
+                rm.renderEntitySimple(ent, pt);
+            } catch (Throwable t) {
+                dbgErr++;
+                dbgLastErr = "ép: " + t.getClass().getSimpleName() + ": " + t.getMessage();
+            } finally {
+                forcing = false;
+                GL11.glColorMask(true, true, true, true);
+            }
+        }
     }
 
     public void onPre(RenderPlayerEvent.Pre e) {
         armed = false;
         target = null;
         if (!enabled || !outline.value) return;
-        refreshNearestLive(Minecraft.getMinecraft(), e.partialRenderTick);
+        Minecraft mc = Minecraft.getMinecraft();
+        if (!forcing) refreshNearestLive(mc, e.partialRenderTick);
         install(e.renderer);
-        if (layersField == null || !outlineIds.contains(e.entityPlayer.getEntityId())) return;
+        int id = e.entityPlayer.getEntityId();
+        if (layersField == null || !outlineIds.contains(id)) {
+            if (forcing) e.setCanceled(true); // lượt ép vẽ mà không viền được thì đừng vẽ gì cả
+            return;
+        }
+        reachedIds.add(id);
         dbgPre++;
         setupStencil();
-        if (!stencilOk) return;
+        if (!stencilOk) {
+            if (forcing) e.setCanceled(true);
+            return;
+        }
         armed = true;
         target = e.entityPlayer;
         dbgArmed++;
+        if (forcing) GL11.glColorMask(false, false, false, false); // ẩn model / giáp / tên, chỉ giữ lại viền
     }
 
     public void onPost(RenderPlayerEvent.Post e) {
         armed = false;
         target = null;
+        if (forcing) GL11.glColorMask(false, false, false, false); // giữ ẩn cho tới hết lượt ép (renderMarkers sẽ bật lại)
     }
 
     private void endStencil() {
@@ -1146,6 +1241,7 @@ public class EnemyDetectorModule extends HudModule {
                     fillQuad(r, g, b, 0.35f);
                 }
                 dbgDrawn++;
+                drawnIds.add(p.getEntityId());
             } catch (Throwable t) {
                 // Không để lỗi của viền làm hỏng việc vẽ người chơi của MC
                 dbgErr++;
@@ -1175,6 +1271,7 @@ public class EnemyDetectorModule extends HudModule {
                 GlStateManager.enableTexture2D();
                 GlStateManager.setActiveTexture(OpenGlHelper.defaultTexUnit);
                 GlStateManager.color(1f, 1f, 1f, 1f);
+                if (forcing) GL11.glColorMask(false, false, false, false); // lượt ép: tên / bóng đổ phía sau vẫn phải ẩn
                 f.p = null; f.model = null; f.skin = null;
             }
         }

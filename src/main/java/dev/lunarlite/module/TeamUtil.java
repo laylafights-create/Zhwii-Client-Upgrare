@@ -63,7 +63,13 @@ public final class TeamUtil {
         if (ca != -1 && cb != -1) return ca == cb;
 
         Team ta = me.getTeam(), tb = p.getTeam();
-        return ta != null && tb != null && ta.isSameTeam(tb);
+        if (ta == null || tb == null || !ta.isSameTeam(tb)) return false;
+        // Team quá đông (>4) là team xếp rank / tab list chứ không phải đội thật (Bedwars tối đa 4 người / đội).
+        if (ta instanceof ScorePlayerTeam && ((ScorePlayerTeam) ta).getMembershipCollection().size() > 4) return false;
+        // Hypixel tự xử lý sát thương nên cờ friendly fire của team không đáng tin => chỉ cần team nhỏ là đủ.
+        // Server khác: team "rank" thường bật friendly fire, đội thật thì tắt.
+        if (!HypixelUtil.isHypixel() && ta.getAllowFriendlyFire()) return false;
+        return true;
     }
 
     /** Màu (RGB) của món giáp da đã nhuộm đầu tiên tìm thấy (mũ, áo, quần, giày), hoặc -1. */
