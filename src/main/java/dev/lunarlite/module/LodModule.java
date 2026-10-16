@@ -5,8 +5,7 @@ import java.nio.FloatBuffer;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -29,16 +28,18 @@ import org.lwjgl.opengl.GL11;
 
 /**
  * Far Horizons - LOD địa hình xa (kiểu Distant Horizons, bản đầu sơ sài).
- * Quét chunk đang tải -> lưu lưới 4x4 ô (màu + độ cao) -> vẽ địa hình dạng cột bên ngoài tầm vẽ của game.
+ * Quét chunk đang tải -> lưu lưới 8x8 ô (màu + độ cao) -> vẽ địa hình dạng cột bên ngoài tầm vẽ của game.
  * Giới hạn bản đầu: chỉ thấy vùng đã từng tải; cache chỉ nằm trong RAM; chưa hoà fog với vanilla.
  */
 public class LodModule extends Module {
-    private final SliderSetting distance = add(new SliderSetting("distance", "LOD Distance", 48, 16, 96, 4, " chunk"));
+    private final SliderSetting distance = add(new SliderSetting("distance", "LOD Distance", 64, 16, 128, 4, " chunk"));
 
-    /** Dữ liệu 1 chunk: 4x4 ô, mỗi ô 4x4 block. h < 0 = ô trống. */
+    /** 8x8 surface samples per chunk; h < 0 means unknown. */
+    private static final int GRID = 8;
+    private static final int CELL = 16 / GRID;
     private static final class Data {
-        final short[] h = new short[16];
-        final int[] c = new int[16];
+        final short[] h = new short[GRID * GRID];
+        final int[] c = new int[GRID * GRID];
     }
 
     private static final class Mesh {
@@ -75,10 +76,12 @@ public class LodModule extends Module {
     private volatile Mesh pending;
     private volatile int generation;
     private int listId = -1;
+    private int uploadedVertices;
+    private int uploadGeneration = -1;
+    private int builtGeneration = -1;
+    private int builtRd = -1, builtRange = -1;
 
-    private final FloatBuffer clearBuf = BufferUtils.createFloatBuffer(16);
     private final FloatBuffer fogBuf = BufferUtils.createFloatBuffer(4);
-    private final FloatBuffer ambBuf = BufferUtils.createFloatBuffer(4);
     private final FloatBuffer projBuf = BufferUtils.createFloatBuffer(16);
 
     public LodModule() {
@@ -92,9 +95,11 @@ public class LodModule extends Module {
     @Override
     public void onToggle() {
         freeList();
+        uploadedVertices = 0;
         generation++;
         pending = null;
         builtCx = Integer.MIN_VALUE;
+        builtRd = builtRange = -1;
         dirty = true;
     }
 
@@ -121,18 +126,38 @@ public class LodModule extends Module {
             scanned.clear();
             pending = null;
             freeList();
+            uploadedVertices = 0;
             builtCx = Integer.MIN_VALUE;
+            builtRd = builtRange = -1;
         }
         tickCount++;
-        if (scanned.size() > 12000) scanned.clear();
-        if (cache.size() > 12000) { cache.clear(); scanned.clear(); dirty = true; }
+        // Keep the scan timestamps bounded without periodically rescanning the entire world.
+        if (scanned.size() > 12000) {
+            Iterator<Map.Entry<Long, Integer>> it = scanned.entrySet().iterator();
+            int removed = 0;
+            while (it.hasNext() && removed < 512) {
+                Map.Entry<Long, Integer> e = it.next();
+                if (tickCount - e.getValue() > 1200) { it.remove(); removed++; }
+            }
+        }
+        // Evict distant entries incrementally instead of deleting the entire visible LOD.
+        if (cache.size() > 12000 && tickCount % 40 == 0) {
+            int px = ((int)Math.floor(mc.thePlayer.posX)) >> 4;
+            int pz = ((int)Math.floor(mc.thePlayer.posZ)) >> 4;
+            int limit = distance.getInt() + 16;
+            for (Long k : cache.keySet()) {
+                int dx = (int)(k.longValue() >> 32) - px;
+                int dz = (int)(long)k - pz;
+                if (dx * dx + dz * dz > limit * limit) { cache.remove(k); scanned.remove(k); dirty = true; }
+            }
+        }
 
         int pcx = ((int) Math.floor(mc.thePlayer.posX)) >> 4;
         int pcz = ((int) Math.floor(mc.thePlayer.posZ)) >> 4;
         int rd = Math.max(2, mc.gameSettings.renderDistanceChunks);
 
         int side = rd * 2 + 1, total = side * side, sampled = 0;
-        for (int i = 0; i < 24 && sampled < 3; i++) {
+        for (int i = 0; i < 48 && sampled < 5; i++) {
             scanIdx = (scanIdx + 1) % total;
             int cx = pcx - rd + scanIdx % side;
             int cz = pcz - rd + scanIdx / side;
@@ -151,8 +176,8 @@ public class LodModule extends Module {
             sampled++;
         }
 
-        boolean moved = pcx != builtCx || pcz != builtCz;
-        if (!building && ((moved && tickCount - lastBuildTick > 40) || (dirty && tickCount - lastBuildTick > 100))) {
+        boolean moved = pcx != builtCx || pcz != builtCz || rd != builtRd || distance.getInt() != builtRange;
+        if (!building && ((moved && tickCount - lastBuildTick > 30) || (dirty && tickCount - lastBuildTick > 80))) {
             startBuild(w, pcx, pcz, rd, mc.thePlayer.posX, mc.thePlayer.posZ);
         }
     }
@@ -160,9 +185,9 @@ public class LodModule extends Module {
     private Data sample(Chunk ch) {
         Data d = new Data();
         boolean any = false;
-        for (int cz = 0; cz < 4; cz++) {
-            for (int cx = 0; cx < 4; cx++) {
-                int lx = cx * 4 + 2, lz = cz * 4 + 2, i = cz * 4 + cx;
+        for (int cz = 0; cz < GRID; cz++) {
+            for (int cx = 0; cx < GRID; cx++) {
+                int lx = cx * CELL + CELL / 2, lz = cz * CELL + CELL / 2, i = cz * GRID + cx;
                 d.h[i] = -1;
                 for (int y = Math.min(255, ch.getHeightValue(lx, lz)); y >= 0; y--) {
                     IBlockState s = ch.getBlockState(new BlockPos(lx, y, lz));
@@ -194,6 +219,8 @@ public class LodModule extends Module {
         final Map<Long, Data> snapshot = new HashMap<Long, Data>(cache);
         builtCx = pcx;
         builtCz = pcz;
+        builtRd = rd;
+        builtRange = range;
         lastBuildTick = tickCount;
         dirty = false;
         building = true;
@@ -202,8 +229,9 @@ public class LodModule extends Module {
             public void run() {
                 try {
                     Mesh result = buildMesh(pcx, pcz, rd, range, skip, snapshot);
-                    if (version == generation) pending = result;
+                    if (version == generation) { pending = result; builtGeneration = version; }
                 } catch (Throwable ignored) {
+                    dirty = true;
                 } finally {
                     building = false;
                 }
@@ -217,28 +245,28 @@ public class LodModule extends Module {
             long k = e.getKey();
             int cx = (int) (k >> 32), cz = (int) k;
             int dx = cx - pcx, dz = cz - pcz;
-            if (dx * dx + dz * dz > range * range) continue;
+            if ((long)dx * dx + (long)dz * dz > (long)range * range) continue;
             if (Math.abs(dx) <= rd && Math.abs(dz) <= rd && skip.contains(k)) continue;
             double dist = Math.sqrt(dx * dx + dz * dz) * 16.0;
-            int step = dist < 256 ? 1 : (dist < 512 ? 2 : 4);
+            int step = dist < 256 ? 1 : (dist < 640 ? 2 : (dist < 1152 ? 4 : 8));
             emitChunk(o, cx, cz, e.getValue(), step, snapshot);
         }
-        return new Mesh(o.a, o.n);
+        return new Mesh(Arrays.copyOf(o.a, o.n), o.n);
     }
 
     private int rawH(int gcx, int gcz, Map<Long, Data> snapshot) {
-        Data d = snapshot.get(key(gcx >> 2, gcz >> 2));
+        Data d = snapshot.get(key(Math.floorDiv(gcx, GRID), Math.floorDiv(gcz, GRID)));
         if (d == null) return -2;
-        return d.h[(gcz & 3) * 4 + (gcx & 3)];
+        return d.h[Math.floorMod(gcz, GRID) * GRID + Math.floorMod(gcx, GRID)];
     }
 
     private void emitChunk(Buf o, int cx, int cz, Data d, int s, Map<Long, Data> snapshot) {
-        for (int gz = 0; gz < 4; gz += s) {
-            for (int gx = 0; gx < 4; gx += s) {
+        for (int gz = 0; gz < GRID; gz += s) {
+            for (int gx = 0; gx < GRID; gx += s) {
                 int cnt = 0, sh = 0, sr = 0, sg = 0, sb = 0;
                 for (int z = gz; z < gz + s; z++) {
                     for (int x = gx; x < gx + s; x++) {
-                        int i = z * 4 + x;
+                        int i = z * GRID + x;
                         if (d.h[i] < 0) continue;
                         int c = d.c[i];
                         sr += (c >> 16) & 255; sg += (c >> 8) & 255; sb += c & 255;
@@ -253,35 +281,37 @@ public class LodModule extends Module {
                 float g = sg / (float) cnt / 255f * lum;
                 float b = sb / (float) cnt / 255f * lum;
 
-                float x0 = cx * 16 + gx * 4, z0 = cz * 16 + gz * 4;
-                float x1 = x0 + s * 4, z1 = z0 + s * 4;
-                // hạ thấp 1.5 block để không z-fight với chunk thật của game
+                float x0 = cx * 16 + gx * CELL, z0 = cz * 16 + gz * CELL;
+                float x1 = x0 + s * CELL, z1 = z0 + s * CELL;
+                // Slight offset to avoid coplanar overlap at the vanilla/LOD boundary.
                 float yt = h - 0.5f;
 
                 o.v(r, g, b, x0, yt, z0); o.v(r, g, b, x0, yt, z1);
                 o.v(r, g, b, x1, yt, z1); o.v(r, g, b, x1, yt, z0);
 
-                int gcx = cx * 4 + gx, gcz = cz * 4 + gz;
+                int gcx = cx * GRID + gx, gcz = cz * GRID + gz;
                 for (int k = 0; k < s; k++) {
-                    side(o, r * 0.6f, g * 0.6f, b * 0.6f, false, x0, z0 + k * 4, yt, rawH(gcx - 1, gcz + k, snapshot));
-                    side(o, r * 0.6f, g * 0.6f, b * 0.6f, false, x1, z0 + k * 4, yt, rawH(gcx + s, gcz + k, snapshot));
-                    side(o, r * 0.8f, g * 0.8f, b * 0.8f, true, x0 + k * 4, z0, yt, rawH(gcx + k, gcz - 1, snapshot));
-                    side(o, r * 0.8f, g * 0.8f, b * 0.8f, true, x0 + k * 4, z1, yt, rawH(gcx + k, gcz + s, snapshot));
+                    side(o, r * 0.6f, g * 0.6f, b * 0.6f, false, x0, z0 + k * CELL, yt, rawH(gcx - 1, gcz + k, snapshot));
+                    side(o, r * 0.6f, g * 0.6f, b * 0.6f, false, x1, z0 + k * CELL, yt, rawH(gcx + s, gcz + k, snapshot));
+                    side(o, r * 0.8f, g * 0.8f, b * 0.8f, true, x0 + k * CELL, z0, yt, rawH(gcx + k, gcz - 1, snapshot));
+                    side(o, r * 0.8f, g * 0.8f, b * 0.8f, true, x0 + k * CELL, z1, yt, rawH(gcx + k, gcz + s, snapshot));
                 }
             }
         }
     }
 
-    /** Mặt bên rộng 4 block, từ đỉnh ô xuống đỉnh ô kế bên (hoặc 12 block nếu bên kia trống). */
+    /** Draw only known downhill neighbours; unknown terrain is not a cliff. */
     private void side(Buf o, float r, float g, float b, boolean alongX, float x, float z, float yt, int nh) {
-        float yn = nh >= 0 ? nh - 0.5f : yt - 12f;
+        // Missing neighbours are unvisited terrain, not cliffs. Avoid black curtains.
+        if (nh < 0) return;
+        float yn = nh - 0.5f;
         if (yn >= yt - 0.01f) return;
         if (alongX) {
             o.v(r, g, b, x, yn, z); o.v(r, g, b, x, yt, z);
-            o.v(r, g, b, x + 4, yt, z); o.v(r, g, b, x + 4, yn, z);
+            o.v(r, g, b, x + CELL, yt, z); o.v(r, g, b, x + CELL, yn, z);
         } else {
             o.v(r, g, b, x, yn, z); o.v(r, g, b, x, yt, z);
-            o.v(r, g, b, x, yt, z + 4); o.v(r, g, b, x, yn, z + 4);
+            o.v(r, g, b, x, yt, z + CELL); o.v(r, g, b, x, yn, z + CELL);
         }
     }
 
@@ -291,7 +321,9 @@ public class LodModule extends Module {
         Mesh m = pending;
         if (m == null) return;
         pending = null;
+        if (builtGeneration != generation || !enabled) return;
         if (listId < 0) listId = GLAllocation.generateDisplayLists(1);
+        uploadedVertices = m.n / 6;
         // Display lists must capture actual vertex values, not a pointer to a temporary buffer.
         GL11.glNewList(listId, GL11.GL_COMPILE);
         GL11.glBegin(GL11.GL_QUADS);
@@ -301,6 +333,7 @@ public class LodModule extends Module {
         }
         GL11.glEnd();
         GL11.glEndList();
+        uploadGeneration = generation;
     }
 
     /** Gọi từ RenderWorldLastEvent. */
@@ -309,7 +342,7 @@ public class LodModule extends Module {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.theWorld == null || mc.thePlayer == null) return;
         upload();
-        if (listId < 0) return;
+        if (listId < 0 || uploadedVertices == 0 || uploadGeneration != generation) return;
         if (mc.thePlayer.isInsideOfMaterial(Material.water) || mc.thePlayer.isInsideOfMaterial(Material.lava)) return;
 
         Entity v = mc.getRenderViewEntity();
@@ -320,17 +353,13 @@ public class LodModule extends Module {
 
         float range = distance.getFloat() * 16f;
         float vanilla = Math.max(2, mc.gameSettings.renderDistanceChunks) * 16f;
-        float fogStart = vanilla < range * 0.9f ? vanilla : range * 0.5f;
+        float transition = Math.min(48f, Math.max(16f, vanilla * 0.18f));
+        float fogStart = Math.min(range - 16f, Math.max(vanilla - transition, range * 0.58f));
 
-        // màu fog = màu clear hiện tại của game (đã gồm ngày/đêm/mưa)
-        clearBuf.clear();
-        GL11.glGetFloat(GL11.GL_COLOR_CLEAR_VALUE, clearBuf);
+        // Match the current world sky instead of the previous OpenGL clear color.
         fogBuf.clear();
-        fogBuf.put(clearBuf.get(0)).put(clearBuf.get(1)).put(clearBuf.get(2)).put(1f).flip();
-
-        float bright = Math.max(0.42f, Math.min(1f, 0.42f + mc.theWorld.getSunBrightness(pt) * 0.58f));
-        ambBuf.clear();
-        ambBuf.put(bright).put(bright).put(bright).put(1f).flip();
+        net.minecraft.util.Vec3 sky = mc.theWorld.getSkyColor(v, pt);
+        fogBuf.put((float)sky.xCoord).put((float)sky.yCoord).put((float)sky.zCoord).put(1f).flip();
 
         // mở rộng far plane của ma trận chiếu hiện tại (giữ nguyên FOV / tỉ lệ)
         projBuf.clear();
@@ -339,20 +368,21 @@ public class LodModule extends Module {
         projBuf.get(m);
         float a = m[10], b = m[14];
         float near = b / (a - 1f);
-        float far = range * 1.25f + 64f;
+        if (near <= 0f || Float.isNaN(near) || Float.isInfinite(near)) return;
+        float far = range * 1.12f + 96f;
         m[10] = -(far + near) / (far - near);
         m[14] = -2f * far * near / (far - near);
         projBuf.clear();
         projBuf.put(m).flip();
 
-        // đơn vị texture 1 (lightmap) có thể đang bật -> tắt tạm
+        // Preserve both texture units; lightmap must not tint untextured LOD.
+        GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_TEXTURE_BIT | GL11.GL_FOG_BIT | GL11.GL_LIGHTING_BIT
+                | GL11.GL_DEPTH_BUFFER_BIT | GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT);
         OpenGlHelper.setActiveTexture(OpenGlHelper.lightmapTexUnit);
         boolean lightmapOn = GL11.glIsEnabled(GL11.GL_TEXTURE_2D);
         GL11.glDisable(GL11.GL_TEXTURE_2D);
         OpenGlHelper.setActiveTexture(OpenGlHelper.defaultTexUnit);
 
-        GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_FOG_BIT | GL11.GL_LIGHTING_BIT
-                | GL11.GL_DEPTH_BUFFER_BIT | GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT);
         GL11.glMatrixMode(GL11.GL_PROJECTION);
         GL11.glPushMatrix();
         GL11.glLoadMatrix(projBuf);
@@ -365,17 +395,12 @@ public class LodModule extends Module {
         GL11.glDisable(GL11.GL_BLEND);
         GL11.glDisable(GL11.GL_ALPHA_TEST);
         GL11.glEnable(GL11.GL_DEPTH_TEST);
-        GL11.glDepthMask(true);
+        GL11.glDepthMask(false); // Do not contaminate vanilla depth after RenderWorldLastEvent.
         GL11.glColor4f(1f, 1f, 1f, 1f);
 
-        GL11.glDisable(GL11.GL_LIGHT0);
-        GL11.glDisable(GL11.GL_LIGHT1);
         // Vertex colors are already shaded; fixed-function lighting without normals turns them black.
         GL11.glDisable(GL11.GL_LIGHTING);
         GL11.glDisable(GL11.GL_COLOR_MATERIAL);
-        GL11.glColorMaterial(GL11.GL_FRONT_AND_BACK, GL11.GL_AMBIENT_AND_DIFFUSE);
-        GL11.glLightModeli(GL11.GL_LIGHT_MODEL_TWO_SIDE, GL11.GL_TRUE);
-        // No light model required for untextured color-only terrain.
 
         GL11.glEnable(GL11.GL_FOG);
         GL11.glFogi(GL11.GL_FOG_MODE, GL11.GL_LINEAR);
@@ -383,6 +408,8 @@ public class LodModule extends Module {
         GL11.glFogf(GL11.GL_FOG_END, range);
         GL11.glFog(GL11.GL_FOG_COLOR, fogBuf);
 
+        // The camera frustum is still applied by the original projection; depth tests
+        // against vanilla geometry while writes stay disabled.
         GL11.glCallList(listId);
 
         GL11.glMatrixMode(GL11.GL_MODELVIEW);
@@ -391,11 +418,9 @@ public class LodModule extends Module {
         GL11.glPopMatrix();
         GL11.glMatrixMode(GL11.GL_MODELVIEW);
         GL11.glPopAttrib();
-
-        if (lightmapOn) {
-            OpenGlHelper.setActiveTexture(OpenGlHelper.lightmapTexUnit);
-            GL11.glEnable(GL11.GL_TEXTURE_2D);
-            OpenGlHelper.setActiveTexture(OpenGlHelper.defaultTexUnit);
-        }
+        OpenGlHelper.setActiveTexture(OpenGlHelper.lightmapTexUnit);
+        if (lightmapOn) GL11.glEnable(GL11.GL_TEXTURE_2D);
+        else GL11.glDisable(GL11.GL_TEXTURE_2D);
+        OpenGlHelper.setActiveTexture(OpenGlHelper.defaultTexUnit);
     }
 }
