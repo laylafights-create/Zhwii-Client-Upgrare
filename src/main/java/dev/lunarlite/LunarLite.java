@@ -77,6 +77,7 @@ public class LunarLite {
     public static HotbarAnimationModule HOTBAR;
     public static ChatBarModule CHAT_BAR;
     public static HideArmorModule HIDE_ARMOR;
+    public static LodModule LOD;
 
     private static Configuration config;
 
@@ -97,6 +98,7 @@ public class LunarLite {
         HOTBAR = new HotbarAnimationModule();
         CHAT_BAR = new ChatBarModule();
         HIDE_ARMOR = new HideArmorModule();
+        LOD = new LodModule();
 
         // PvP / HUD
         MODULES.add(new FpsModule());
@@ -120,6 +122,7 @@ public class LunarLite {
         MODULES.add(new FullbrightModule());
         MODULES.add(HIDE_ARMOR);
         MODULES.add(BLOCK_OUTLINE);
+        MODULES.add(LOD);
         MODULES.add(new ItemPhysicsModule());
         MODULES.add(ANIM);
         MODULES.add(HOTBAR);
@@ -234,6 +237,7 @@ public class LunarLite {
 
     @SubscribeEvent
     public void onWorldLast(RenderWorldLastEvent e) {
+        if (LOD != null) LOD.render(e.partialTicks);
         if (BOW_TRAJECTORY != null) BOW_TRAJECTORY.render(e.partialTicks);
         if (ENEMY_DETECTOR != null) ENEMY_DETECTOR.renderMarkers(e.partialTicks);
         renderShake(e.partialTicks);

@@ -102,6 +102,10 @@ public final class Lang {
         p("Lava Rain Steam", "Hơi nước mưa trên dung nham"); p("Sparks Scale", "Cỡ tia lửa"); p("Smoke Opacity", "Độ đặc của khói"); p("Entity Range", "Tầm sinh vật");
         p("Sprint Dust", "Bụi khi chạy"); p("Landing Dust", "Bụi khi rơi xuống"); p("Density", "Mật độ"); p("Scan Range", "Phạm vi quét");
 
+        // ---- Far Horizons (LOD)
+        p("Far Horizons", "Chân trời xa"); p("LOD Distance", "Tầm LOD");
+        p("Vẽ địa hình xa bằng LOD ngoài tầm vẽ của game (kiểu Distant Horizons).", "Vẽ địa hình xa (LOD) ngoài tầm vẽ của game, kiểu Distant Horizons. Chỉ thấy vùng đã từng tải.");
+
         // ---- Aim Assist
         p("Aim Assist", "Hỗ trợ ngắm"); p("Max Range", "Tầm tối đa"); p("Aim FOV", "Góc ngắm");
         p("Aim Smoothing", "Độ mượt khi ngắm"); p("Max Turn Speed", "Tốc độ xoay tối đa");
