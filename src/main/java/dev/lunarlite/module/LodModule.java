@@ -5,6 +5,8 @@ import java.nio.FloatBuffer;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -71,6 +73,7 @@ public class LodModule extends Module {
     private boolean dirty;
     private volatile boolean building;
     private volatile Mesh pending;
+    private volatile int generation;
     private int listId = -1;
 
     private final FloatBuffer clearBuf = BufferUtils.createFloatBuffer(16);
@@ -89,8 +92,10 @@ public class LodModule extends Module {
     @Override
     public void onToggle() {
         freeList();
+        generation++;
         pending = null;
         builtCx = Integer.MIN_VALUE;
+        dirty = true;
     }
 
     private void freeList() {
@@ -109,7 +114,9 @@ public class LodModule extends Module {
         World w = mc.theWorld;
         if (w == null || mc.thePlayer == null) return;
         if (w != lastWorld) {
+            generation++;
             lastWorld = w;
+            dirty = true;
             cache.clear();
             scanned.clear();
             pending = null;
@@ -117,7 +124,8 @@ public class LodModule extends Module {
             builtCx = Integer.MIN_VALUE;
         }
         tickCount++;
-        if (scanned.size() > 30000) scanned.clear();
+        if (scanned.size() > 12000) scanned.clear();
+        if (cache.size() > 12000) { cache.clear(); scanned.clear(); dirty = true; }
 
         int pcx = ((int) Math.floor(mc.thePlayer.posX)) >> 4;
         int pcz = ((int) Math.floor(mc.thePlayer.posZ)) >> 4;
@@ -182,6 +190,8 @@ public class LodModule extends Module {
             }
         }
         final int range = distance.getInt();
+        final int version = generation;
+        final Map<Long, Data> snapshot = new HashMap<Long, Data>(cache);
         builtCx = pcx;
         builtCz = pcz;
         lastBuildTick = tickCount;
@@ -191,7 +201,8 @@ public class LodModule extends Module {
             @Override
             public void run() {
                 try {
-                    pending = buildMesh(pcx, pcz, rd, range, skip);
+                    Mesh result = buildMesh(pcx, pcz, rd, range, skip, snapshot);
+                    if (version == generation) pending = result;
                 } catch (Throwable ignored) {
                 } finally {
                     building = false;
@@ -200,28 +211,28 @@ public class LodModule extends Module {
         });
     }
 
-    private Mesh buildMesh(int pcx, int pcz, int rd, int range, Set<Long> skip) {
+    private Mesh buildMesh(int pcx, int pcz, int rd, int range, Set<Long> skip, Map<Long, Data> snapshot) {
         Buf o = new Buf();
-        for (Map.Entry<Long, Data> e : cache.entrySet()) {
+        for (Map.Entry<Long, Data> e : snapshot.entrySet()) {
             long k = e.getKey();
             int cx = (int) (k >> 32), cz = (int) k;
             int dx = cx - pcx, dz = cz - pcz;
             if (dx * dx + dz * dz > range * range) continue;
             if (Math.abs(dx) <= rd && Math.abs(dz) <= rd && skip.contains(k)) continue;
             double dist = Math.sqrt(dx * dx + dz * dz) * 16.0;
-            int step = dist < 160 ? 1 : (dist < 352 ? 2 : 4);
-            emitChunk(o, cx, cz, e.getValue(), step);
+            int step = dist < 256 ? 1 : (dist < 512 ? 2 : 4);
+            emitChunk(o, cx, cz, e.getValue(), step, snapshot);
         }
         return new Mesh(o.a, o.n);
     }
 
-    private int rawH(int gcx, int gcz) {
-        Data d = cache.get(key(gcx >> 2, gcz >> 2));
+    private int rawH(int gcx, int gcz, Map<Long, Data> snapshot) {
+        Data d = snapshot.get(key(gcx >> 2, gcz >> 2));
         if (d == null) return -2;
         return d.h[(gcz & 3) * 4 + (gcx & 3)];
     }
 
-    private void emitChunk(Buf o, int cx, int cz, Data d, int s) {
+    private void emitChunk(Buf o, int cx, int cz, Data d, int s, Map<Long, Data> snapshot) {
         for (int gz = 0; gz < 4; gz += s) {
             for (int gx = 0; gx < 4; gx += s) {
                 int cnt = 0, sh = 0, sr = 0, sg = 0, sb = 0;
@@ -252,10 +263,10 @@ public class LodModule extends Module {
 
                 int gcx = cx * 4 + gx, gcz = cz * 4 + gz;
                 for (int k = 0; k < s; k++) {
-                    side(o, r * 0.6f, g * 0.6f, b * 0.6f, false, x0, z0 + k * 4, yt, rawH(gcx - 1, gcz + k));
-                    side(o, r * 0.6f, g * 0.6f, b * 0.6f, false, x1, z0 + k * 4, yt, rawH(gcx + s, gcz + k));
-                    side(o, r * 0.8f, g * 0.8f, b * 0.8f, true, x0 + k * 4, z0, yt, rawH(gcx + k, gcz - 1));
-                    side(o, r * 0.8f, g * 0.8f, b * 0.8f, true, x0 + k * 4, z1, yt, rawH(gcx + k, gcz + s));
+                    side(o, r * 0.6f, g * 0.6f, b * 0.6f, false, x0, z0 + k * 4, yt, rawH(gcx - 1, gcz + k, snapshot));
+                    side(o, r * 0.6f, g * 0.6f, b * 0.6f, false, x1, z0 + k * 4, yt, rawH(gcx + s, gcz + k, snapshot));
+                    side(o, r * 0.8f, g * 0.8f, b * 0.8f, true, x0 + k * 4, z0, yt, rawH(gcx + k, gcz - 1, snapshot));
+                    side(o, r * 0.8f, g * 0.8f, b * 0.8f, true, x0 + k * 4, z1, yt, rawH(gcx + k, gcz + s, snapshot));
                 }
             }
         }
@@ -281,16 +292,15 @@ public class LodModule extends Module {
         if (m == null) return;
         pending = null;
         if (listId < 0) listId = GLAllocation.generateDisplayLists(1);
-        FloatBuffer fb = BufferUtils.createFloatBuffer(Math.max(6, m.n));
-        fb.put(m.a, 0, m.n);
-        fb.flip();
-        if (OpenGlHelper.useVbo()) OpenGlHelper.glBindBuffer(OpenGlHelper.GL_ARRAY_BUFFER, 0);
-        GL11.glPushClientAttrib(GL11.GL_CLIENT_VERTEX_ARRAY_BIT);
-        GL11.glInterleavedArrays(GL11.GL_C3F_V3F, 0, fb);
+        // Display lists must capture actual vertex values, not a pointer to a temporary buffer.
         GL11.glNewList(listId, GL11.GL_COMPILE);
-        if (m.n > 0) GL11.glDrawArrays(GL11.GL_QUADS, 0, m.n / 6);
+        GL11.glBegin(GL11.GL_QUADS);
+        for (int i = 0; i + 5 < m.n; i += 6) {
+            GL11.glColor3f(m.a[i], m.a[i + 1], m.a[i + 2]);
+            GL11.glVertex3f(m.a[i + 3], m.a[i + 4], m.a[i + 5]);
+        }
+        GL11.glEnd();
         GL11.glEndList();
-        GL11.glPopClientAttrib();
     }
 
     /** Gọi từ RenderWorldLastEvent. */
@@ -318,7 +328,7 @@ public class LodModule extends Module {
         fogBuf.clear();
         fogBuf.put(clearBuf.get(0)).put(clearBuf.get(1)).put(clearBuf.get(2)).put(1f).flip();
 
-        float bright = Math.max(0.15f, Math.min(1f, mc.theWorld.getSunBrightness(pt)));
+        float bright = Math.max(0.42f, Math.min(1f, 0.42f + mc.theWorld.getSunBrightness(pt) * 0.58f));
         ambBuf.clear();
         ambBuf.put(bright).put(bright).put(bright).put(1f).flip();
 
@@ -356,14 +366,16 @@ public class LodModule extends Module {
         GL11.glDisable(GL11.GL_ALPHA_TEST);
         GL11.glEnable(GL11.GL_DEPTH_TEST);
         GL11.glDepthMask(true);
+        GL11.glColor4f(1f, 1f, 1f, 1f);
 
         GL11.glDisable(GL11.GL_LIGHT0);
         GL11.glDisable(GL11.GL_LIGHT1);
-        GL11.glEnable(GL11.GL_LIGHTING);
-        GL11.glEnable(GL11.GL_COLOR_MATERIAL);
+        // Vertex colors are already shaded; fixed-function lighting without normals turns them black.
+        GL11.glDisable(GL11.GL_LIGHTING);
+        GL11.glDisable(GL11.GL_COLOR_MATERIAL);
         GL11.glColorMaterial(GL11.GL_FRONT_AND_BACK, GL11.GL_AMBIENT_AND_DIFFUSE);
         GL11.glLightModeli(GL11.GL_LIGHT_MODEL_TWO_SIDE, GL11.GL_TRUE);
-        GL11.glLightModel(GL11.GL_LIGHT_MODEL_AMBIENT, ambBuf);
+        // No light model required for untextured color-only terrain.
 
         GL11.glEnable(GL11.GL_FOG);
         GL11.glFogi(GL11.GL_FOG_MODE, GL11.GL_LINEAR);
