@@ -3,6 +3,7 @@ package dev.lunarlite;
 import dev.lunarlite.gui.HudEditorScreen;
 import dev.lunarlite.gui.MenuScreen;
 import dev.lunarlite.module.*;
+import dev.lunarlite.module.HideArmorModule;
 import dev.lunarlite.module.Module;
 import java.util.ArrayList;
 import java.util.List;
@@ -75,6 +76,7 @@ public class LunarLite {
     public static AnimationsModule ANIM;
     public static HotbarAnimationModule HOTBAR;
     public static ChatBarModule CHAT_BAR;
+    public static HideArmorModule HIDE_ARMOR;
 
     private static Configuration config;
 
@@ -94,6 +96,7 @@ public class LunarLite {
         ANIM = new AnimationsModule();
         HOTBAR = new HotbarAnimationModule();
         CHAT_BAR = new ChatBarModule();
+        HIDE_ARMOR = new HideArmorModule();
 
         // PvP / HUD
         MODULES.add(new FpsModule());
@@ -115,6 +118,7 @@ public class LunarLite {
         MODULES.add(new ToggleSprintModule());
         MODULES.add(ZOOM);
         MODULES.add(new FullbrightModule());
+        MODULES.add(HIDE_ARMOR);
         MODULES.add(BLOCK_OUTLINE);
         MODULES.add(new ItemPhysicsModule());
         MODULES.add(ANIM);
@@ -218,12 +222,14 @@ public class LunarLite {
 
     @SubscribeEvent
     public void onPlayerPre(RenderPlayerEvent.Pre e) {
+        if (HIDE_ARMOR != null) HIDE_ARMOR.onPre(e);
         if (ENEMY_DETECTOR != null) ENEMY_DETECTOR.onPre(e);
     }
 
     @SubscribeEvent
     public void onPlayerPost(RenderPlayerEvent.Post e) {
         if (ENEMY_DETECTOR != null) ENEMY_DETECTOR.onPost(e);
+        if (HIDE_ARMOR != null) HIDE_ARMOR.onPost(e);
     }
 
     @SubscribeEvent

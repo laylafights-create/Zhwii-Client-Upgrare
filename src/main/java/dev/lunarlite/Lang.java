@@ -21,6 +21,10 @@ public final class Lang {
         p("Toggle Sprint", "Chạy tự động"); p("Zoom", "Thu phóng");
         p("Fullbright", "Tăng sáng"); p("Time Changer", "Đổi thời gian"); p("Block Outline", "Viền block"); p("Item Physics", "Vật lý vật phẩm"); p("Scoreboard", "Bảng điểm");
 
+        p("Hide Armor", "Ẩn giáp"); p("Hide Helmet", "Ẩn mũ"); p("Hide Chestplate", "Ẩn áo giáp"); p("Hide Leggings", "Ẩn quần giáp"); p("Hide Boots", "Ẩn giày");
+        p("Show In Inventory Preview", "Vẫn hiện trong khung xem kho đồ");
+        p("Ẩn giáp trên nhân vật của bạn (chỉ hiển thị phía bạn, không ảnh hưởng chỉ số giáp).", "Ẩn giáp trên nhân vật của bạn (chỉ phía bạn thấy, không ảnh hưởng chỉ số giáp).");
+
         // ---- tùy chỉnh
         p("Scale", "Tỉ lệ"); p("Text Color", "Màu chữ"); p("Background", "Nền"); p("Background opacity", "Độ mờ nền");
         p("Rounded Corners", "Bo góc"); p("Border", "Viền khung"); p("Text Shadow", "Bóng chữ");
