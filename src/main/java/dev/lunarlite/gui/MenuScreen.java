@@ -55,16 +55,16 @@ public class MenuScreen extends GuiScreen {
     private static final int PANE_TOP = 78, PANE_BOTTOM = 264;
 
     // ---- màu
-    // Nền kiểu kính mờ: các lớp trắng trong suốt phủ lên thế giới đã bị blur phía sau.
-    private static final int PANEL_BG = 0x2EFFFFFF;
-    private static final int PANEL_EDGE = 0x70FFFFFF;
-    private static final int DIVIDER = 0x45FFFFFF;
-    private static final int STRIP_BG = 0x22FFFFFF;
-    private static final int CARD_BG = 0x2AFFFFFF;
-    private static final int CARD_BG_HOT = 0x48FFFFFF;
+    // Nền kiểu kính mờ đen: các lớp đen trong suốt phủ lên thế giới đã bị blur phía sau.
+    private static final int PANEL_BG = 0x66000000;
+    /** Viền của các ô tính năng (chỉ ô tính năng còn viền). */
+    private static final int PANEL_EDGE = 0x55FFFFFF;
+    private static final int DIVIDER = 0x30FFFFFF;
+    private static final int STRIP_BG = 0x44000000;
+    private static final int CARD_BG = 0x55000000;
+    private static final int CARD_BG_HOT = 0x77000000;
     /** Nền các ô nhỏ (logo, huy hiệu, thanh tiến độ, vùng cuộn). */
-    private static final int GLASS = 0x30FFFFFF;
-    private static final int GLASS_EDGE = 0x40FFFFFF;
+    private static final int GLASS = 0x55000000;
     private static final int TEXT_DIM = 0xFF8FA0C8;
     private static final int TEXT_SOFT = 0xFFC3CEEA;
     private static final int GREEN = 0xFF4ADE80;
@@ -803,8 +803,8 @@ public class MenuScreen extends GuiScreen {
         curMx = vx(mx);
         curMy = vy(my);
         float op = openProgress();
-        // nền blur trắng: thế giới phía sau bị làm mờ rồi phủ một lớp trắng trong suốt
-        if (blurOn) drawGradientRect(0, 0, width, height, Draw.mulAlpha(0x30FFFFFF, op), Draw.mulAlpha(0x40FFFFFF, op));
+        // nền blur đen: thế giới phía sau bị làm mờ rồi phủ một lớp đen trong suốt
+        if (blurOn) drawGradientRect(0, 0, width, height, Draw.mulAlpha(0x40000000, op), Draw.mulAlpha(0x55000000, op));
         else drawGradientRect(0, 0, width, height, Draw.mulAlpha(0xC0101010, op), Draw.mulAlpha(0xD0101010, op));
 
         float k = AnimationsModule.menu() ? 0.35f : 1f;
@@ -831,21 +831,17 @@ public class MenuScreen extends GuiScreen {
 
         // khung (không đổ bóng để nền kính không bị đục)
         Gui.drawRect(0, 0, VW, VH, PANEL_BG);
-        Draw.outline(0, 0, VW, VH, PANEL_EDGE);
-        Gui.drawRect(0, 0, VW, 2, Draw.ACCENT);
 
         // ---------------- tiêu đề
         if (!detail || module == null) {
             // logo + tên client
             Gui.drawRect(PAD, 12, PAD + 28, 40, GLASS);
-            Draw.outline(PAD, 12, PAD + 28, 40, Draw.ACCENT_DIM);
             Icons.draw("logo", PAD + 2, 14, 3, Draw.ACCENT_LIGHT);
             drawScaled("Zhwii Client", PAD + 36, 12, 2f, Draw.ACCENT_LIGHT);
             fr.drawStringWithShadow("Client HUD / PvP · Minecraft 1.8.9", PAD + 36, 31, TEXT_DIM);
             // huy hiệu số tính năng đang bật
             int bx = VW - PAD - 72;
             Gui.drawRect(bx, 12, bx + 72, 42, GLASS);
-            Draw.outline(bx, 12, bx + 72, 42, Draw.ACCENT);
             drawCentered("ĐANG BẬT", bx + 36, 16, Draw.ACCENT_LIGHT);
             String cnt = en + "/" + total;
             drawScaled(cnt, bx + 36 - fr.getStringWidth(cnt) * 1.5f / 2f, 27, 1.5f, 0xFFFFFFFF);
@@ -859,7 +855,6 @@ public class MenuScreen extends GuiScreen {
         } else {
             int col = colorOf(module);
             Gui.drawRect(PAD, 12, PAD + 28, 40, GLASS);
-            Draw.outline(PAD, 12, PAD + 28, 40, col);
             Icons.draw(module.id, PAD + 2, 14, 3, col);
             String nm = Lang.vi(module.name);
             int avail = VW - 2 * PAD - 36 - 84;
@@ -869,7 +864,6 @@ public class MenuScreen extends GuiScreen {
             int bx = VW - PAD - 72;
             int sc2 = module.enabled ? GREEN : RED;
             Gui.drawRect(bx, 12, bx + 72, 42, GLASS);
-            Draw.outline(bx, 12, bx + 72, 42, sc2);
             String st = module.enabled ? "BẬT" : "TẮT";
             drawScaled(st, bx + 36 - fr.getStringWidth(st) * 1.5f / 2f, 21, 1.5f, sc2);
             for (int i = 0; i < descLines.length; i++) {
@@ -948,8 +942,7 @@ public class MenuScreen extends GuiScreen {
         for (int i = 0; i < n; i++) {
             int x = tabX(i);
             boolean over = Draw.in(mx, my, x, TAB_Y, tw, TAB_H);
-            Gui.drawRect(x, TAB_Y, x + tw, TAB_Y + TAB_H, i == sel ? 0x58FFFFFF : over ? 0x3CFFFFFF : STRIP_BG);
-            Draw.outline(x, TAB_Y, x + tw, TAB_Y + TAB_H, i == sel ? Draw.ACCENT_DIM : GLASS_EDGE);
+            Gui.drawRect(x, TAB_Y, x + tw, TAB_Y + TAB_H, i == sel ? 0x88000000 : over ? 0x66000000 : STRIP_BG);
             String label = fit(tabLabel(i), tw - 8 - 12);
             int lw = fr.getStringWidth(label);
             int total = 8 + 4 + lw;
@@ -978,7 +971,7 @@ public class MenuScreen extends GuiScreen {
         fr.drawStringWithShadow(key, x + 5, y + 7, TEXT_DIM);
 
         // biểu tượng riêng
-        int icol = on ? col : Draw.lerp(col, 0xFF2A3550, 0.62f);
+        int icol = on ? col : Draw.lerp(col, 0xFF202020, 0.62f);
         Icons.draw(m.id, x + (w - 24) / 2, y + 9, 3, icol);
 
         // tên + trạng thái
@@ -1007,7 +1000,6 @@ public class MenuScreen extends GuiScreen {
         FontRenderer fr = fontRendererObj;
 
         Gui.drawRect(px, top, px + pw, bottom, STRIP_BG);
-        Draw.outline(px, top, px + pw, bottom, GLASS_EDGE);
 
         int sc = Math.round(setScroll);
         for (Object o : buttonList) {
