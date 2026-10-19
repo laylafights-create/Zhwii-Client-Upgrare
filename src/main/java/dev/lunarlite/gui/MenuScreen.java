@@ -800,6 +800,7 @@ public class MenuScreen extends GuiScreen {
     @Override
     public void drawScreen(int mx, int my, float partialTicks) {
         ThemeModule.apply();
+        if (detail && module != null && module.consumeUiDirty()) rebuild();
         curMx = vx(mx);
         curMy = vy(my);
         float op = openProgress();
