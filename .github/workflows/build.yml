@@ -80,6 +80,32 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      # Mỗi lần chạy workflow, GitHub tăng github.run_number lên 1 -> số phiên bản tự đổi theo.
+      # Phiên bản = <major>.<minor> lấy từ build.gradle + "." + số lần chạy (vd. 2.0.0 -> 2.0.57).
+      # Chỉ sửa trong runner (không commit lại repo), nhưng file .jar, mcmod.info và artifact đều mang số mới.
+      - name: Bump version (auto)
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BASE="$(grep -oE '^version *= *"[0-9]+\.[0-9]+' build.gradle | grep -oE '[0-9]+\.[0-9]+' | head -n1)"
+          if [ -z "$BASE" ]; then
+            echo "::error::Không đọc được version trong build.gradle (cần dạng version = \"2.0.0\")."
+            exit 1
+          fi
+          VERSION="${BASE}.${GITHUB_RUN_NUMBER}"
+
+          sed -i -E "s/^version *= *\"[^\"]*\"/version = \"${VERSION}\"/" build.gradle
+          sed -i -E "s/(String VERSION *= *\")[^\"]*(\")/\1${VERSION}\2/" src/main/java/dev/lunarlite/LunarLite.java
+
+          grep -q "^version = \"${VERSION}\"" build.gradle || { echo "::error::Không thay được version trong build.gradle"; exit 1; }
+          grep -q "String VERSION = \"${VERSION}\"" src/main/java/dev/lunarlite/LunarLite.java || { echo "::error::Không thay được VERSION trong LunarLite.java"; exit 1; }
+
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Phiên bản lần build này: ${VERSION}"
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -96,7 +122,7 @@ jobs:
         shell: bash
         run: |
           echo "=================================="
-          echo " Zhwii Client"
+          echo " Zhwii Client v$VERSION"
           echo " Minecraft: 1.8.9"
           echo " Java: $JAVA_VERSION"
           echo " Gradle: $GRADLE_VERSION"
@@ -160,7 +186,7 @@ jobs:
         if: success() && env.UPLOAD_ARTIFACT == 'true' && (inputs.build_task == 'build' || inputs.build_task == 'assemble' || inputs.build_task == '')
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ARTIFACT_NAME }}
+          name: ${{ env.ARTIFACT_NAME }}-v${{ env.VERSION }}
           path: build/libs/*.jar
           if-no-files-found: error
           compression-level: 9
@@ -171,8 +197,9 @@ jobs:
         shell: bash
         run: |
           {
-            echo "## Zhwii Client"
+            echo "## Zhwii Client v${VERSION:-?}"
             echo
+            echo "- Phiên bản: ${VERSION:-?} (lần chạy #$GITHUB_RUN_NUMBER)"
             echo "- Minecraft: 1.8.9"
             echo "- Java: $JAVA_VERSION"
             echo "- Gradle: $GRADLE_VERSION"
