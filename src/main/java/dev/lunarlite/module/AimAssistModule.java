@@ -39,6 +39,8 @@ public class AimAssistModule extends Module {
             "Giữ hoặc click", "Chỉ giữ chuột", "Chỉ click"), SEC_TRIGGER);
     private final SliderSetting clickWindow = add(new SliderSetting("aim_crit_click_window", "Thời gian nhớ cú click", 3, 1, 10, 1, " tick"), SEC_TRIGGER);
     private final SliderSetting range = add(new SliderSetting("aim_crit_range", "Tầm kích hoạt", 3.0, 2.0, 6.0, 0.1, " khối"), SEC_TRIGGER);
+    private final BoolSetting useAngle = add(new BoolSetting("aim_crit_use_angle", "Nhận mục tiêu trong góc đánh", false), SEC_TRIGGER);
+    private final SliderSetting angle = add(new SliderSetting("aim_crit_angle", "Góc đánh", 40, 10, 180, 5, "°"), SEC_TRIGGER, useAngle);
 
     // ---- Nhảy
     private final SliderSetting delay = add(new SliderSetting("aim_crit_delay", "Độ trễ giữa các lần nhảy", 1, 0, 10, 1, " tick"), SEC_JUMP);
@@ -217,6 +219,48 @@ public class AimAssistModule extends Module {
         waitTicks = delay.getInt() + (delayRand.getInt() > 0 ? rng.nextInt(delayRand.getInt() + 1) : 0);
     }
 
+    /** Mục tiêu hợp lệ: sinh vật còn sống, trong tầm, qua các bộ lọc ở mục "Mục tiêu". */
+    private boolean validTarget(EntityPlayer p, Entity t) {
+        if (!(t instanceof EntityLivingBase) || t == p || t.isDead || t instanceof EntityArmorStand) return false;
+        if (((EntityLivingBase) t).getHealth() <= 0.0F) return false;
+        if (p.getDistanceToEntity(t) > range.getFloat()) return false;
+        if (ignoreInvisible.value && t.isInvisible()) return false;
+        if (t instanceof EntityPlayer) {
+            EntityPlayer tp = (EntityPlayer) t;
+            if (tp.isSpectator()) return false;
+            if (ignoreBots.value && !HypixelUtil.isRealPlayer(tp)) return false;
+            if (ignoreTeam.value && TeamUtil.isTeammate(p, tp)) return false;
+            return true;
+        }
+        return !onlyPlayers.value;
+    }
+
+    /** Mục tiêu hợp lệ gần nhất nằm trong góc đánh (tính theo góc giữa hướng nhìn và hướng tới mục tiêu). */
+    private Entity findInAngle(Minecraft mc, EntityPlayer p) {
+        double maxDeg = angle.get() / 2.0D;
+        double cosMin = Math.cos(Math.toRadians(maxDeg));
+        net.minecraft.util.Vec3 look = p.getLook(1.0F);
+        double ex = p.posX, ey = p.posY + p.getEyeHeight(), ez = p.posZ;
+        Entity best = null;
+        double bestDist = Double.MAX_VALUE;
+        List<? extends Entity> list = onlyPlayers.value ? mc.theWorld.playerEntities : mc.theWorld.loadedEntityList;
+        for (int i = 0, n = list.size(); i < n; i++) {
+            Entity e = list.get(i);
+            if (!validTarget(p, e)) continue;
+            double dx = e.posX - ex, dy = e.posY + e.height * 0.5D - ey, dz = e.posZ - ez;
+            double len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (len < 1.0E-4D) continue;
+            double cos = (dx * look.xCoord + dy * look.yCoord + dz * look.zCoord) / len;
+            if (cos < cosMin) continue;
+            double dist = p.getDistanceToEntity(e);
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = e;
+            }
+        }
+        return best;
+    }
+
     @Override
     public void onTick() {
         tick++;
@@ -246,22 +290,12 @@ public class AimAssistModule extends Module {
         }
         if (skipLobby.value && HypixelUtil.inLobby()) return;
 
-        // Phải đang trỏ vào một sinh vật còn sống trong tầm.
+        // Mục tiêu: sinh vật đang trỏ tâm vào; nếu bật "góc đánh" thì nhận cả mục tiêu gần tâm ngắm trong góc cho phép.
+        Entity t = null;
         MovingObjectPosition mop = mc.objectMouseOver;
-        if (mop == null || mop.typeOfHit != MovingObjectPosition.MovingObjectType.ENTITY) return;
-        Entity t = mop.entityHit;
-        if (!(t instanceof EntityLivingBase) || t.isDead || t instanceof EntityArmorStand) return;
-        if (((EntityLivingBase) t).getHealth() <= 0.0F) return;
-        if (p.getDistanceToEntity(t) > range.getFloat()) return;
-        if (ignoreInvisible.value && t.isInvisible()) return;
-        if (t instanceof EntityPlayer) {
-            EntityPlayer tp = (EntityPlayer) t;
-            if (tp.isSpectator()) return;
-            if (ignoreBots.value && !HypixelUtil.isRealPlayer(tp)) return;
-            if (ignoreTeam.value && TeamUtil.isTeammate(p, tp)) return;
-        } else if (onlyPlayers.value) {
-            return;
-        }
+        if (mop != null && mop.typeOfHit == MovingObjectPosition.MovingObjectType.ENTITY) t = mop.entityHit;
+        if (!validTarget(p, t)) t = useAngle.value ? findInAngle(mc, p) : null;
+        if (t == null) return;
 
         // Trần quá thấp thì nhảy chỉ đập đầu, không có đà rơi để ăn crit.
         if (!mc.theWorld.getCollidingBoundingBoxes(p, p.getEntityBoundingBox().offset(0.0D, headroom.get(), 0.0D)).isEmpty()) return;
