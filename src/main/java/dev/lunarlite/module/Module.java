@@ -64,6 +64,11 @@ public abstract class Module {
         return Collections.<Action>emptyList();
     }
 
+    /** Trả true (một lần) khi nhãn các nút riêng đã đổi và menu cần dựng lại. */
+    public boolean consumeUiDirty() {
+        return false;
+    }
+
     /** Gọi mỗi client tick khi đang ở trong thế giới. */
     public void onTick() {}
 
