@@ -25,6 +25,8 @@ import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.renderer.GlStateManager;
+import net.minecraft.client.renderer.OpenGlHelper;
+import net.minecraft.util.ResourceLocation;
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
 
@@ -742,8 +744,34 @@ public class MenuScreen extends GuiScreen {
 
     // ---------------------------------------------------------------- GuiScreen
 
+    // ---- nền blur (dùng post-shader "blur" của game, chỉ làm mờ thế giới phía sau, không làm mờ menu)
+    private static final ResourceLocation BLUR_SHADER = new ResourceLocation("lunarlite", "shaders/post/menu_blur.json");
+    private boolean blurOn;
+
+    private void startBlur() {
+        if (blurOn || mc == null || mc.theWorld == null || !OpenGlHelper.shadersSupported) return;
+        // đang có shader khác (vd. spectate creeper) thì không đè lên
+        if (mc.entityRenderer.isShaderActive()) return;
+        try {
+            mc.entityRenderer.loadShader(BLUR_SHADER);
+            blurOn = mc.entityRenderer.isShaderActive();
+        } catch (Throwable t) {
+            blurOn = false;
+        }
+    }
+
+    private void stopBlur() {
+        if (!blurOn) return;
+        blurOn = false;
+        try {
+            if (mc != null && mc.entityRenderer != null) mc.entityRenderer.stopUseShader();
+        } catch (Throwable ignored) {
+        }
+    }
+
     @Override
     public void initGui() {
+        startBlur();
         rebuild();
     }
 
@@ -771,7 +799,9 @@ public class MenuScreen extends GuiScreen {
         curMx = vx(mx);
         curMy = vy(my);
         float op = openProgress();
-        drawGradientRect(0, 0, width, height, Draw.mulAlpha(0xC0101010, op), Draw.mulAlpha(0xD0101010, op));
+        // nền blur: lớp phủ tối nhẹ hơn vì thế giới phía sau đã bị làm mờ
+        if (blurOn) drawGradientRect(0, 0, width, height, Draw.mulAlpha(0x50101010, op), Draw.mulAlpha(0x66101010, op));
+        else drawGradientRect(0, 0, width, height, Draw.mulAlpha(0xC0101010, op), Draw.mulAlpha(0xD0101010, op));
 
         float k = AnimationsModule.menu() ? 0.35f : 1f;
         setScroll += (setTarget - setScroll) * k;
@@ -1278,6 +1308,7 @@ public class MenuScreen extends GuiScreen {
 
     @Override
     public void onGuiClosed() {
+        stopBlur();
         lastModule = module;
         LunarLite.saveConfig();
     }
