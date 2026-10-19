@@ -49,14 +49,14 @@ public class MenuScreen extends GuiScreen {
     private static final int BH = 20, ROW = 24, GAP = 6, BAR_W = 6;
     // ---- các vùng theo trục dọc
     private static final int TAB_Y = 76, TAB_H = 18, TAB_GAP = 4;
-    private static final int GRID_Y = 102, CARD_H = 62, CARD_GAP = 6, COLS = 5, GRID_ROWS = 2;
+    private static final int GRID_Y = 102, CARD_H = 62, CARD_GAP = 6, COLS = 4, GRID_ROWS = 2;
     private static final int PER_PAGE = COLS * GRID_ROWS;
     private static final int PAGE_Y = 238, HINT_Y = 254, BTN_Y = 270;
     private static final int PANE_TOP = 78, PANE_BOTTOM = 264;
 
     // ---- màu
     // Nền kiểu kính mờ đen: các lớp đen trong suốt phủ lên thế giới đã bị blur phía sau.
-    private static final int PANEL_BG = 0x66000000;
+    private static final int PANEL_BG = 0xDD141414;
     /** Viền của các ô tính năng (chỉ ô tính năng còn viền). */
     private static final int PANEL_EDGE = 0x55FFFFFF;
     private static final int DIVIDER = 0x30FFFFFF;
@@ -82,6 +82,8 @@ public class MenuScreen extends GuiScreen {
     private static final Comparator<Module> BY_NAME = new Comparator<Module>() {
         @Override
         public int compare(Module a, Module b) {
+            boolean fa = FAVS.contains(a.id), fb = FAVS.contains(b.id);
+            if (fa != fb) return fa ? -1 : 1;
             return Lang.vi(a.name).compareToIgnoreCase(Lang.vi(b.name));
         }
     };
@@ -93,6 +95,17 @@ public class MenuScreen extends GuiScreen {
         if (st instanceof ColorSetting) return 2;
         return 3; // SliderSetting
     }
+
+    // ---- kiểu ô pixel (giống ảnh mẫu)
+    private static final int ORANGE = 0xFFFFA726;
+    private static final int PX_BG = 0xFF242424;
+    private static final int PX_BG_HOT = 0xFF2E2E2E;
+    private static final int PX_OUT = 0xFF0E0E0E;
+    private static final int PX_IN = 0xFF3C3C3C;
+    private static final int PX_TEXT = 0xFF8C8C8C;
+    private static final int PX_GREEN = 0xFF6BCB3A;
+    /** Tính năng yêu thích (id) - hiện lên đầu danh sách. Chỉ nhớ trong phiên chơi. */
+    private static final java.util.Set<String> FAVS = new java.util.HashSet<String>();
 
     /** Nhớ tính năng và nhóm đang chọn giữa các lần mở menu. */
     private static Module lastModule;
@@ -118,10 +131,7 @@ public class MenuScreen extends GuiScreen {
             this.kind = kind;
         }
 
-        /**
-         * Vẽ phẳng: nền mờ, rê chuột sáng dần + vạch màu nhấn, công tắc BẬT/TẮT ở bên phải,
-         * thanh trượt tô màu nhấn. Nút trượt vào lần lượt khi mở tính năng.
-         */
+        /** Kiểu pixel: hàng tuỳ chỉnh = nhãn trắng bên trái + điều khiển bên phải; nút thường = ô viền vuông. */
         @Override
         public void drawButton(Minecraft mc, int mouseX, int mouseY) {
             if (!visible) return;
@@ -139,54 +149,66 @@ public class MenuScreen extends GuiScreen {
 
             int x = xPosition, y = yPosition, w = width, h = height;
             int ty = y + (h - 8) / 2;
-            int col = enabled ? 0xFFFFFF : 0x808080;
+            int col = enabled ? 0xFFFFFFFF : 0xFF808080;
 
             GlStateManager.pushMatrix();
             GlStateManager.translate(fixed ? 0f : (1f - st) * 22f, 0f, 0f);
 
-            // nền
-            Gui.drawRect(x, y, x + w, y + h, Draw.lerp(0x22FFFFFF, 0x3CFFFFFF, hov));
-            Gui.drawRect(x, y + h - 1, x + w, y + h, 0x18000000);
-            if (kind == K_SLIDER) {
-                int fw = (int) Math.round(((SliderSetting) s).ratio() * w);
-                Gui.drawRect(x, y, x + fw, y + h - 1, Draw.withAlpha(Draw.ACCENT, 0x55));
-                Gui.drawRect(Math.max(x, x + fw - 2), y, x + Math.max(2, fw), y + h - 1, Draw.ACCENT);
-            }
-            if (hov > 0.02f && enabled) {
-                Gui.drawRect(x, y, x + Math.round(2 * hov), y + h, Draw.ACCENT);
-            }
-
-            // chữ
             switch (kind) {
                 case K_ENABLE:
-                    fr.drawStringWithShadow(fr.trimStringToWidth("Bật tính năng", w - 40), x + 7, ty, col);
-                    drawSwitch(x + w - 26, ty, sw);
+                case K_BOOL: {
+                    if (hov > 0.02f) Gui.drawRect(x, y, x + w, y + h, Draw.mulAlpha(0x18FFFFFF, hov));
+                    String lb = kind == K_ENABLE ? "Bật tính năng" : Lang.vi(s.label);
+                    fr.drawStringWithShadow(fr.trimStringToWidth(lb, w - 50), x + 7, ty, col);
+                    drawSwitch(x + w - 30, y + (h - 12) / 2, sw);
                     break;
-                case K_BOOL:
-                    fr.drawStringWithShadow(fr.trimStringToWidth(Lang.vi(s.label), w - 40), x + 7, ty, col);
-                    drawSwitch(x + w - 26, ty, sw);
+                }
+                case K_MODE: {
+                    if (hov > 0.02f) Gui.drawRect(x, y, x + w, y + h, Draw.mulAlpha(0x18FFFFFF, hov));
+                    String val = Lang.vi(((ModeSetting) s).get()).toUpperCase();
+                    int bw2 = Math.min(w / 2, fr.getStringWidth(val) + 18);
+                    int bx = x + w - bw2 - 2, by = y + 2;
+                    Gui.drawRect(bx, by, bx + bw2, by + h - 4, 0xFF1C1C1C);
+                    Draw.outline(bx, by, bx + bw2, by + h - 4, hov > 0.3f ? ORANGE : PX_OUT);
+                    Draw.outline(bx + 1, by + 1, bx + bw2 - 1, by + h - 5, PX_IN);
+                    String vt = fr.trimStringToWidth(val, bw2 - 8);
+                    fr.drawStringWithShadow(vt, bx + (bw2 - fr.getStringWidth(vt)) / 2f, ty, ORANGE);
+                    fr.drawStringWithShadow(fr.trimStringToWidth(Lang.vi(s.label), w - bw2 - 16), x + 7, ty, col);
                     break;
-                case K_MODE:
-                case K_COLOR:
+                }
+                case K_COLOR: {
+                    if (hov > 0.02f) Gui.drawRect(x, y, x + w, y + h, Draw.mulAlpha(0x18FFFFFF, hov));
+                    int sx = x + w - 44, sy = y + 3;
+                    Gui.drawRect(sx - 1, sy - 1, sx + 41, sy + 15, PX_OUT);
+                    Gui.drawRect(sx, sy, sx + 40, sy + 14, 0xFF000000 | ((ColorSetting) s).value);
+                    fr.drawStringWithShadow(fr.trimStringToWidth(Lang.vi(s.label), w - 66), x + 7, ty, col);
+                    break;
+                }
                 case K_SLIDER: {
-                    String right = kind == K_MODE ? Lang.vi(((ModeSetting) s).get())
-                            : kind == K_COLOR ? colorName(((ColorSetting) s).value)
-                            : ((SliderSetting) s).display();
-                    int rr = x + w - 7 - (kind == K_COLOR ? 18 : 0);
-                    int rw = fr.getStringWidth(right);
-                    String left = fr.trimStringToWidth(Lang.vi(s.label), Math.max(10, w - 14 - rw - 10 - (kind == K_COLOR ? 18 : 0)));
-                    fr.drawStringWithShadow(left, x + 7, ty, col);
-                    fr.drawStringWithShadow(right, rr - rw, ty, Draw.ACCENT_LIGHT);
-                    if (kind == K_COLOR) {
-                        int sx = x + w - 17, sy = y + (h - 10) / 2;
-                        Gui.drawRect(sx - 1, sy - 1, sx + 11, sy + 11, 0xFF000000);
-                        Gui.drawRect(sx, sy, sx + 10, sy + 10, 0xFF000000 | ((ColorSetting) s).value);
-                    }
+                    if (hov > 0.02f) Gui.drawRect(x, y, x + w, y + h, Draw.mulAlpha(0x18FFFFFF, hov));
+                    SliderSetting ss = (SliderSetting) s;
+                    int tx = trackX(this);
+                    int vx0 = tx - 42;
+                    String val = ss.display();
+                    Gui.drawRect(vx0, y + 3, vx0 + 36, y + h - 3, 0xFF121212);
+                    Draw.outline(vx0, y + 3, vx0 + 36, y + h - 3, PX_IN);
+                    String vt = fr.trimStringToWidth(val, 32);
+                    fr.drawStringWithShadow(vt, vx0 + (36 - fr.getStringWidth(vt)) / 2f, ty, 0xFFFFFFFF);
+                    fr.drawStringWithShadow(fr.trimStringToWidth(Lang.vi(s.label), Math.max(10, vx0 - x - 12)), x + 7, ty, col);
+                    int ly = y + h / 2;
+                    int hx = tx + Math.round((float) ss.ratio() * (TRACK_W - 8));
+                    Gui.drawRect(tx, ly, tx + TRACK_W, ly + 1, 0xFF5A5A5A);
+                    Gui.drawRect(tx, ly, hx + 4, ly + 1, 0xFFB0B0B0);
+                    Gui.drawRect(hx - 1, y + 4, hx + 9, y + h - 4, PX_OUT);
+                    Gui.drawRect(hx, y + 5, hx + 8, y + h - 5, Draw.lerp(0xFFA8A8A8, ORANGE, hov));
                     break;
                 }
                 default: {
-                    String t = fr.trimStringToWidth(displayString, w - 8);
-                    fr.drawStringWithShadow(t, x + (w - fr.getStringWidth(t)) / 2f, ty, col);
+                    Gui.drawRect(x, y, x + w, y + h, Draw.lerp(0xFF202020, 0xFF2E2A20, hov));
+                    Draw.outline(x, y, x + w, y + h, Draw.lerp(PX_OUT, ORANGE, hov));
+                    Draw.outline(x + 1, y + 1, x + w - 1, y + h - 1, Draw.lerp(PX_IN, 0xFF6A4A14, hov));
+                    String t = fr.trimStringToWidth(displayString.toUpperCase(), w - 10);
+                    fr.drawStringWithShadow(t, x + (w - fr.getStringWidth(t)) / 2f, ty, Draw.lerp(0xFFC8C8C8, ORANGE, hov));
                     break;
                 }
             }
@@ -196,12 +218,19 @@ public class MenuScreen extends GuiScreen {
         }
     }
 
-    /** Công tắc nhỏ BẬT/TẮT; a = 0..1 để trượt mượt. */
-    private static void drawSwitch(int tx, int ty, float a) {
-        Gui.drawRect(tx - 1, ty - 1, tx + 19, ty + 9, 0xFF000000);
-        Gui.drawRect(tx, ty, tx + 18, ty + 8, Draw.lerp(0xFF7A2A2A, 0xFF2E9B2E, a));
-        int kx = tx + 1 + Math.round(10 * a);
-        Gui.drawRect(kx, ty + 1, kx + 6, ty + 7, 0xFFEEEEEE);
+    private static final int TRACK_W = 104;
+
+    private static int trackX(Btn b) {
+        return b.xPosition + b.width - 110;
+    }
+
+    /** Công tắc pixel: ô trượt vuông, nền xanh khi bật; a = 0..1 để trượt mượt. */
+    private static void drawSwitch(int tx, int sy, float a) {
+        Gui.drawRect(tx - 1, sy - 1, tx + 25, sy + 13, PX_OUT);
+        Gui.drawRect(tx, sy, tx + 24, sy + 12, Draw.lerp(0xFF3A3A3A, 0xFF2E7D1E, a));
+        int kx = tx + Math.round(12 * a);
+        Gui.drawRect(kx, sy, kx + 12, sy + 12, Draw.lerp(0xFFB0B0B0, 0xFFE8E8E8, a));
+        Gui.drawRect(kx, sy + 9, kx + 12, sy + 12, 0x30000000);
     }
 
     /** Thanh trượt phẳng (vẽ trong Btn.drawButton), kéo bằng chuột trái. */
@@ -215,7 +244,7 @@ public class MenuScreen extends GuiScreen {
         }
 
         private void setFromMouse(int mx) {
-            float r = (mx - (xPosition + 4)) / (float) (width - 8);
+            float r = (mx - trackX(this) - 4) / (float) (TRACK_W - 8);
             ((SliderSetting) s).setRatio(Math.max(0f, Math.min(1f, r)));
             refresh(this);
         }
@@ -233,7 +262,7 @@ public class MenuScreen extends GuiScreen {
 
         @Override
         public boolean mousePressed(Minecraft mc, int mouseX, int mouseY) {
-            if (super.mousePressed(mc, mouseX, mouseY)) {
+            if (super.mousePressed(mc, mouseX, mouseY) && mouseX >= trackX(this) - 6) {
                 setFromMouse(mouseX);
                 dragging = true;
                 return true;
@@ -602,8 +631,8 @@ public class MenuScreen extends GuiScreen {
         Module m = module;
         if (m == null) return;
 
-        int inner = paneW() - 20;
-        oneCol = inner < 2 * 120 + GAP;
+        int inner = paneW() - 30;
+        oneCol = true;
         bw = oneCol ? inner : (inner - GAP) / 2;
 
         if (m.description != null && m.description.length() > 0) {
@@ -710,7 +739,7 @@ public class MenuScreen extends GuiScreen {
         place(done, x, BTN_Y);
 
         if (detail) {
-            int px = paneX(), inner = paneW() - 20;
+            int px = paneX(), inner = paneW() - 30;
             for (Row row : rows) {
                 if (row.header != null) continue;
                 if (row.full != null) {
@@ -934,7 +963,6 @@ public class MenuScreen extends GuiScreen {
     }
 
     private void drawTabs(int mx, int my) {
-        FontRenderer fr = fontRendererObj;
         int n = tabCount(), tw = tabW(), sel = tabIndex();
         if (tabPos < 0f) tabPos = sel;
         tabPos += (sel - tabPos) * (AnimationsModule.menu() ? 0.3f : 1f);
@@ -943,17 +971,14 @@ public class MenuScreen extends GuiScreen {
         for (int i = 0; i < n; i++) {
             int x = tabX(i);
             boolean over = Draw.in(mx, my, x, TAB_Y, tw, TAB_H);
-            Gui.drawRect(x, TAB_Y, x + tw, TAB_Y + TAB_H, i == sel ? 0x88000000 : over ? 0x66000000 : STRIP_BG);
-            String label = fit(tabLabel(i), tw - 8 - 12);
-            int lw = fr.getStringWidth(label);
-            int total = 8 + 4 + lw;
-            int sx = x + (tw - total) / 2;
-            int col = i == sel ? 0xFFFFFFFF : over ? 0xFFE0E6F5 : TEXT_DIM;
-            Icons.draw(tabIcon(i), sx, TAB_Y + (TAB_H - 8) / 2, 1, i == sel ? Draw.ACCENT_LIGHT : col);
-            fr.drawStringWithShadow(label, sx + 12, TAB_Y + (TAB_H - 8) / 2, col);
+            boolean on = i == sel;
+            Gui.drawRect(x, TAB_Y, x + tw, TAB_Y + TAB_H, on ? 0xFF2B2418 : over ? PX_BG_HOT : PX_BG);
+            Draw.outline(x, TAB_Y, x + tw, TAB_Y + TAB_H, on ? ORANGE : PX_OUT);
+            if (!on) Draw.outline(x + 1, TAB_Y + 1, x + tw - 1, TAB_Y + TAB_H - 1, PX_IN);
+            String label = fit(tabLabel(i).toUpperCase(), tw - 8);
+            int col = on ? ORANGE : over ? 0xFFE0E0E0 : PX_TEXT;
+            drawCentered(label, x + tw / 2f, TAB_Y + (TAB_H - 8) / 2, col);
         }
-        int ix = PAD + Math.round(tabPos * (tw + TAB_GAP));
-        Gui.drawRect(ix, TAB_Y + TAB_H - 2, ix + tw, TAB_Y + TAB_H, Draw.ACCENT);
     }
 
     private void drawCard(Module m, int slot, int x, int y, int w, int h, float hv, boolean sel) {
@@ -961,29 +986,35 @@ public class MenuScreen extends GuiScreen {
         int col = colorOf(m);
         boolean on = m.enabled;
 
-        Gui.drawRect(x, y, x + w, y + h, Draw.lerp(CARD_BG, CARD_BG_HOT, hv));
-        int edge = Draw.lerp(on ? Draw.lerp(PANEL_EDGE, col, 0.45f) : PANEL_EDGE, col, hv);
-        if (sel) edge = Draw.lerp(Draw.ACCENT, col, hv);
-        Draw.outline(x, y, x + w, y + h, edge);
-        Gui.drawRect(x + 1, y + 1, x + w - 1, y + 3, on ? col : Draw.withAlpha(col, 0x55));
+        // nền + viền đôi (ngoài tối, trong sáng hơn)
+        Gui.drawRect(x, y, x + w, y + h, Draw.lerp(PX_BG, PX_BG_HOT, hv));
+        Draw.outline(x, y, x + w, y + h, sel ? ORANGE : Draw.lerp(PX_OUT, ORANGE, hv * 0.8f));
+        Draw.outline(x + 1, y + 1, x + w - 1, y + h - 1, PX_IN);
 
-        // số phím tắt
-        String key = slot == 9 ? "0" : String.valueOf(slot + 1);
-        fr.drawStringWithShadow(key, x + 5, y + 7, TEXT_DIM);
+        // tên (góc trái, chữ in hoa xám)
+        String nm = fit(Lang.vi(m.name).toUpperCase(), w - 28);
+        fr.drawStringWithShadow(nm, x + 6, y + 6, on ? 0xFFD8D8D8 : PX_TEXT);
 
-        // biểu tượng riêng
-        int icol = on ? col : Draw.lerp(col, 0xFF202020, 0.62f);
-        Icons.draw(m.id, x + (w - 24) / 2, y + 9, 3, icol);
+        // tim yêu thích (góc phải)
+        boolean fav = FAVS.contains(m.id);
+        Icons.draw("heart", x + w - 15, y + 7, 1, fav ? 0xFFFF5577 : 0xFF6A6A6A);
 
-        // tên + trạng thái
-        String nm = fit(Lang.vi(m.name), w - 8);
-        drawCentered(nm, x + w / 2f, y + 38, on ? 0xFFFFFFFF : 0xFFB8C4E0);
-        String stt = on ? "Bật" : "Tắt";
-        int sw = fr.getStringWidth(stt);
-        int sx = x + (w - (6 + sw)) / 2;
-        int dc = on ? GREEN : OFF;
-        Gui.drawRect(sx, y + 50, sx + 4, y + 54, dc);
-        fr.drawStringWithShadow(stt, sx + 6, y + 48, on ? GREEN : OFF);
+        // biểu tượng lớn ở giữa
+        int icol = on ? col : 0xFF8A8A8A;
+        Icons.draw(m.id, x + (w - 24) / 2, y + 17, 3, icol);
+
+        // nút trạng thái + nút bánh răng
+        int by = y + h - 18, sw = w - 27;
+        int bg = on ? 0xFF1F2A16 : 0xFF202020;
+        Gui.drawRect(x + 5, by, x + 5 + sw, by + 14, bg);
+        Draw.outline(x + 5, by, x + 5 + sw, by + 14, on ? PX_GREEN : 0xFF4A4A4A);
+        String stt = on ? "BẬT" : "TẮT";
+        drawCentered(stt, x + 5 + sw / 2f, by + 3, on ? PX_GREEN : 0xFFC0C0C0);
+
+        int gx = x + w - 19;
+        Gui.drawRect(gx, by, gx + 14, by + 14, 0xFF202020);
+        Draw.outline(gx, by, gx + 14, by + 14, 0xFF4A4A4A);
+        Icons.draw("gear", gx + 3, by + 3, 1, hv > 0.5f ? ORANGE : 0xFFA0A0A0);
     }
 
     private void drawFixedButtons(int mx, int my) {
@@ -1000,7 +1031,9 @@ public class MenuScreen extends GuiScreen {
         int top = PANE_TOP, bottom = PANE_BOTTOM;
         FontRenderer fr = fontRendererObj;
 
-        Gui.drawRect(px, top, px + pw, bottom, STRIP_BG);
+        Gui.drawRect(px, top, px + pw, bottom, 0xFF1A1A1A);
+        Draw.outline(px, top, px + pw, bottom, PX_OUT);
+        Draw.outline(px + 1, top + 1, px + pw - 1, bottom - 1, PX_IN);
 
         int sc = Math.round(setScroll);
         for (Object o : buttonList) {
@@ -1019,12 +1052,11 @@ public class MenuScreen extends GuiScreen {
                 continue;
             }
             int hy = ry + (BH - 8) / 2;
-            int tw = fr.getStringWidth(r.header);
-            int hcx = px + (pw - 4) / 2;
-            fr.drawStringWithShadow(r.header, hcx - tw / 2f, hy, Draw.ACCENT_LIGHT);
-            int ly = ry + BH / 2;
-            Gui.drawRect(px + 10, ly, hcx - tw / 2 - 6, ly + 1, Draw.ACCENT_DIM);
-            Gui.drawRect(hcx + tw / 2 + 6, ly, px + pw - 14, ly + 1, Draw.ACCENT_DIM);
+            for (int ci = 0; ci < 5; ci++) { // mũi tên cam
+                int rw = ci <= 2 ? ci : 4 - ci;
+                Gui.drawRect(px + 10 + ci * 2, hy + 1 + rw * 2, px + 12 + ci * 2, hy + 3 + rw * 2, ORANGE);
+            }
+            fr.drawStringWithShadow(r.header, px + 26, hy, 0xFFFFFFFF);
         }
         for (Object o : buttonList) {
             Btn b = (Btn) o;
@@ -1075,7 +1107,7 @@ public class MenuScreen extends GuiScreen {
         int tx1 = x + 1 + Math.round((5 - tw) / 2f);
         pill(x + 1, y + 2, x + 6, y + viewH - 2, 0x55000000); // rãnh
         int alpha = dragBar ? 0xFF : 0x99 + Math.round(0x33 * barAnim);
-        pill(tx1, by + 2, tx1 + tw, Math.min(y + viewH - 2, by + bh - 2), (alpha << 24) | 0xFFFFFF);
+        pill(tx1, by + 2, tx1 + tw, Math.min(y + viewH - 2, by + bh - 2), (alpha << 24) | 0xFFA726);
     }
 
     /** Bấm chuột trái vào thanh cuộn: bắt đầu kéo (bấm ngoài tay nắm thì nhảy tới đó). */
@@ -1145,12 +1177,20 @@ public class MenuScreen extends GuiScreen {
                     return;
                 }
             }
-            Module hit = moduleAtSlot(slotAt(mx, my));
+            int sl = slotAt(mx, my);
+            Module hit = moduleAtSlot(sl);
             if (hit != null) {
                 click();
                 module = hit;
                 lastModule = hit;
-                if (btn == 1) toggleModule(hit);
+                int cx = cardX(sl), cy = cardY(sl), cw = cardW();
+                if (btn == 0 && Draw.in(mx, my, cx + cw - 17, cy + 3, 14, 12)) { // tim yêu thích
+                    if (!FAVS.remove(hit.id)) FAVS.add(hit.id);
+                    buildShown();
+                    return;
+                }
+                boolean onStatus = Draw.in(mx, my, cx + 5, cy + CARD_H - 18, cw - 27, 14);
+                if (btn == 1 || (btn == 0 && onStatus)) toggleModule(hit);
                 else openModule(hit);
                 return;
             }

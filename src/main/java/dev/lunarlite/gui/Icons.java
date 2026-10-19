@@ -17,6 +17,8 @@ public final class Icons {
 
     static {
         MAP.put("logo", 0x007E060C1830607EL);
+        MAP.put("heart", 0x0000183C7EFFFF66L);
+        MAP.put("gear", 0x185A3CE7E73C5A18L);
         MAP.put("default", 0x0000363600363600L);
         MAP.put("fps", 0xFFDBDBD8D8C0C000L);
         MAP.put("cps", 0x3C4242427E5A5A3CL);
