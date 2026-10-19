@@ -29,21 +29,48 @@ import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
 
 /**
- * Menu 2 cột:
- *   Bên TRÁI : danh sách tên tính năng (chia theo nhóm, cuộn được, có ô BẬT/TẮT nhanh).
- *   Bên PHẢI : bảng tuỳ chỉnh của tính năng đang chọn (bật/tắt, các tuỳ chỉnh, thao tác, đặt lại).
- * Bấm tên tính năng = chọn; bấm công tắc nhỏ (hoặc chuột phải lên tên) = bật/tắt nhanh.
- * Thanh tab trên cùng lọc theo nhóm (Tất cả / HUD / PVP / ...); phím ← / → đổi tab.
- * Con lăn chuột cuộn cột nào đang trỏ vào; phím ↑ / ↓ đổi tính năng. "Xong" / ESC để đóng.
- * Chuột phải lên nút giá trị = lùi giá trị.
+ * Menu dạng bảng ô (dashboard):
+ *   TRANG CHỦ : mỗi tính năng là một ô có biểu tượng riêng, số phím tắt 1-9 / 0, trạng thái BẬT / TẮT.
+ *               Thanh nhóm ở trên lọc theo nhóm, ô chia thành từng trang (10 ô / trang).
+ *   CHI TIẾT  : bấm một ô (hoặc nhấn phím số) để mở bảng tuỳ chỉnh của tính năng đó.
+ * Chuột trái vào ô = mở tuỳ chỉnh, chuột phải = bật/tắt nhanh. ESC = quay lại / đóng menu.
+ *
+ * Toàn bộ giao diện được vẽ trong một khung ảo VW x VH rồi tự thu nhỏ cho vừa màn hình.
  */
 public class MenuScreen extends GuiScreen {
     private static final String[] COLOR_NAMES = {
         "White", "Red", "Orange", "Yellow", "Green", "Cyan", "Blue", "Purple", "Pink", "Black"
     };
-    private static final int BH = 20, ROW = 24, GAP = 6, WIDE = 200, LROW = 20, LHEAD = 18;
+
+    // ---- khung ảo
+    private static final int VW = 460, VH = 300, PAD = 14;
+    private static final int BH = 20, ROW = 24, GAP = 6, BAR_W = 6;
+    // ---- các vùng theo trục dọc
+    private static final int TAB_Y = 76, TAB_H = 18, TAB_GAP = 4;
+    private static final int GRID_Y = 102, CARD_H = 62, CARD_GAP = 6, COLS = 5, GRID_ROWS = 2;
+    private static final int PER_PAGE = COLS * GRID_ROWS;
+    private static final int PAGE_Y = 238, HINT_Y = 254, BTN_Y = 270;
+    private static final int PANE_TOP = 78, PANE_BOTTOM = 264;
+
+    // ---- màu
+    private static final int PANEL_BG = 0xFF101B33;
+    private static final int PANEL_EDGE = 0xFF2A3F6E;
+    private static final int DIVIDER = 0xFF24365F;
+    private static final int STRIP_BG = 0xFF0C1630;
+    private static final int CARD_BG = 0xFF15244A;
+    private static final int CARD_BG_HOT = 0xFF1F3568;
+    private static final int TEXT_DIM = 0xFF8FA0C8;
+    private static final int TEXT_SOFT = 0xFFC3CEEA;
+    private static final int GREEN = 0xFF4ADE80;
+    private static final int RED = 0xFFFF6B7A;
+    private static final int OFF = 0xFF6C7A99;
+    /** Mỗi tính năng một màu nhấn riêng (theo thứ tự đăng ký). */
+    private static final int[] PALETTE = {
+        0x4ADE80, 0xFFB347, 0x35D0BA, 0x5B9BFF, 0xFF6B7A, 0xB070FF, 0xFF8A3D, 0xFF5FA2, 0xA0AEC0, 0x4DA3FF
+    };
+
     private static final int K_DONE = 0, K_EDIT = 1, K_ENABLE = 2, K_BOOL = 3, K_MODE = 4, K_COLOR = 5,
-            K_SLIDER = 6, K_ACTION = 7, K_RESET = 8;
+            K_SLIDER = 6, K_ACTION = 7, K_RESET = 8, K_BACK = 9;
 
     /** Sắp xếp tính năng theo tên hiển thị, không phân biệt hoa thường. */
     private static final Comparator<Module> BY_NAME = new Comparator<Module>() {
@@ -61,11 +88,9 @@ public class MenuScreen extends GuiScreen {
         return 3; // SliderSetting
     }
 
-    /** Nhớ tính năng và tab đang chọn giữa các lần mở menu. */
+    /** Nhớ tính năng và nhóm đang chọn giữa các lần mở menu. */
     private static Module lastModule;
-    private static Category lastTab; // null = tab "Tất cả"
-
-    private static final int TAB_Y = 26, TAB_H = 18, TAB_GAP = 3;
+    private static Category lastTab; // null = nhóm "Tất cả"
 
     // ------------------------------------------------------------------ nút
 
@@ -77,9 +102,9 @@ public class MenuScreen extends GuiScreen {
         float hov;
         /** Tiến độ công tắc 0..1 (-1 = chưa khởi tạo). */
         float sw = -1f;
-        /** Nút cố định (Xong, Sửa HUD): không cuộn, không trượt vào. */
+        /** Nút cố định (Xong, Quay lại, Sửa HUD): không cuộn, không trượt vào. */
         boolean fixed;
-        /** Vị trí y trong vùng nội dung bên phải (nút cuộn được); -1 nếu là nút cố định. */
+        /** Vị trí y trong vùng nội dung (nút cuộn được); -1 nếu là nút cố định. */
         int baseY = -1;
 
         Btn(int kind, int w, String text) {
@@ -88,8 +113,8 @@ public class MenuScreen extends GuiScreen {
         }
 
         /**
-         * Vẽ phẳng, cùng phong cách với danh sách bên trái: nền mờ, rê chuột sáng dần + vạch màu nhấn,
-         * công tắc BẬT/TẮT ở bên phải, thanh trượt tô màu nhấn. Nút trượt vào lần lượt khi chọn tính năng.
+         * Vẽ phẳng: nền mờ, rê chuột sáng dần + vạch màu nhấn, công tắc BẬT/TẮT ở bên phải,
+         * thanh trượt tô màu nhấn. Nút trượt vào lần lượt khi mở tính năng.
          */
         @Override
         public void drawButton(Minecraft mc, int mouseX, int mouseY) {
@@ -165,7 +190,7 @@ public class MenuScreen extends GuiScreen {
         }
     }
 
-    /** Công tắc nhỏ BẬT/TẮT (dùng chung cho danh sách bên trái và bảng bên phải); a = 0..1 để trượt mượt. */
+    /** Công tắc nhỏ BẬT/TẮT; a = 0..1 để trượt mượt. */
     private static void drawSwitch(int tx, int ty, float a) {
         Gui.drawRect(tx - 1, ty - 1, tx + 19, ty + 9, 0xFF000000);
         Gui.drawRect(tx, ty, tx + 18, ty + 8, Draw.lerp(0xFF7A2A2A, 0xFF2E9B2E, a));
@@ -263,29 +288,37 @@ public class MenuScreen extends GuiScreen {
         b.displayString = Minecraft.getMinecraft().fontRendererObj.trimStringToWidth(t, room);
     }
 
+    /** Màu nhấn riêng của một tính năng (ổn định theo thứ tự đăng ký). */
+    private static int colorOf(Module m) {
+        int i = LunarLite.MODULES.indexOf(m);
+        if (i < 0) i = 0;
+        return 0xFF000000 | PALETTE[i % PALETTE.length];
+    }
+
     // -------------------------------------------------------------------- trạng thái
 
-    private Module module;                       // tính năng đang chọn
-    private Category tabCat;                     // tab đang chọn (null = tất cả)
+    private Module module;                       // tính năng đang chọn / đang mở
+    private boolean detail;                      // false = trang chủ (bảng ô), true = bảng tuỳ chỉnh
+    private Category tabCat;                     // nhóm đang lọc (null = tất cả)
     private final List<Category> tabCats = new ArrayList<Category>(); // các nhóm có tính năng
-    private float tabPos = -1f;                  // vị trí gạch chân tab (đơn vị: ô tab), trượt mượt
-    private final List<Object> listItems = new ArrayList<Object>(); // String (tiêu đề nhóm) hoặc Module
-    private int[] listY = new int[0];
-    private int listH;
-    private float listScroll, listTarget;
+    private final List<Module> shown = new ArrayList<Module>();       // tính năng theo nhóm đang lọc
+    private int page;
+    private float tabPos = -1f;                  // vị trí gạch chân nhóm (đơn vị: ô), trượt mượt
+    private final Map<Module, Float> hovAnim = new HashMap<Module, Float>();
     private float setScroll, setTarget;
-    private int contentH, headH, bw;
+    private int contentH, bw;
     private String[] descLines = new String[0];
     private final List<Row> rows = new ArrayList<Row>();
     private Row pend;
     private boolean oneCol;
     private Btn active; // nút đang giữ chuột (để thanh trượt nhận mouseReleased)
-    private final Map<Module, Float> swAnim = new HashMap<Module, Float>(); // tiến độ công tắc ở danh sách trái
-    private int curMx, curMy;          // vị trí chuột khung hình hiện tại (cho thanh cuộn)
-    private final float[] barAnim = new float[3]; // độ "phồng" thanh cuộn khi rê/kéo: [1] trái, [2] phải
+    private int curMx, curMy;   // vị trí chuột trong khung ảo của khung hình hiện tại
+    private float barAnim;      // độ "phồng" thanh cuộn khi rê / kéo
+    private boolean dragBar;
+    private int dragOff;
 
     // ---- animation
-    static long animStart;   // lúc bắt đầu mở / đổi tính năng (để các nút trượt vào)
+    static long animStart;   // lúc bắt đầu mở / đổi trang / đổi tính năng (để ô và nút trượt vào)
     private final long openStart;
     private long closeStart;
     private boolean closing;
@@ -298,6 +331,9 @@ public class MenuScreen extends GuiScreen {
         }
         tabCat = lastTab;
         if (module != null && tabCat != null && module.category != tabCat) tabCat = null;
+        buildShown();
+        int i = shown.indexOf(module);
+        if (i >= 0) page = i / PER_PAGE;
     }
 
     static float stagger(int id) {
@@ -334,61 +370,79 @@ public class MenuScreen extends GuiScreen {
         return new Btn(kind, w, text);
     }
 
-    // ------------------------------------------------------------------ hình học
-
-    private int hubW() {
-        return Math.min(width - 12, 480);
+    private void click() {
+        mc.getSoundHandler().playSound(net.minecraft.client.audio.PositionedSoundRecord.create(
+                new net.minecraft.util.ResourceLocation("gui.button.press"), 1.0F));
     }
 
-    private int hubX() {
-        return width / 2 - hubW() / 2;
+    // ------------------------------------------------------------------ khung ảo <-> màn hình
+
+    private float ui() {
+        return Math.min(1f, Math.min((width - 8f) / VW, (height - 8f) / VH));
     }
 
-    private int sideW() {
-        return Math.max(96, Math.min(150, hubW() * 3 / 10));
+    private int vx(int mx) {
+        return Math.round((mx - width / 2f) / ui() + VW / 2f);
+    }
+
+    private int vy(int my) {
+        return Math.round((my - height / 2f) / ui() + VH / 2f);
+    }
+
+    /** Cắt vùng vẽ theo toạ độ của khung ảo. */
+    private void clip(int x, int y, int w, int h) {
+        float u = ui();
+        int rx = Math.round((x - VW / 2f) * u + width / 2f);
+        int ry = Math.round((y - VH / 2f) * u + height / 2f);
+        Draw.scissor(mc, rx, ry, Math.round(w * u), Math.round(h * u));
     }
 
     private int paneX() {
-        return hubX() + sideW() + 6;
+        return PAD;
     }
 
     private int paneW() {
-        return hubW() - sideW() - 6;
-    }
-
-    private int top() {
-        return TAB_Y + TAB_H + 6;
-    }
-
-    private int doneY() {
-        return height - 28;
-    }
-
-    private int bottom() {
-        return doneY() - 16;
-    }
-
-    private int listBottom() {
-        return bottom() - 26;
-    }
-
-    private int listViewH() {
-        return listBottom() - top();
+        return VW - 2 * PAD;
     }
 
     private int setViewH() {
-        return bottom() - top();
+        return PANE_BOTTOM - PANE_TOP;
     }
 
-    private boolean inList(int mx, int my) {
-        return mx >= hubX() && mx < hubX() + sideW() && my >= top() && my < listBottom();
+    // ----------------------------------------------------------- nhóm + danh sách
+
+    private void buildShown() {
+        shown.clear();
+        tabCats.clear();
+        for (Category c : Category.values()) {
+            List<Module> inCat = new ArrayList<Module>();
+            for (Module m : LunarLite.MODULES) {
+                if (m.category == c) inCat.add(m);
+            }
+            if (inCat.isEmpty()) continue;
+            tabCats.add(c);
+            if (tabCat != null && c != tabCat) continue;
+            Collections.sort(inCat, BY_NAME); // trong mỗi nhóm xếp A -> Z cho dễ tìm
+            shown.addAll(inCat);
+        }
+        if (shown.isEmpty() && tabCat != null) { // nhóm không còn tính năng nào -> về "Tất cả"
+            tabCat = lastTab = null;
+            buildShown();
+            return;
+        }
+        page = Math.max(0, Math.min(pages() - 1, page));
     }
 
-    private boolean inPane(int mx, int my) {
-        return mx >= paneX() && mx < paneX() + paneW() && my >= top() && my < bottom();
+    private int pages() {
+        return Math.max(1, (shown.size() + PER_PAGE - 1) / PER_PAGE);
     }
 
-    // ----------------------------------------------------------- thanh tab trên cùng
+    private void changePage(int d) {
+        int np = Math.max(0, Math.min(pages() - 1, page + d));
+        if (np == page) return;
+        page = np;
+        animStart = System.currentTimeMillis();
+    }
 
     private int tabCount() {
         return 1 + tabCats.size();
@@ -399,18 +453,21 @@ public class MenuScreen extends GuiScreen {
     }
 
     private int tabW() {
-        return (hubW() - TAB_GAP * (tabCount() - 1)) / tabCount();
+        return (paneW() - TAB_GAP * (tabCount() - 1)) / tabCount();
     }
 
     private int tabX(int i) {
-        return hubX() + i * (tabW() + TAB_GAP);
+        return PAD + i * (tabW() + TAB_GAP);
     }
 
     private String tabLabel(int i) {
         return i == 0 ? "Tất cả" : tabCats.get(i - 1).label;
     }
 
-    /** Tab ở vị trí chuột, hoặc -1. */
+    private String tabIcon(int i) {
+        return i == 0 ? "cat_all" : Icons.cat(tabCats.get(i - 1));
+    }
+
     private int tabAt(int mx, int my) {
         if (my < TAB_Y || my >= TAB_Y + TAB_H) return -1;
         for (int i = 0; i < tabCount(); i++) {
@@ -424,21 +481,9 @@ public class MenuScreen extends GuiScreen {
         if (c == tabCat) return;
         tabCat = c;
         lastTab = c;
-        buildList();
-        if (indexOf(module) < 0) { // tính năng đang chọn không thuộc tab mới -> chọn cái đầu tiên của tab
-            for (Object o : listItems) {
-                if (o instanceof Module) {
-                    module = (Module) o;
-                    lastModule = module;
-                    setScroll = setTarget = 0f;
-                    animStart = System.currentTimeMillis();
-                    break;
-                }
-            }
-        }
-        rebuild();
-        listTarget = 0f;
-        ensureVisible(module);
+        page = 0;
+        animStart = System.currentTimeMillis();
+        buildShown();
     }
 
     private void cycleTab(int d) {
@@ -446,105 +491,74 @@ public class MenuScreen extends GuiScreen {
         setTab((tabIndex() + d + n) % n);
     }
 
-    private void drawTabs(int mx, int my, float op) {
-        int n = tabCount(), tw = tabW(), sel = tabIndex();
-        if (tabPos < 0f) tabPos = sel;
-        tabPos += (sel - tabPos) * (AnimationsModule.menu() ? 0.3f : 1f);
-        if (Math.abs(sel - tabPos) < 0.01f) tabPos = sel;
+    // ----------------------------------------------------------- ô tính năng
 
-        for (int i = 0; i < n; i++) {
-            int x = tabX(i);
-            boolean over = mx >= x && mx < x + tw && my >= TAB_Y && my < TAB_Y + TAB_H;
-            Gui.drawRect(x, TAB_Y, x + tw, TAB_Y + TAB_H, Draw.mulAlpha(0x66000000, op));
-            Gui.drawRect(x, TAB_Y, x + tw, TAB_Y + 1, 0x33FFFFFF);
-            if (i == sel) Gui.drawRect(x, TAB_Y, x + tw, TAB_Y + TAB_H, 0x30FFFFFF);
-            else if (over) Gui.drawRect(x, TAB_Y, x + tw, TAB_Y + TAB_H, 0x22FFFFFF);
-            String t = fontRendererObj.trimStringToWidth(tabLabel(i), tw - 6);
-            fontRendererObj.drawStringWithShadow(t, x + (tw - fontRendererObj.getStringWidth(t)) / 2f,
-                    TAB_Y + (TAB_H - 8) / 2f, i == sel ? 0xFFFFFF : over ? 0xE0E0E0 : 0xA8A8A8);
-        }
-        int ix = hubX() + Math.round(tabPos * (tw + TAB_GAP));
-        Gui.drawRect(ix, TAB_Y + TAB_H - 2, ix + tw, TAB_Y + TAB_H, Draw.ACCENT);
+    private int cardW() {
+        return (paneW() - (COLS - 1) * CARD_GAP) / COLS;
     }
 
-    // ----------------------------------------------------------- danh sách bên trái
-
-    private void buildList() {
-        listItems.clear();
-        tabCats.clear();
-        for (Category c : Category.values()) {
-            List<Module> inCat = new ArrayList<Module>();
-            for (Module m : LunarLite.MODULES) {
-                if (m.category == c) inCat.add(m);
-            }
-            if (inCat.isEmpty()) continue;
-            tabCats.add(c);
-            if (tabCat != null && c != tabCat) continue;
-            // Trong mỗi nhóm xếp theo tên A -> Z cho dễ tìm.
-            Collections.sort(inCat, BY_NAME);
-            if (tabCat == null) listItems.add(c.label); // tab "Tất cả" mới cần tiêu đề nhóm
-            listItems.addAll(inCat);
-        }
-        if (listItems.isEmpty() && tabCat != null) { // nhóm không còn tính năng nào -> về "Tất cả"
-            tabCat = lastTab = null;
-            buildList();
-            return;
-        }
-        listY = new int[listItems.size()];
-        int y = 0;
-        for (int i = 0; i < listItems.size(); i++) {
-            listY[i] = y;
-            y += listItems.get(i) instanceof Module ? LROW : LHEAD;
-        }
-        listH = y + 6;
-        clampScroll();
+    private int gridX() {
+        return PAD + (paneW() - (cardW() * COLS + (COLS - 1) * CARD_GAP)) / 2;
     }
 
-    private int indexOf(Module m) {
-        return listItems.indexOf(m);
+    private int cardX(int slot) {
+        return gridX() + (slot % COLS) * (cardW() + CARD_GAP);
     }
 
-    private void ensureVisible(Module m) {
-        int i = indexOf(m);
-        if (i < 0) return;
-        int y = listY[i] + 3;
-        if (y < listTarget + (i > 0 && listItems.get(i - 1) instanceof String ? LHEAD : 0)) {
-            listTarget = y - (i > 0 && listItems.get(i - 1) instanceof String ? LHEAD : 0);
-        } else if (y + LROW > listTarget + listViewH()) {
-            listTarget = y + LROW - listViewH() + 3;
+    private int cardY(int slot) {
+        return GRID_Y + (slot / COLS) * (CARD_H + CARD_GAP);
+    }
+
+    /** Ô ở vị trí chuột trên trang hiện tại (0..PER_PAGE-1), hoặc -1. */
+    private int slotAt(int mx, int my) {
+        for (int s = 0; s < PER_PAGE; s++) {
+            if (page * PER_PAGE + s >= shown.size()) break;
+            if (Draw.in(mx, my, cardX(s), cardY(s), cardW(), CARD_H)) return s;
         }
-        clampScroll();
+        return -1;
     }
 
-    private void select(Module m) {
-        if (m == null || m == module) return;
+    private Module moduleAtSlot(int slot) {
+        int gi = page * PER_PAGE + slot;
+        return slot >= 0 && gi < shown.size() ? shown.get(gi) : null;
+    }
+
+    private void openModule(Module m) {
+        if (m == null) return;
         module = m;
         lastModule = m;
+        detail = true;
         setScroll = setTarget = 0f;
         animStart = System.currentTimeMillis();
         rebuild();
     }
 
-    private void moveSelection(int d) {
-        int i = indexOf(module);
+    private void goBack() {
+        detail = false;
+        active = null;
+        dragBar = false;
+        int i = shown.indexOf(module);
+        if (i >= 0) page = i / PER_PAGE;
+        animStart = System.currentTimeMillis();
+        rebuild();
+    }
+
+    private void moveModule(int d) {
+        int i = shown.indexOf(module);
         if (i < 0) return;
-        for (int j = i + d; j >= 0 && j < listItems.size(); j += d) {
-            if (listItems.get(j) instanceof Module) {
-                select((Module) listItems.get(j));
-                ensureVisible(module);
-                return;
-            }
+        int j = i + d;
+        if (j < 0 || j >= shown.size()) return;
+        openModule(shown.get(j));
+    }
+
+    private void toggleModule(Module m) {
+        m.toggle();
+        for (Object o : buttonList) {
+            if (o instanceof Btn && ((Btn) o).kind == K_ENABLE) refresh((Btn) o);
         }
     }
 
-    private void clampScroll() {
-        listTarget = Math.max(0f, Math.min(Math.max(0, listH - listViewH()), listTarget));
-        listScroll = Math.max(0f, Math.min(Math.max(0, listH - listViewH()), listScroll));
-        setTarget = Math.max(0f, Math.min(Math.max(0, contentH - setViewH()), setTarget));
-        setScroll = Math.max(0f, Math.min(Math.max(0, contentH - setViewH()), setScroll));
-    }
-
-    // ----------------------------------------------------------- bảng tuỳ chỉnh bên phải
+    // ----------------------------------------------------------- bảng tuỳ chỉnh (chi tiết)
 
     private void addHeader(String text) {
         pend = null;
@@ -579,7 +593,6 @@ public class MenuScreen extends GuiScreen {
         pend = null;
         descLines = new String[0];
         contentH = 0;
-        headH = 0;
         Module m = module;
         if (m == null) return;
 
@@ -588,11 +601,11 @@ public class MenuScreen extends GuiScreen {
         bw = oneCol ? inner : (inner - GAP) / 2;
 
         if (m.description != null && m.description.length() > 0) {
-            List<?> ls = fontRendererObj.listFormattedStringToWidth(Lang.vi(m.description), inner);
-            descLines = new String[ls.size()];
-            for (int i = 0; i < descLines.length; i++) descLines[i] = (String) ls.get(i);
+            List<?> ls = fontRendererObj.listFormattedStringToWidth(Lang.vi(m.description), paneW() - 100);
+            int n = Math.min(2, ls.size());
+            descLines = new String[n];
+            for (int i = 0; i < n; i++) descLines[i] = (String) ls.get(i);
         }
-        headH = 8 + 14 + descLines.length * 10 + 8;
 
         Btn en = make(K_ENABLE, inner, "");
         en.m = m;
@@ -651,11 +664,11 @@ public class MenuScreen extends GuiScreen {
             }
         }
         addHeader("");
-        Btn reset = make(K_RESET, Math.min(WIDE, inner), "Đặt lại tuỳ chỉnh");
+        Btn reset = make(K_RESET, Math.min(200, inner), "Đặt lại tuỳ chỉnh");
         reset.m = m;
         addFull(reset);
 
-        int y = headH;
+        int y = 4;
         for (Row r : rows) {
             r.y = y;
             y += ROW;
@@ -670,39 +683,61 @@ public class MenuScreen extends GuiScreen {
         buttonList.add(b);
     }
 
-    /** Xếp nút cố định và các nút trong bảng tuỳ chỉnh (y thật được cập nhật mỗi khung hình theo cuộn). */
+    /** Xếp nút cố định (hàng dưới cùng) và các nút trong bảng tuỳ chỉnh. */
     private void layout() {
         buttonList.clear();
-        Btn edit = make(K_EDIT, sideW() - 8, "Sửa vị trí HUD…");
+        int n = detail ? 3 : 2;
+        int w = (paneW() - GAP * (n - 1)) / n;
+        int x = PAD;
+        if (detail) {
+            Btn back = make(K_BACK, w, "« Quay lại");
+            back.fixed = true;
+            place(back, x, BTN_Y);
+            x += w + GAP;
+        }
+        Btn edit = make(K_EDIT, w, "Sửa vị trí HUD…");
         edit.fixed = true;
-        refresh(edit);
-        place(edit, hubX() + 4, bottom() - 22);
-        Btn done = make(K_DONE, WIDE, "Xong");
+        place(edit, x, BTN_Y);
+        x += w + GAP;
+        Btn done = make(K_DONE, w, "Xong");
         done.fixed = true;
-        place(done, width / 2 - WIDE / 2, doneY());
+        place(done, x, BTN_Y);
 
-        int px = paneX(), pw = paneW(), inner = pw - 20;
-        for (Row row : rows) {
-            if (row.header != null) continue;
-            if (row.full != null) {
-                row.full.baseY = row.y;
-                place(row.full, px + 8 + (inner - row.full.width) / 2, row.y);
-                continue;
-            }
-            row.a.main.baseY = row.y;
-            place(row.a.main, px + 8, row.y);
-            if (row.b != null) {
-                row.b.main.baseY = row.y;
-                place(row.b.main, px + 8 + bw + GAP, row.y);
+        if (detail) {
+            int px = paneX(), inner = paneW() - 20;
+            for (Row row : rows) {
+                if (row.header != null) continue;
+                if (row.full != null) {
+                    row.full.baseY = row.y;
+                    place(row.full, px + 8 + (inner - row.full.width) / 2, row.y);
+                    continue;
+                }
+                row.a.main.baseY = row.y;
+                place(row.a.main, px + 8, row.y);
+                if (row.b != null) {
+                    row.b.main.baseY = row.y;
+                    place(row.b.main, px + 8 + bw + GAP, row.y);
+                }
             }
         }
         clampScroll();
     }
 
     private void rebuild() {
-        buildList();
-        buildRows();
+        buildShown();
+        if (detail) buildRows();
+        else {
+            rows.clear();
+            descLines = new String[0];
+            contentH = 0;
+        }
         layout();
+    }
+
+    private void clampScroll() {
+        float max = Math.max(0, contentH - setViewH());
+        setTarget = Math.max(0f, Math.min(max, setTarget));
+        setScroll = Math.max(0f, Math.min(max, setScroll));
     }
 
     // ---------------------------------------------------------------- GuiScreen
@@ -710,96 +745,237 @@ public class MenuScreen extends GuiScreen {
     @Override
     public void initGui() {
         rebuild();
-        ensureVisible(module);
-        listScroll = listTarget;
     }
 
-    private String title() {
-        return "Zhwii Client";
+    private String fit(String s, int maxW) {
+        if (fontRendererObj.getStringWidth(s) <= maxW) return s;
+        int dots = fontRendererObj.getStringWidth("..");
+        return fontRendererObj.trimStringToWidth(s, Math.max(0, maxW - dots)) + "..";
+    }
+
+    private void drawScaled(String s, float x, float y, float sc, int color) {
+        GlStateManager.pushMatrix();
+        GlStateManager.translate(x, y, 0f);
+        GlStateManager.scale(sc, sc, 1f);
+        fontRendererObj.drawStringWithShadow(s, 0, 0, color);
+        GlStateManager.popMatrix();
+    }
+
+    private void drawCentered(String s, float cx, float y, int color) {
+        fontRendererObj.drawStringWithShadow(s, cx - fontRendererObj.getStringWidth(s) / 2f, y, color);
     }
 
     @Override
     public void drawScreen(int mx, int my, float partialTicks) {
         ThemeModule.apply();
-        curMx = mx;
-        curMy = my;
+        curMx = vx(mx);
+        curMy = vy(my);
         float op = openProgress();
         drawGradientRect(0, 0, width, height, Draw.mulAlpha(0xC0101010, op), Draw.mulAlpha(0xD0101010, op));
-        int cx = width / 2;
-        int top = top(), bottom = bottom();
-        int hx = hubX(), sw = sideW(), px = paneX(), pw = paneW();
 
-        // cuộn mượt
         float k = AnimationsModule.menu() ? 0.35f : 1f;
-        listScroll += (listTarget - listScroll) * k;
         setScroll += (setTarget - setScroll) * k;
-        if (Math.abs(listTarget - listScroll) < 0.4f) listScroll = listTarget;
         if (Math.abs(setTarget - setScroll) < 0.4f) setScroll = setTarget;
 
         GlStateManager.pushMatrix();
-        float kk = 0.95f + 0.05f * op;
-        GlStateManager.translate(cx, height / 2f + (1f - op) * 10f, 0f);
+        float kk = (0.95f + 0.05f * op) * ui();
+        GlStateManager.translate(width / 2f, height / 2f + (1f - op) * 10f, 0f);
         GlStateManager.scale(kk, kk, 1f);
-        GlStateManager.translate(-cx, -height / 2f, 0f);
+        GlStateManager.translate(-VW / 2f, -VH / 2f, 0f);
 
-        // tiêu đề + gợi ý
-        drawCenteredString(fontRendererObj, title(), cx, 10, 0xFFFFFF);
-        int uw = Math.round((fontRendererObj.getStringWidth(title()) / 2f + 8) * op);
-        Gui.drawRect(cx - uw, 19, cx + uw, 20, Draw.ACCENT);
-        drawTabs(mx, my, op);
+        drawPanel(curMx, curMy);
 
-        // nền hai khung
-        for (int p = 0; p < 2; p++) {
-            int x = p == 0 ? hx : px, w = p == 0 ? sw : pw;
-            Gui.drawRect(x, top, x + w, bottom, Draw.mulAlpha(0x66000000, op));
-            Gui.drawRect(x, top, x + w, top + 1, 0x33FFFFFF);
-            Gui.drawRect(x, bottom - 1, x + w, bottom, 0x33FFFFFF);
+        GlStateManager.popMatrix();
+        GlStateManager.color(1f, 1f, 1f, 1f);
+    }
+
+    private void drawPanel(int mx, int my) {
+        FontRenderer fr = fontRendererObj;
+        int en = 0;
+        for (Module m : LunarLite.MODULES) if (m.enabled) en++;
+        int total = LunarLite.MODULES.size();
+
+        // khung + bóng
+        Gui.drawRect(3, 3, VW + 3, VH + 3, 0x55000000);
+        Gui.drawRect(0, 0, VW, VH, PANEL_BG);
+        Draw.outline(0, 0, VW, VH, PANEL_EDGE);
+        Gui.drawRect(0, 0, VW, 2, Draw.ACCENT);
+
+        // ---------------- tiêu đề
+        if (!detail || module == null) {
+            // logo + tên client
+            Gui.drawRect(PAD, 12, PAD + 28, 40, 0xFF1A2A52);
+            Draw.outline(PAD, 12, PAD + 28, 40, Draw.ACCENT_DIM);
+            Icons.draw("logo", PAD + 2, 14, 3, Draw.ACCENT_LIGHT);
+            drawScaled("Zhwii Client", PAD + 36, 12, 2f, Draw.ACCENT_LIGHT);
+            fr.drawStringWithShadow("Client HUD / PvP · Minecraft 1.8.9", PAD + 36, 31, TEXT_DIM);
+            // huy hiệu số tính năng đang bật
+            int bx = VW - PAD - 72;
+            Gui.drawRect(bx, 12, bx + 72, 42, 0xFF0B1226);
+            Draw.outline(bx, 12, bx + 72, 42, Draw.ACCENT);
+            drawCentered("ĐANG BẬT", bx + 36, 16, Draw.ACCENT_LIGHT);
+            String cnt = en + "/" + total;
+            drawScaled(cnt, bx + 36 - fr.getStringWidth(cnt) * 1.5f / 2f, 27, 1.5f, 0xFFFFFFFF);
+            // dòng trạng thái + thanh tiến độ
+            String grp = "Nhóm: " + (tabCat == null ? "Tất cả" : tabCat.label);
+            fr.drawStringWithShadow(grp, PAD, 47, 0xFFFFFFFF);
+            String right = en + "/" + total + " đang bật · " + shown.size() + " tính năng hiển thị";
+            fr.drawStringWithShadow(right, VW - PAD - fr.getStringWidth(right), 47, TEXT_DIM);
+            Draw.hbar(PAD, 58, VW - 2 * PAD, 5, total == 0 ? 0f : en / (float) total,
+                    Draw.withAlpha(Draw.ACCENT, 0xFF), 0xFF0A1226);
+        } else {
+            int col = colorOf(module);
+            Gui.drawRect(PAD, 12, PAD + 28, 40, 0xFF1A2A52);
+            Draw.outline(PAD, 12, PAD + 28, 40, col);
+            Icons.draw(module.id, PAD + 2, 14, 3, col);
+            String nm = Lang.vi(module.name);
+            int avail = VW - 2 * PAD - 36 - 84;
+            float sc = fr.getStringWidth(nm) * 2f > avail ? 1.4f : 2f;
+            drawScaled(nm, PAD + 36, 12, sc, 0xFFFFFFFF);
+            fr.drawStringWithShadow(module.category.label, PAD + 36, 31, TEXT_DIM);
+            int bx = VW - PAD - 72;
+            int sc2 = module.enabled ? GREEN : RED;
+            Gui.drawRect(bx, 12, bx + 72, 42, 0xFF0B1226);
+            Draw.outline(bx, 12, bx + 72, 42, sc2);
+            String st = module.enabled ? "BẬT" : "TẮT";
+            drawScaled(st, bx + 36 - fr.getStringWidth(st) * 1.5f / 2f, 21, 1.5f, sc2);
+            for (int i = 0; i < descLines.length; i++) {
+                fr.drawStringWithShadow(descLines[i], PAD, 46 + i * 10, TEXT_SOFT);
+            }
         }
+        Gui.drawRect(PAD, 68, VW - PAD, 69, DIVIDER);
 
-        // ---------- danh sách bên trái
+        if (detail) drawDetail(mx, my);
+        else drawHome(mx, my);
+    }
+
+    // ----------------------------------------------------------- trang chủ
+
+    private void drawHome(int mx, int my) {
+        FontRenderer fr = fontRendererObj;
+        drawTabs(mx, my);
+
+        float k = AnimationsModule.menu() ? 0.3f : 1f;
         Module hover = null;
-        Draw.scissor(mc, hx, top, sw, listViewH());
-        int ls = Math.round(listScroll);
-        for (int i = 0; i < listItems.size(); i++) {
-            int y = top + 3 + listY[i] - ls;
-            Object it = listItems.get(i);
-            if (it instanceof String) {
-                if (y + LHEAD < top || y > listBottom()) continue;
-                String h = (String) it;
-                int ty = y + 6;
-                fontRendererObj.drawStringWithShadow(h, hx + 8, ty, Draw.ACCENT_LIGHT);
-                int lx = hx + 8 + fontRendererObj.getStringWidth(h) + 5;
-                Gui.drawRect(lx, ty + 4, hx + sw - 8, ty + 5, Draw.ACCENT_DIM);
-                continue;
-            }
-            if (y + LROW < top || y > listBottom()) continue;
-            Module m = (Module) it;
-            int x1 = hx + 3, x2 = hx + sw - 9, y2 = y + LROW - 2;
-            boolean over = inList(mx, my) && mx >= x1 && mx < x2 && my >= y && my < y2;
-            boolean sel = m == module;
+        int cw = cardW();
+        for (int s = 0; s < PER_PAGE; s++) {
+            Module m = moduleAtSlot(s);
+            if (m == null) break;
+            float st = stagger(s);
+            int x = cardX(s), y = cardY(s);
+            boolean over = st > 0.7f && Draw.in(mx, my, x, y, cw, CARD_H);
             if (over) hover = m;
-            if (sel) {
-                Gui.drawRect(x1, y, x2, y2, 0x40FFFFFF);
-                Gui.drawRect(x1, y, x1 + 2, y2, Draw.ACCENT);
-            } else if (over) {
-                Gui.drawRect(x1, y, x2, y2, 0x22FFFFFF);
-            }
-            // công tắc nhỏ bật / tắt nhanh
-            int tx = x2 - 22, ty2 = y + (LROW - 2 - 8) / 2;
-            float swT = m.enabled ? 1f : 0f;
-            Float swCur = swAnim.get(m);
-            float swA = swCur == null ? swT : swCur + (swT - swCur) * k;
-            if (Math.abs(swA - swT) < 0.01f) swA = swT;
-            swAnim.put(m, swA);
-            drawSwitch(tx, ty2, swA);
-            String nm = fontRendererObj.trimStringToWidth(Lang.vi(m.name), sw - 6 - 26 - 12);
-            fontRendererObj.drawStringWithShadow(nm, x1 + 6, y + (LROW - 2 - 8) / 2, m.enabled || sel ? 0xFFFFFF : 0xA8A8A8);
-        }
-        Draw.endScissor();
-        if (listH > listViewH()) scrollbar(true, top, listViewH(), listH, listScroll);
-        Gui.drawRect(hx + 4, listBottom(), hx + sw - 4, listBottom() + 1, 0x33FFFFFF);
+            Float cur = hovAnim.get(m);
+            float hv = cur == null ? 0f : cur.floatValue();
+            hv += ((over ? 1f : 0f) - hv) * k;
+            if (Math.abs((over ? 1f : 0f) - hv) < 0.01f) hv = over ? 1f : 0f;
+            hovAnim.put(m, Float.valueOf(hv));
 
-        // ---------- bảng tuỳ chỉnh bên phải
+            GlStateManager.pushMatrix();
+            GlStateManager.translate(0f, (1f - st) * 8f, 0f);
+            drawCard(m, s, x, y, cw, CARD_H, hv, m == module);
+            GlStateManager.popMatrix();
+        }
+        GlStateManager.color(1f, 1f, 1f, 1f);
+
+        // điều khiển trang
+        int pcx = VW / 2;
+        int pg = pages();
+        String ps = (page + 1) + "/" + pg;
+        drawCentered(ps, pcx, PAGE_Y + 2, 0xFFFFFFFF);
+        boolean canPrev = page > 0, canNext = page < pg - 1;
+        boolean hp = canPrev && Draw.in(mx, my, pcx - 44, PAGE_Y - 2, 22, 16);
+        boolean hn = canNext && Draw.in(mx, my, pcx + 22, PAGE_Y - 2, 22, 16);
+        drawCentered("<", pcx - 33, PAGE_Y + 2, canPrev ? (hp ? Draw.ACCENT_LIGHT : 0xFFFFFFFF) : 0xFF3A4766);
+        drawCentered(">", pcx + 33, PAGE_Y + 2, canNext ? (hn ? Draw.ACCENT_LIGHT : 0xFFFFFFFF) : 0xFF3A4766);
+
+        // dòng gợi ý (đổi thành mô tả khi rê chuột vào ô)
+        String foot;
+        int fcol;
+        if (hover != null && hover.description != null && hover.description.length() > 0) {
+            foot = Lang.vi(hover.description);
+            fcol = TEXT_SOFT;
+        } else {
+            foot = "Phím 1-9, 0 chọn · ←/→ đổi trang · ↑/↓ đổi nhóm · Chuột phải bật/tắt · ESC đóng";
+            fcol = TEXT_DIM;
+        }
+        foot = fr.trimStringToWidth(foot, VW - 2 * PAD);
+        drawCentered(foot, VW / 2f, HINT_Y, fcol);
+
+        drawFixedButtons(mx, my);
+    }
+
+    private void drawTabs(int mx, int my) {
+        FontRenderer fr = fontRendererObj;
+        int n = tabCount(), tw = tabW(), sel = tabIndex();
+        if (tabPos < 0f) tabPos = sel;
+        tabPos += (sel - tabPos) * (AnimationsModule.menu() ? 0.3f : 1f);
+        if (Math.abs(sel - tabPos) < 0.01f) tabPos = sel;
+
+        for (int i = 0; i < n; i++) {
+            int x = tabX(i);
+            boolean over = Draw.in(mx, my, x, TAB_Y, tw, TAB_H);
+            Gui.drawRect(x, TAB_Y, x + tw, TAB_Y + TAB_H, i == sel ? 0xFF1B3157 : over ? 0xFF14244A : STRIP_BG);
+            Draw.outline(x, TAB_Y, x + tw, TAB_Y + TAB_H, i == sel ? Draw.ACCENT_DIM : 0xFF1B2B52);
+            String label = fit(tabLabel(i), tw - 8 - 12);
+            int lw = fr.getStringWidth(label);
+            int total = 8 + 4 + lw;
+            int sx = x + (tw - total) / 2;
+            int col = i == sel ? 0xFFFFFFFF : over ? 0xFFE0E6F5 : TEXT_DIM;
+            Icons.draw(tabIcon(i), sx, TAB_Y + (TAB_H - 8) / 2, 1, i == sel ? Draw.ACCENT_LIGHT : col);
+            fr.drawStringWithShadow(label, sx + 12, TAB_Y + (TAB_H - 8) / 2, col);
+        }
+        int ix = PAD + Math.round(tabPos * (tw + TAB_GAP));
+        Gui.drawRect(ix, TAB_Y + TAB_H - 2, ix + tw, TAB_Y + TAB_H, Draw.ACCENT);
+    }
+
+    private void drawCard(Module m, int slot, int x, int y, int w, int h, float hv, boolean sel) {
+        FontRenderer fr = fontRendererObj;
+        int col = colorOf(m);
+        boolean on = m.enabled;
+
+        Gui.drawRect(x, y, x + w, y + h, Draw.lerp(CARD_BG, CARD_BG_HOT, hv));
+        int edge = Draw.lerp(on ? Draw.lerp(PANEL_EDGE, col, 0.45f) : PANEL_EDGE, col, hv);
+        if (sel) edge = Draw.lerp(Draw.ACCENT, col, hv);
+        Draw.outline(x, y, x + w, y + h, edge);
+        Gui.drawRect(x + 1, y + 1, x + w - 1, y + 3, on ? col : Draw.withAlpha(col, 0x55));
+
+        // số phím tắt
+        String key = slot == 9 ? "0" : String.valueOf(slot + 1);
+        fr.drawStringWithShadow(key, x + 5, y + 7, TEXT_DIM);
+
+        // biểu tượng riêng
+        int icol = on ? col : Draw.lerp(col, CARD_BG, 0.62f);
+        Icons.draw(m.id, x + (w - 24) / 2, y + 9, 3, icol);
+
+        // tên + trạng thái
+        String nm = fit(Lang.vi(m.name), w - 8);
+        drawCentered(nm, x + w / 2f, y + 38, on ? 0xFFFFFFFF : 0xFFB8C4E0);
+        String stt = on ? "Bật" : "Tắt";
+        int sw = fr.getStringWidth(stt);
+        int sx = x + (w - (6 + sw)) / 2;
+        int dc = on ? GREEN : OFF;
+        Gui.drawRect(sx, y + 50, sx + 4, y + 54, dc);
+        fr.drawStringWithShadow(stt, sx + 6, y + 48, on ? GREEN : OFF);
+    }
+
+    private void drawFixedButtons(int mx, int my) {
+        for (Object o : buttonList) {
+            Btn b = (Btn) o;
+            if (b.baseY < 0) b.drawButton(mc, mx, my);
+        }
+    }
+
+    // ----------------------------------------------------------- chi tiết
+
+    private void drawDetail(int mx, int my) {
+        int px = paneX(), pw = paneW();
+        int top = PANE_TOP, bottom = PANE_BOTTOM;
+        FontRenderer fr = fontRendererObj;
+
+        Gui.drawRect(px, top, px + pw, bottom, 0xFF0D1730);
+        Draw.outline(px, top, px + pw, bottom, 0xFF1B2B52);
+
         int sc = Math.round(setScroll);
         for (Object o : buttonList) {
             Btn b = (Btn) o;
@@ -807,65 +983,37 @@ public class MenuScreen extends GuiScreen {
             b.yPosition = top + b.baseY - sc;
             b.visible = b.yPosition + BH > top && b.yPosition < bottom;
         }
-        Draw.scissor(mc, px, top, pw, setViewH());
-        if (module != null) {
-            int y0 = top - sc;
-            GlStateManager.pushMatrix();
-            GlStateManager.translate(px + 8, y0 + 8, 0f);
-            GlStateManager.scale(1.4f, 1.4f, 1f);
-            fontRendererObj.drawStringWithShadow(Lang.vi(module.name), 0, 0, 0xFFFFFF);
-            GlStateManager.popMatrix();
-            String cat = module.category.label;
-            fontRendererObj.drawStringWithShadow(cat, px + pw - 12 - fontRendererObj.getStringWidth(cat), y0 + 10, 0x909090);
-            for (int i = 0; i < descLines.length; i++) {
-                fontRendererObj.drawString(descLines[i], px + 8, y0 + 8 + 14 + i * 10, 0xC0C0C0);
+        clip(px, top, pw, setViewH());
+        for (Row r : rows) {
+            if (r.header == null) continue;
+            int ry = top + r.y - sc;
+            if (ry + BH < top || ry > bottom) continue;
+            if (r.header.length() == 0) {
+                Gui.drawRect(px + 10, ry + BH / 2, px + pw - 14, ry + BH / 2 + 1, 0x22FFFFFF);
+                continue;
             }
-            for (Row r : rows) {
-                if (r.header == null) continue;
-                int ry = top + r.y - sc;
-                if (ry + BH < top || ry > bottom) continue;
-                if (r.header.length() == 0) {
-                    Gui.drawRect(px + 10, ry + BH / 2, px + pw - 14, ry + BH / 2 + 1, 0x22FFFFFF);
-                    continue;
-                }
-                int hy = ry + (BH - 8) / 2;
-                int tw = fontRendererObj.getStringWidth(r.header);
-                int hcx = px + (pw - 4) / 2;
-                fontRendererObj.drawStringWithShadow(r.header, hcx - tw / 2f, hy, Draw.ACCENT_LIGHT);
-                int ly = ry + BH / 2;
-                Gui.drawRect(px + 10, ly, hcx - tw / 2 - 6, ly + 1, Draw.ACCENT_DIM);
-                Gui.drawRect(hcx + tw / 2 + 6, ly, px + pw - 14, ly + 1, Draw.ACCENT_DIM);
-            }
-            for (Object o : buttonList) {
-                Btn b = (Btn) o;
-                if (b.baseY >= 0) b.drawButton(mc, mx, my);
-            }
+            int hy = ry + (BH - 8) / 2;
+            int tw = fr.getStringWidth(r.header);
+            int hcx = px + (pw - 4) / 2;
+            fr.drawStringWithShadow(r.header, hcx - tw / 2f, hy, Draw.ACCENT_LIGHT);
+            int ly = ry + BH / 2;
+            Gui.drawRect(px + 10, ly, hcx - tw / 2 - 6, ly + 1, Draw.ACCENT_DIM);
+            Gui.drawRect(hcx + tw / 2 + 6, ly, px + pw - 14, ly + 1, Draw.ACCENT_DIM);
         }
-        Draw.endScissor();
-        if (contentH > setViewH()) scrollbar(false, top, setViewH(), contentH, setScroll);
-
-        // nút cố định (Sửa HUD, Xong)
         for (Object o : buttonList) {
             Btn b = (Btn) o;
-            if (b.baseY < 0) b.drawButton(mc, mx, my);
+            if (b.baseY >= 0) b.drawButton(mc, mx, my);
         }
+        Draw.endScissor();
+        if (contentH > setViewH()) scrollbar(top, setViewH(), contentH, setScroll);
 
-        // dòng mô tả / gợi ý ngay trên nút Xong
-        String foot = hover != null && hover.description != null ? Lang.vi(hover.description) : null;
-        if (foot != null) {
-            foot = fontRendererObj.trimStringToWidth(foot, width - 20);
-            drawCenteredString(fontRendererObj, foot, cx, doneY() - 13, 0xE0E0E0);
-        }
-        GlStateManager.popMatrix();
-        GlStateManager.color(1f, 1f, 1f, 1f);
+        drawFixedButtons(mx, my);
     }
 
-    private static final int BAR_W = 6;
-    private int dragBar;   // 0 = không kéo, 1 = danh sách trái, 2 = bảng phải
-    private int dragOff;   // khoảng cách từ chuột tới đỉnh thanh trượt
+    // ----------------------------------------------------------- thanh cuộn
 
-    private int barX(boolean list) {
-        return list ? hubX() + sideW() - BAR_W - 1 : paneX() + paneW() - BAR_W - 1;
+    private int barX() {
+        return paneX() + paneW() - BAR_W - 1;
     }
 
     private int thumbH(int viewH, int totalH) {
@@ -887,62 +1035,50 @@ public class MenuScreen extends GuiScreen {
         Gui.drawRect(x1 + 1, y2 - 1, x2 - 1, y2, c);
     }
 
-    /**
-     * Thanh cuộn kiểu Sodium: rãnh mảnh tối, tay nắm trắng bo tròn;
-     * rê chuột thì phồng lên và sáng hơn, kéo thì trắng hẳn.
-     */
-    private void scrollbar(boolean list, int y, int viewH, int totalH, float scroll) {
-        int idx = list ? 1 : 2;
-        int x = barX(list);
+    /** Thanh cuộn kiểu Sodium: rãnh mảnh tối, tay nắm trắng bo tròn; rê chuột thì phồng và sáng hơn. */
+    private void scrollbar(int y, int viewH, int totalH, float scroll) {
+        int x = barX();
         int bh = thumbH(viewH, totalH);
         int by = thumbY(y, viewH, totalH, scroll);
-        boolean on = dragBar == idx;
         boolean hover = curMx >= x - 3 && curMx < x + BAR_W + 2 && curMy >= y && curMy < y + viewH;
-        float target = on || hover ? 1f : 0f;
-        barAnim[idx] += (target - barAnim[idx]) * (AnimationsModule.menu() ? 0.3f : 1f);
-        if (Math.abs(target - barAnim[idx]) < 0.02f) barAnim[idx] = target;
+        float target = dragBar || hover ? 1f : 0f;
+        barAnim += (target - barAnim) * (AnimationsModule.menu() ? 0.3f : 1f);
+        if (Math.abs(target - barAnim) < 0.02f) barAnim = target;
 
-        int tw = 3 + Math.round(2 * barAnim[idx]);          // 3px -> 5px
+        int tw = 3 + Math.round(2 * barAnim);          // 3px -> 5px
         int tx1 = x + 1 + Math.round((5 - tw) / 2f);
         pill(x + 1, y + 2, x + 6, y + viewH - 2, 0x55000000); // rãnh
-        int alpha = on ? 0xFF : 0x99 + Math.round(0x33 * barAnim[idx]);
+        int alpha = dragBar ? 0xFF : 0x99 + Math.round(0x33 * barAnim);
         pill(tx1, by + 2, tx1 + tw, Math.min(y + viewH - 2, by + bh - 2), (alpha << 24) | 0xFFFFFF);
     }
 
-    /** Bấm chuột trái vào thanh cuộn: bắt đầu kéo (bấm ngoài thanh thì nhảy tới đó). */
+    /** Bấm chuột trái vào thanh cuộn: bắt đầu kéo (bấm ngoài tay nắm thì nhảy tới đó). */
     private boolean startBarDrag(int mx, int my) {
-        for (int k = 1; k <= 2; k++) {
-            boolean list = k == 1;
-            int viewH = list ? listViewH() : setViewH();
-            int totalH = list ? listH : contentH;
-            if (totalH <= viewH) continue;
-            int x = barX(list);
-            if (mx < x - 3 || mx >= x + BAR_W + 2 || my < top() || my >= top() + viewH) continue;
-            float cur = list ? listScroll : setScroll;
-            int by = thumbY(top(), viewH, totalH, cur), bh = thumbH(viewH, totalH);
-            dragBar = k;
-            dragOff = (my >= by && my < by + bh) ? my - by : bh / 2;
-            dragTo(my);
-            return true;
-        }
-        return false;
+        int viewH = setViewH();
+        if (contentH <= viewH) return false;
+        int x = barX();
+        if (mx < x - 3 || mx >= x + BAR_W + 2 || my < PANE_TOP || my >= PANE_TOP + viewH) return false;
+        int by = thumbY(PANE_TOP, viewH, contentH, setScroll), bh = thumbH(viewH, contentH);
+        dragBar = true;
+        dragOff = (my >= by && my < by + bh) ? my - by : bh / 2;
+        dragTo(my);
+        return true;
     }
 
     private void dragTo(int my) {
-        boolean list = dragBar == 1;
-        int viewH = list ? listViewH() : setViewH();
-        int totalH = list ? listH : contentH;
-        int range = Math.max(1, viewH - thumbH(viewH, totalH));
-        float v = (my - dragOff - top()) / (float) range * (totalH - viewH);
-        if (list) listTarget = listScroll = v;
-        else setTarget = setScroll = v;
+        int viewH = setViewH();
+        int range = Math.max(1, viewH - thumbH(viewH, contentH));
+        float v = (my - dragOff - PANE_TOP) / (float) range * (contentH - viewH);
+        setTarget = setScroll = v;
         clampScroll();
     }
 
+    // ----------------------------------------------------------- chuột
+
     @Override
     protected void mouseClickMove(int mx, int my, int btn, long time) {
-        if (dragBar != 0 && btn == 0) {
-            dragTo(my);
+        if (dragBar && btn == 0) {
+            dragTo(vy(my));
             return;
         }
         super.mouseClickMove(mx, my, btn, time);
@@ -953,52 +1089,46 @@ public class MenuScreen extends GuiScreen {
         if (g instanceof Btn) handle((Btn) g, false);
     }
 
-    /** Module ở vị trí chuột trong danh sách (hoặc null); out[0] = true nếu trúng công tắc nhỏ. */
-    private Module listHit(int mx, int my, boolean[] onSwitch) {
-        if (!inList(mx, my)) return null;
-        int ls = Math.round(listScroll);
-        for (int i = 0; i < listItems.size(); i++) {
-            if (!(listItems.get(i) instanceof Module)) continue;
-            int y = top() + 3 + listY[i] - ls;
-            int x1 = hubX() + 3, x2 = hubX() + sideW() - 9;
-            if (mx >= x1 && mx < x2 && my >= y && my < y + LROW - 2) {
-                if (onSwitch != null) onSwitch[0] = mx >= x2 - 24;
-                return (Module) listItems.get(i);
-            }
-        }
-        return null;
+    private boolean inPane(int mx, int my) {
+        return mx >= paneX() && mx < paneX() + paneW() && my >= PANE_TOP && my < PANE_BOTTOM;
     }
 
     @Override
-    protected void mouseClicked(int mx, int my, int btn) throws IOException {
+    protected void mouseClicked(int rawX, int rawY, int btn) throws IOException {
         if (closing) return;
         if (btn != 0 && btn != 1) return;
-        if (btn == 0) {
-            int t = tabAt(mx, my);
-            if (t >= 0) {
-                mc.getSoundHandler().playSound(net.minecraft.client.audio.PositionedSoundRecord.create(
-                        new net.minecraft.util.ResourceLocation("gui.button.press"), 1.0F));
-                setTab(t);
+        int mx = vx(rawX), my = vy(rawY);
+
+        if (!detail) {
+            if (btn == 0) {
+                int t = tabAt(mx, my);
+                if (t >= 0) {
+                    click();
+                    setTab(t);
+                    return;
+                }
+                int pcx = VW / 2;
+                if (Draw.in(mx, my, pcx - 44, PAGE_Y - 2, 22, 16)) {
+                    if (page > 0) click();
+                    changePage(-1);
+                    return;
+                }
+                if (Draw.in(mx, my, pcx + 22, PAGE_Y - 2, 22, 16)) {
+                    if (page < pages() - 1) click();
+                    changePage(1);
+                    return;
+                }
+            }
+            Module hit = moduleAtSlot(slotAt(mx, my));
+            if (hit != null) {
+                click();
+                module = hit;
+                lastModule = hit;
+                if (btn == 1) toggleModule(hit);
+                else openModule(hit);
                 return;
             }
-        }
-        if (btn == 0 && startBarDrag(mx, my)) return;
-
-        boolean[] sw = new boolean[1];
-        Module hit = listHit(mx, my, sw);
-        if (hit != null) {
-            mc.getSoundHandler().playSound(net.minecraft.client.audio.PositionedSoundRecord.create(
-                    new net.minecraft.util.ResourceLocation("gui.button.press"), 1.0F));
-            if (btn == 1 || sw[0]) {
-                hit.toggle();
-                if (hit == module) {
-                    for (Object o : buttonList) {
-                        if (o instanceof Btn && ((Btn) o).kind == K_ENABLE) refresh((Btn) o);
-                    }
-                }
-            } else {
-                select(hit);
-            }
+        } else if (btn == 0 && startBarDrag(mx, my)) {
             return;
         }
 
@@ -1022,16 +1152,16 @@ public class MenuScreen extends GuiScreen {
     }
 
     @Override
-    protected void mouseReleased(int mx, int my, int state) {
-        if (state == 0) dragBar = 0;
+    protected void mouseReleased(int rawX, int rawY, int state) {
+        if (state == 0) dragBar = false;
         if (active != null && state == 0) {
-            active.mouseReleased(mx, my);
+            active.mouseReleased(vx(rawX), vy(rawY));
             active = null;
         }
-        super.mouseReleased(mx, my, state);
+        super.mouseReleased(rawX, rawY, state);
     }
 
-    /** Dấu vết các tuỳ chỉnh đang hiện, để biết có cần dựng lại bảng phải không. */
+    /** Dấu vết các tuỳ chỉnh đang hiện, để biết có cần dựng lại bảng không. */
     private static long visSig(Module m) {
         long sig = 0;
         int i = 0;
@@ -1046,6 +1176,9 @@ public class MenuScreen extends GuiScreen {
         switch (b.kind) {
             case K_DONE:
                 requestClose();
+                break;
+            case K_BACK:
+                goBack();
                 break;
             case K_EDIT:
                 mc.displayGuiScreen(new HudEditorScreen());
@@ -1092,24 +1225,53 @@ public class MenuScreen extends GuiScreen {
         super.handleMouseInput();
         int d = Mouse.getEventDWheel();
         if (d == 0) return;
-        int mx = Mouse.getEventX() * width / mc.displayWidth;
-        float step = (d > 0 ? -1 : 1) * 2f * LROW;
-        if (mx < paneX() - 3) listTarget += step;
-        else setTarget += step;
-        clampScroll();
+        if (detail) {
+            setTarget += (d > 0 ? -1 : 1) * 2f * ROW;
+            clampScroll();
+        } else {
+            changePage(d > 0 ? -1 : 1);
+        }
     }
+
+    // ----------------------------------------------------------- bàn phím
 
     @Override
     protected void keyTyped(char c, int key) throws IOException {
-        if (key == Keyboard.KEY_ESCAPE || (LunarLite.keyMenu != null && key == LunarLite.keyMenu.getKeyCode())) {
+        if (key == Keyboard.KEY_ESCAPE) {
+            if (detail) goBack();
+            else requestClose();
+            return;
+        }
+        if (LunarLite.keyMenu != null && key == LunarLite.keyMenu.getKeyCode()) {
             requestClose();
-        } else if (key == Keyboard.KEY_UP) {
-            moveSelection(-1);
-        } else if (key == Keyboard.KEY_DOWN) {
-            moveSelection(1);
+            return;
+        }
+        if (detail) {
+            if (key == Keyboard.KEY_LEFT) moveModule(-1);
+            else if (key == Keyboard.KEY_RIGHT) moveModule(1);
+            else if (key == Keyboard.KEY_UP) {
+                setTarget -= ROW;
+                clampScroll();
+            } else if (key == Keyboard.KEY_DOWN) {
+                setTarget += ROW;
+                clampScroll();
+            }
+            return;
+        }
+        if (c >= '0' && c <= '9') {
+            int slot = c == '0' ? 9 : c - '1';
+            Module m = moduleAtSlot(slot);
+            if (m != null) {
+                click();
+                openModule(m);
+            }
         } else if (key == Keyboard.KEY_LEFT) {
-            cycleTab(-1);
+            changePage(-1);
         } else if (key == Keyboard.KEY_RIGHT) {
+            changePage(1);
+        } else if (key == Keyboard.KEY_UP) {
+            cycleTab(-1);
+        } else if (key == Keyboard.KEY_DOWN || key == Keyboard.KEY_TAB) {
             cycleTab(1);
         }
     }
