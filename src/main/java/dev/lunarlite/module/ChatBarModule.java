@@ -436,11 +436,19 @@ public class ChatBarModule extends Module {
 
     /** src = "auto" (tự nhận diện) hoặc mã ngôn ngữ cố định như "vi". */
     private static String[] translate(String text, String src, String target, int timeoutMs) throws IOException {
+        return translate(text, src, target, timeoutMs, false);
+    }
+
+    /**
+     * outgoing = true: tin bạn vừa gõ. Bỏ qua cooldown (thường do tin nhận tự dịch spam Google gây ra)
+     * và lỗi của tin gửi đi không làm kích hoạt cooldown cho phần còn lại.
+     */
+    private static String[] translate(String text, String src, String target, int timeoutMs, boolean outgoing) throws IOException {
         loadCache();
         final String key = src + ">" + target + "\u0000" + text;
         String[] hit = cacheGet(key);
         if (hit != null) return hit;
-        if (System.currentTimeMillis() < translateFailUntil) throw new IOException("translate cooldown");
+        if (!outgoing && System.currentTimeMillis() < translateFailUntil) throw new IOException("translate cooldown");
 
         String[] res;
         try {
@@ -454,12 +462,15 @@ public class ChatBarModule extends Module {
             String lang = root.size() > 2 && !root.get(2).isJsonNull() ? root.get(2).getAsString() : "";
             res = new String[]{sb.toString(), lang};
         } catch (IOException ex) {
-            noteTranslateFailure(ex);
+            if (!outgoing) noteTranslateFailure(ex);
             throw ex;
         } catch (RuntimeException ex) { // JSON sai định dạng
             throw new IOException("bad translate response", ex);
         }
-        synchronized (CACHE) { translateFails = 0; }
+        synchronized (CACHE) {
+            translateFails = 0;
+            if (outgoing) translateFailUntil = 0L; // gửi được rồi -> dịch vụ vẫn sống, bỏ cooldown
+        }
         cachePut(key, res);
         return res;
     }
@@ -713,13 +724,16 @@ public class ChatBarModule extends Module {
         final boolean english = looksEnglish(text);
         final String src = english ? text : normalizeVi(text);
         final String from = english ? "auto" : "vi";
-        for (int attempt = 0; attempt < 2; attempt++) {
+        for (int attempt = 0; attempt < 3; attempt++) {
             try {
-                String[] r = translate(src, from, outLang, 3000);
+                String[] r = translate(src, from, outLang, 3000, true);
                 String t = r[0].trim();
                 if (!t.isEmpty()) return t;
             } catch (Exception ignored) {
-                // mạng chập chờn hoặc đang cooldown: thử lại 1 lần rồi bỏ cuộc
+                // mạng chập chờn: chờ chút rồi thử lại, tối đa 3 lần
+            }
+            if (attempt < 2) {
+                try { Thread.sleep(300); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); return null; }
             }
         }
         return null;
@@ -733,6 +747,15 @@ public class ChatBarModule extends Module {
                 final boolean ok = translated != null;
                 final List<String> parts = splitChat(ok ? translated : text);
                 final Minecraft m = Minecraft.getMinecraft();
+                if (!ok) {
+                    m.addScheduledTask(new Runnable() {
+                        @Override public void run() {
+                            if (m.thePlayer == null) return;
+                            m.thePlayer.addChatMessage(new ChatComponentText(EnumChatFormatting.RED
+                                    + "[Chat Bar] Không dịch được (lỗi mạng / Google giới hạn), đã gửi nguyên văn."));
+                        }
+                    });
+                }
                 for (int i = 0; i < parts.size(); i++) {
                     final String send = parts.get(i);
                     final boolean last = i == parts.size() - 1;
