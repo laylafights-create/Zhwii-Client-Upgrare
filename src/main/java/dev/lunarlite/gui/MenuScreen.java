@@ -56,7 +56,7 @@ public class MenuScreen extends GuiScreen {
 
     // ---- màu
     // Nền kiểu kính mờ đen: các lớp đen trong suốt phủ lên thế giới đã bị blur phía sau.
-    private static final int PANEL_BG = 0xDD141414;
+    private static final int PANEL_BG = 0xF0161616;
     /** Viền của các ô tính năng (chỉ ô tính năng còn viền). */
     private static final int PANEL_EDGE = 0x55FFFFFF;
     private static final int DIVIDER = 0x30FFFFFF;
@@ -65,8 +65,8 @@ public class MenuScreen extends GuiScreen {
     private static final int CARD_BG_HOT = 0x77000000;
     /** Nền các ô nhỏ (logo, huy hiệu, thanh tiến độ, vùng cuộn). */
     private static final int GLASS = 0x55000000;
-    private static final int TEXT_DIM = 0xFF8FA0C8;
-    private static final int TEXT_SOFT = 0xFFC3CEEA;
+    private static final int TEXT_DIM = 0xFF8C8C8C;
+    private static final int TEXT_SOFT = 0xFFD0D0D0;
     private static final int GREEN = 0xFF4ADE80;
     private static final int RED = 0xFFFF6B7A;
     private static final int OFF = 0xFF6C7A99;
@@ -853,54 +853,72 @@ public class MenuScreen extends GuiScreen {
         GlStateManager.color(1f, 1f, 1f, 1f);
     }
 
+    /** Ô viền đôi kiểu pixel: viền ngoài + viền trong + nền. */
+    private static void pbox(int x, int y, int w, int h, int out, int in, int bg) {
+        Gui.drawRect(x, y, x + w, y + h, bg);
+        Draw.outline(x, y, x + w, y + h, out);
+        Draw.outline(x + 1, y + 1, x + w - 1, y + h - 1, in);
+    }
+
     private void drawPanel(int mx, int my) {
         FontRenderer fr = fontRendererObj;
         int en = 0;
         for (Module m : LunarLite.MODULES) if (m.enabled) en++;
         int total = LunarLite.MODULES.size();
 
-        // khung (không đổ bóng để nền kính không bị đục)
+        // khung ngoài: viền đôi kiểu pixel
         Gui.drawRect(0, 0, VW, VH, PANEL_BG);
+        Draw.outline(0, 0, VW, VH, PX_OUT);
+        Draw.outline(1, 1, VW - 1, VH - 1, PX_IN);
 
-        // ---------------- tiêu đề
         if (!detail || module == null) {
-            // logo + tên client
-            Gui.drawRect(PAD, 12, PAD + 28, 40, GLASS);
-            Icons.draw("logo", PAD + 2, 14, 3, Draw.ACCENT_LIGHT);
-            drawScaled("Zhwii Client", PAD + 36, 12, 2f, Draw.ACCENT_LIGHT);
-            fr.drawStringWithShadow("Client HUD / PvP · Minecraft 1.8.9", PAD + 36, 31, TEXT_DIM);
-            // huy hiệu số tính năng đang bật
-            int bx = VW - PAD - 72;
-            Gui.drawRect(bx, 12, bx + 72, 42, GLASS);
-            drawCentered("ĐANG BẬT", bx + 36, 16, Draw.ACCENT_LIGHT);
+            // ---- thanh trên cùng: logo | tab chính | dải trống | bộ đếm
+            pbox(PAD, 10, 28, 28, ORANGE, 0xFF6A4A14, 0xFF2B2418);
+            Icons.draw("logo", PAD + 2, 12, 3, ORANGE);
+            int tx = PAD + 34, tw2 = 112;
+            pbox(tx, 10, tw2, 28, ORANGE, 0xFF6A4A14, 0xFF2B2418);
+            for (int gx = 0; gx < 2; gx++) // biểu tượng 4 ô
+                for (int gy = 0; gy < 2; gy++)
+                    Gui.drawRect(tx + 9 + gx * 6, 18 + gy * 6, tx + 14 + gx * 6, 23 + gy * 6, ORANGE);
+            fr.drawStringWithShadow("ZHWII CLIENT", tx + 26, 20, ORANGE);
+            int bx = VW - PAD - 84;
+            int sx0 = tx + tw2 + 4;
+            pbox(sx0, 10, bx - sx0 - 4, 28, PX_OUT, PX_IN, 0xFF1C1C1C);
+            fr.drawStringWithShadow(fr.trimStringToWidth("HUD / PvP · Minecraft 1.8.9", bx - sx0 - 20), sx0 + 8, 20, TEXT_DIM);
+            pbox(bx, 10, 84, 28, PX_OUT, PX_IN, 0xFF1C1C1C);
+            drawCentered("ĐANG BẬT", bx + 42, 14, TEXT_DIM);
             String cnt = en + "/" + total;
-            drawScaled(cnt, bx + 36 - fr.getStringWidth(cnt) * 1.5f / 2f, 27, 1.5f, 0xFFFFFFFF);
-            // dòng trạng thái + thanh tiến độ
-            String grp = "Nhóm: " + (tabCat == null ? "Tất cả" : tabCat.label);
-            fr.drawStringWithShadow(grp, PAD, 47, 0xFFFFFFFF);
-            String right = en + "/" + total + " đang bật · " + shown.size() + " tính năng hiển thị";
-            fr.drawStringWithShadow(right, VW - PAD - fr.getStringWidth(right), 47, TEXT_DIM);
-            Draw.hbar(PAD, 58, VW - 2 * PAD, 5, total == 0 ? 0f : en / (float) total,
-                    Draw.withAlpha(Draw.ACCENT, 0xFF), GLASS);
+            drawCentered(cnt, bx + 42, 25, ORANGE);
+
+            // ---- dòng tiêu đề: biểu tượng "i" + tên trang
+            Gui.drawRect(PAD + 1, 46, PAD + 11, 56, 0xFFFFFFFF);
+            Gui.drawRect(PAD, 47, PAD + 12, 55, 0xFFFFFFFF);
+            Gui.drawRect(PAD + 5, 48, PAD + 7, 50, 0xFF161616);
+            Gui.drawRect(PAD + 5, 51, PAD + 7, 55, 0xFF161616);
+            drawScaled("TUỲ CHỈNH TÍNH NĂNG", PAD + 20, 46, 1.3f, 0xFFFFFFFF);
+            String right = (tabCat == null ? "TẤT CẢ" : tabCat.label.toUpperCase()) + " · " + shown.size() + " TÍNH NĂNG";
+            fr.drawStringWithShadow(right, VW - PAD - fr.getStringWidth(right), 49, TEXT_DIM);
+            Draw.hbar(PAD, 62, VW - 2 * PAD, 3, total == 0 ? 0f : en / (float) total, ORANGE, 0xFF0E0E0E);
         } else {
             int col = colorOf(module);
-            Gui.drawRect(PAD, 12, PAD + 28, 40, GLASS);
-            Icons.draw(module.id, PAD + 2, 14, 3, col);
-            String nm = Lang.vi(module.name);
-            int avail = VW - 2 * PAD - 36 - 84;
+            pbox(PAD, 10, 30, 30, ORANGE, 0xFF6A4A14, 0xFF2B2418);
+            Icons.draw(module.id, PAD + 3, 13, 3, col);
+            String nm = Lang.vi(module.name).toUpperCase();
+            int avail = VW - 2 * PAD - 40 - 84;
             float sc = fr.getStringWidth(nm) * 2f > avail ? 1.4f : 2f;
-            drawScaled(nm, PAD + 36, 12, sc, 0xFFFFFFFF);
-            fr.drawStringWithShadow(module.category.label, PAD + 36, 31, TEXT_DIM);
+            drawScaled(nm, PAD + 38, 12, sc, 0xFFFFFFFF);
+            fr.drawStringWithShadow(module.category.label.toUpperCase(), PAD + 38, 31, ORANGE);
             int bx = VW - PAD - 72;
-            int sc2 = module.enabled ? GREEN : RED;
-            Gui.drawRect(bx, 12, bx + 72, 42, GLASS);
-            String st = module.enabled ? "BẬT" : "TẮT";
-            drawScaled(st, bx + 36 - fr.getStringWidth(st) * 1.5f / 2f, 21, 1.5f, sc2);
+            boolean onM = module.enabled;
+            pbox(bx, 10, 72, 30, onM ? PX_GREEN : PX_OUT, PX_IN, onM ? 0xFF1F2A16 : 0xFF202020);
+            String st = onM ? "BẬT" : "TẮT";
+            drawScaled(st, bx + 36 - fr.getStringWidth(st) * 1.5f / 2f, 21, 1.5f, onM ? PX_GREEN : 0xFFC0C0C0);
             for (int i = 0; i < descLines.length; i++) {
                 fr.drawStringWithShadow(descLines[i], PAD, 46 + i * 10, TEXT_SOFT);
             }
         }
-        Gui.drawRect(PAD, 68, VW - PAD, 69, DIVIDER);
+        Gui.drawRect(PAD, 68, VW - PAD, 69, PX_OUT);
+        Gui.drawRect(PAD, 69, VW - PAD, 70, PX_IN);
 
         if (detail) drawDetail(mx, my);
         else drawHome(mx, my);
@@ -943,8 +961,10 @@ public class MenuScreen extends GuiScreen {
         boolean canPrev = page > 0, canNext = page < pg - 1;
         boolean hp = canPrev && Draw.in(mx, my, pcx - 44, PAGE_Y - 2, 22, 16);
         boolean hn = canNext && Draw.in(mx, my, pcx + 22, PAGE_Y - 2, 22, 16);
-        drawCentered("<", pcx - 33, PAGE_Y + 2, canPrev ? (hp ? Draw.ACCENT_LIGHT : 0xFFFFFFFF) : 0xFF3A4766);
-        drawCentered(">", pcx + 33, PAGE_Y + 2, canNext ? (hn ? Draw.ACCENT_LIGHT : 0xFFFFFFFF) : 0xFF3A4766);
+        pbox(pcx - 44, PAGE_Y - 2, 22, 15, hp ? ORANGE : PX_OUT, PX_IN, PX_BG);
+        pbox(pcx + 22, PAGE_Y - 2, 22, 15, hn ? ORANGE : PX_OUT, PX_IN, PX_BG);
+        drawCentered("<", pcx - 33, PAGE_Y + 2, canPrev ? (hp ? ORANGE : 0xFFFFFFFF) : 0xFF4A4A4A);
+        drawCentered(">", pcx + 33, PAGE_Y + 2, canNext ? (hn ? ORANGE : 0xFFFFFFFF) : 0xFF4A4A4A);
 
         // dòng gợi ý (đổi thành mô tả khi rê chuột vào ô)
         String foot;
