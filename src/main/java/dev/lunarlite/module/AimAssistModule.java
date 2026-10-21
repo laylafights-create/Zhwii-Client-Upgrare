@@ -5,6 +5,7 @@ import dev.lunarlite.setting.SliderSetting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.util.MathHelper;
+import net.minecraft.util.Vec3;
 
 /** Tự động xoay camera (có làm mượt) về phía người chơi gần nhất. Không có HUD. */
 public class AimAssistModule extends Module {
@@ -55,8 +56,21 @@ public class AimAssistModule extends Module {
         tx += (target.posX - target.lastTickPosX) * 0.8D;
         tz += (target.posZ - target.lastTickPosZ) * 0.8D;
 
-        // Điểm ngắm: điểm gần mắt nhất trong khoảng thân địch -> không phải ngước/cúi liên tục khi cùng độ cao.
-        double aimY = Math.max(ty + target.height * 0.35D, Math.min(ty + target.height * 0.9D, ey));
+        double h = target.height;
+        double headY = ty + h * 0.9D;
+        double chestY = ty + h * 0.6D;
+        double feetY = ty + 0.25D;
+
+        // Điểm ngắm mặc định: điểm gần mắt nhất trong khoảng thân địch -> không phải ngước/cúi liên tục khi cùng độ cao.
+        double aimY = Math.max(ty + h * 0.35D, Math.min(headY, ey));
+
+        // Thân trên (đầu + ngực) bị che mà chân vẫn thấy -> aim xuống chân
+        boolean upperVisible = canSee(mc, ex, ey, ez, tx, headY, tz)
+                || canSee(mc, ex, ey, ez, tx, chestY, tz);
+        if (!upperVisible && canSee(mc, ex, ey, ez, tx, feetY, tz)) {
+            aimY = feetY;
+        }
+
         double dx = tx - ex, dy = aimY - ey, dz = tz - ez;
 
         float wantYaw = yawTo(dx, dz);
@@ -102,6 +116,13 @@ public class AimAssistModule extends Module {
 
     private static double lerp(double a, double b, float t) {
         return a + (b - a) * t;
+    }
+
+    /** true nếu đường thẳng từ mắt tới điểm đó không bị khối nào chắn. */
+    private static boolean canSee(Minecraft mc, double ex, double ey, double ez,
+                                  double x, double y, double z) {
+        return mc.theWorld.rayTraceBlocks(new Vec3(ex, ey, ez), new Vec3(x, y, z),
+                false, true, false) == null;
     }
 
     private EntityPlayer findTarget(Minecraft mc) {

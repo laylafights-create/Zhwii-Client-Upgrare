@@ -14,7 +14,7 @@ import org.lwjgl.input.Mouse;
 /**
  * Keystrokes: phím rơi vào có nảy, nhún theo lò xo, nền dâng lên như chất lỏng, viền kính,
  * tia lửa bắn lên, phím bên cạnh nhún theo, xung sáng khi nhả, vệt sáng quét, hai vòng sóng,
- * thanh CPS mượt có vạch đỉnh và số CPS chạy mượt.
+ * thanh CPS mượt có vạch đỉnh và số CPS chạy mượt. CPS chỉ hiện ra khi đang click.
  */
 public class KeystrokesModule extends HudModule {
     private static final int U = 22, G = 2, SPACE_H = 12;
@@ -54,6 +54,8 @@ public class KeystrokesModule extends HudModule {
     private final boolean[] wasDown = new boolean[KEYS];
     /** CPS làm mượt: [0] = chuột trái, [1] = chuột phải. */
     private final float[] cpsSmooth = new float[2];
+    /** Mức hiện của CPS (0 = ẩn, 1 = hiện đủ): chỉ hiện khi đang click, ngừng click thì mờ dần. */
+    private final float[] cpsVis = new float[2];
 
     /** Tia lửa: PN hạt mỗi phím, toạ độ tương đối so với góc trên-trái của phím. */
     private static final int PN = 5;
@@ -335,37 +337,43 @@ public class KeystrokesModule extends HudModule {
         }
 
         int tc = Draw.lerp(textColor(x + y), pressedText(), a);
-        int ty = sub == null ? y + (h - 8) / 2 : y + 3;
+        // vis: mức hiện của CPS (chỉ phím chuột có sub). Chưa click -> chữ nằm giữa phím; click -> trượt lên nhường chỗ cho CPS.
+        float vis = sub == null ? 0f : cpsVis[idx == 4 ? 0 : 1];
+        int midY = y + (h - 8) / 2;
+        int ty = Math.round(midY + ((y + 3) - midY) * vis);
         fr.drawString(label, x + (w - fr.getStringWidth(label)) / 2, ty, tc, shadow.value && a < 0.5f);
 
-        if (sub != null) {
-            // Chữ CPS sáng dần khi click nhanh.
+        if (sub != null && vis > 0.05f) {
+            // Chữ CPS sáng dần khi click nhanh, mờ dần vào/ra theo vis.
             float cps = cpsSmooth[idx == 4 ? 0 : 1];
             int idleSub = Draw.lerp(0xFFAAAAAA, 0xFFFFFFFF, Math.min(1f, cps / 10f));
             GlStateManager.pushMatrix();
             GlStateManager.scale(0.6f, 0.6f, 1f);
             float s = 1f / 0.6f;
             fr.drawString(sub, (int) ((x + (w - fr.getStringWidth(sub) * 0.6f) / 2f) * s), (int) ((y + 13) * s),
-                    Draw.lerp(idleSub, 0xFF333333, a), false);
+                    Draw.mulAlpha(Draw.lerp(idleSub, 0xFF333333, a), vis), false);
             GlStateManager.popMatrix();
 
             if (cpsBar.value && w > 10) {
                 float frac = Math.min(1f, cps / 15f);
                 int barCol = Draw.lerp(Draw.withAlpha(accentColor(x + y), 0xDD), 0xFFFFFFFF, frac * 0.5f);
-                Draw.hbar(x + 4, y + h - 4, w - 8, 2, frac, barCol, 0x40888888);
+                Draw.hbar(x + 4, y + h - 4, w - 8, 2, frac, Draw.mulAlpha(barCol, vis), Draw.mulAlpha(0x40888888, vis));
                 if (cpsPeakMark.value) {
                     float pf = Math.min(1f, cpsPeak[idx == 4 ? 0 : 1] / 15f);
                     if (pf > frac + 0.04f) {
                         int mx = x + 4 + Math.round((w - 9) * pf);
-                        Gui.drawRect(mx, y + h - 5, mx + 1, y + h - 1, 0xCCFFFFFF);
+                        Gui.drawRect(mx, y + h - 5, mx + 1, y + h - 1, Draw.mulAlpha(0xCCFFFFFF, vis));
                     }
                 }
             }
-        } else if (a > 0.02f) {
-            // Gạch chân màu nhấn mọc ra từ giữa phím.
+        }
+
+        // Gạch chân màu nhấn mọc ra từ giữa phím (phím chữ thường, hoặc phím chuột khi CPS đang ẩn).
+        float ul = sub == null ? 1f : 1f - vis;
+        if (ul > 0.02f && a > 0.02f) {
             int bw = Math.round((w - 8) * e);
             int bx = x + (w - bw) / 2;
-            Gui.drawRect(bx, y + h - 4, bx + bw, y + h - 3, Draw.withAlpha(accentColor(x + y), Math.round(210 * a)));
+            Gui.drawRect(bx, y + h - 4, bx + bw, y + h - 3, Draw.withAlpha(accentColor(x + y), Math.round(210 * a * ul)));
         }
     }
 
@@ -397,6 +405,13 @@ public class KeystrokesModule extends HudModule {
         float ks = 1f - (float) Math.exp(-10f * dt);
         cpsSmooth[0] += ((preview ? 0 : CpsModule.left()) - cpsSmooth[0]) * ks;
         cpsSmooth[1] += ((preview ? 0 : CpsModule.right()) - cpsSmooth[1]) * ks;
+
+        // CPS chỉ hiện khi đang giữ chuột hoặc còn click trong vòng 1 giây gần đây; xem trước (preview) luôn hiện để chỉnh giao diện.
+        for (int i = 0; i < 2; i++) {
+            boolean active = preview || Mouse.isButtonDown(i) || (i == 0 ? CpsModule.left() : CpsModule.right()) > 0;
+            float speed = active ? 20f : 6f;
+            cpsVis[i] += ((active ? 1f : 0f) - cpsVis[i]) * (1f - (float) Math.exp(-speed * dt));
+        }
 
         for (int i = 0; i < 2; i++) {
             float pk = cpsPeak[i];
