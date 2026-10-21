@@ -8,6 +8,8 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.gui.FontRenderer;
+import net.minecraft.client.audio.PositionedSoundRecord;
+import net.minecraft.util.ResourceLocation;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.common.FMLCommonHandler;
@@ -34,10 +36,11 @@ public class ZoomModule extends Module {
     private final ModeSetting scrollMode = add(new ModeSetting("scroll_mode", "Scroll Mode", 0, "Linear", "Percent"));
     private final SliderSetting scrollStep = add(new SliderSetting("scroll_step", "Scroll Step (Linear)", 3, 1, 10, 1, " FOV"));
     private final SliderSetting scrollPercent = add(new SliderSetting("scroll_percent", "Scroll Step (Percent)", 12, 2, 40, 1, "%"));
+    private final BoolSetting zoomSound = add(new BoolSetting("zoom_sound", "Spyglass Sound", true));
     private final BoolSetting scrollInvert = add(new BoolSetting("scroll_invert", "Invert Scroll Direction", false));
     private final BoolSetting scrollAccel = add(new BoolSetting("scroll_accel", "Scroll Acceleration", true));
     private final SliderSetting scrollAccelMax = add(new SliderSetting("scroll_accel_max", "Max Acceleration", 3, 1.5, 6, 0.5, "x"));
-    private final SliderSetting scrollMinFov = add(new SliderSetting("scroll_min_fov", "Min FOV (Max Zoom In)", 5, 1, 30, 1, ""));
+    private final SliderSetting maxZoom = add(new SliderSetting("max_zoom", "Max Zoom", 100, 2, 100, 1, "x"));
     private final SliderSetting scrollMaxFov = add(new SliderSetting("scroll_max_fov", "Max FOV (0 = Normal FOV)", 0, 0, 110, 5, ""));
     private final BoolSetting rememberLevel = add(new BoolSetting("remember_level", "Remember Zoom Level", false));
     private final BoolSetting reduceSensitivity = add(new BoolSetting("reduce_sensitivity", "Reduce Mouse Sensitivity", true));
@@ -61,6 +64,15 @@ public class ZoomModule extends Module {
     private float savedTarget;
     private float indicatorT;
     private boolean registered;
+    private boolean wasReleasing;
+
+    private static final ResourceLocation SND_USE = new ResourceLocation("lunarlite", "zoom.use");
+    private static final ResourceLocation SND_STOP = new ResourceLocation("lunarlite", "zoom.stop");
+
+    private void playSound(ResourceLocation loc) {
+        if (!zoomSound.value) return;
+        Minecraft.getMinecraft().getSoundHandler().playSound(PositionedSoundRecord.create(loc, 1.0f));
+    }
 
     public ZoomModule() {
         super("zoom", "Zoom", "Thu phóng mượt kiểu Zoomify, chỉnh bằng con lăn chuột và độ nhạy.", Category.VISUAL, true);
@@ -108,12 +120,16 @@ public class ZoomModule extends Module {
             float factor = 1f + (float) scrollPercent.getFloat() / 100f * mult;
             target = dir > 0 ? target / factor : target * factor;
         } else {
-            target -= dir * (float) scrollStep.getFloat() * mult;
+            float st = (float) scrollStep.getFloat() * mult;
+            if (dir > 0) st = Math.min(st, target * 0.5f);   // FOV nhỏ thì bước nhỏ lại, tránh nhảy vọt
+            target -= dir * st;
         }
 
-        float lo = (float) scrollMinFov.getFloat();
+        // Max Zoom (x) -> FOV nhỏ nhất: tan(lo/2) = tan(prevFov/2) / maxZoom
+        float lo = (float) Math.toDegrees(2.0 * Math.atan(Math.tan(Math.toRadians(prevFov * 0.5)) / maxZoom.getFloat()));
+        lo = Math.max(0.05f, lo);
         float hi = scrollMaxFov.getFloat() <= 0 ? prevFov : (float) scrollMaxFov.getFloat();
-        if (hi < lo + 1f) hi = lo + 1f;
+        if (hi < lo + 0.05f) hi = lo + 0.05f;
         target = Math.max(lo, Math.min(hi, target));
         savedTarget = target;
         indicatorT = 1.4f;
@@ -136,6 +152,7 @@ public class ZoomModule extends Module {
             target = rememberLevel.value && savedTarget > 0f ? Math.min(savedTarget, prevFov) : zoomFov.getFloat();
             scrollCombo = 0;
             indicatorT = 1.4f;
+            playSound(SND_USE);
             if (smoothCam.value) mc.gameSettings.smoothCamera = true;
             if (reduceSensitivity.value) {
                 prevSensitivity = mc.gameSettings.mouseSensitivity;
@@ -146,11 +163,13 @@ public class ZoomModule extends Module {
         if (!zooming) return;
 
         if (want) {
+            wasReleasing = false;
             if (smoothCam.value) mc.gameSettings.smoothCamera = true;
             if (reduceSensitivity.value && sensitivitySaved) {
                 mc.gameSettings.mouseSensitivity = Math.max(0.01f, Math.min(1.0f, prevSensitivity * sensitivityScale.getFloat()));
             }
         } else {
+            if (!wasReleasing) { playSound(SND_STOP); wasReleasing = true; }
             mc.gameSettings.smoothCamera = prevSmooth;
             if (sensitivitySaved) {
                 mc.gameSettings.mouseSensitivity = prevSensitivity;
@@ -203,7 +222,7 @@ public class ZoomModule extends Module {
             vel = 0f;
             if (Math.abs(dest - cur) < 0.15f) cur = dest;
         }
-        if (cur < 1f) cur = 1f; else if (cur > 110f) cur = 110f;
+        if (cur < 0.05f) cur = 0.05f; else if (cur > 110f) cur = 110f;
         Minecraft.getMinecraft().gameSettings.fovSetting = cur;
     }
 
@@ -221,7 +240,7 @@ public class ZoomModule extends Module {
 
         if (indicator.value && indicatorT > 0f) {
             float mag = (float) (Math.tan(Math.toRadians(prevFov * 0.5)) / Math.tan(Math.toRadians(cur * 0.5)));
-            String s = String.format("%.1fx", mag);
+            String s = String.format(mag >= 10f ? "%.0fx" : "%.1fx", mag);
             int ia = (int) (255f * Math.min(1f, indicatorT / 0.4f));
             if (ia >= 4) {
                 FontRenderer fr = mc.fontRendererObj;
