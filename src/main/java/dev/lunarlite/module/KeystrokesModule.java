@@ -14,7 +14,7 @@ import org.lwjgl.input.Mouse;
 /**
  * Keystrokes: phím rơi vào có nảy, nhún theo lò xo, nền dâng lên như chất lỏng, viền kính,
  * tia lửa bắn lên, phím bên cạnh nhún theo, xung sáng khi nhả, vệt sáng quét, hai vòng sóng,
- * thanh CPS mượt có vạch đỉnh và số CPS chạy mượt. CPS chỉ hiện ra khi đang click.
+ * số CPS chạy mượt hiện ngay cạnh chữ LMB/RMB khi đang click (vd: "4 LMB").
  */
 public class KeystrokesModule extends HudModule {
     private static final int U = 22, G = 2, SPACE_H = 12;
@@ -33,13 +33,11 @@ public class KeystrokesModule extends HudModule {
     private final ColorSetting pressedTextColor = add(new ColorSetting("pressed_text_color", "Màu chữ khi bấm", 0x000000));
     private final BoolSetting glow = add(new BoolSetting("glow", "Hiệu ứng phát sáng", true));
     private final BoolSetting shine = add(new BoolSetting("shine", "Vệt sáng quét qua phím", true));
-    private final BoolSetting cpsBar = add(new BoolSetting("cps_bar", "Thanh CPS", true));
     private final BoolSetting fillUp = add(new BoolSetting("fill_up", "Nền dâng lên từ dưới khi bấm", true));
     private final BoolSetting particles = add(new BoolSetting("particles", "Tia lửa bắn lên khi bấm", true));
     private final BoolSetting wave = add(new BoolSetting("wave", "Phím bên cạnh nhún theo", true));
     private final BoolSetting releasePulse = add(new BoolSetting("release_pulse", "Xung sáng khi nhả phím", true));
     private final BoolSetting cpsRoll = add(new BoolSetting("cps_roll", "Số CPS chạy mượt", true));
-    private final BoolSetting cpsPeakMark = add(new BoolSetting("cps_peak", "Vạch đỉnh CPS", true));
 
     /** Mức nhấn mượt (0 = nhả, 1 = đang bấm) dùng cho màu và nền. */
     private final float[] anim = new float[KEYS];
@@ -54,8 +52,6 @@ public class KeystrokesModule extends HudModule {
     private final boolean[] wasDown = new boolean[KEYS];
     /** CPS làm mượt: [0] = chuột trái, [1] = chuột phải. */
     private final float[] cpsSmooth = new float[2];
-    /** Mức hiện của CPS (0 = ẩn, 1 = hiện đủ): chỉ hiện khi đang click, ngừng click thì mờ dần. */
-    private final float[] cpsVis = new float[2];
 
     /** Tia lửa: PN hạt mỗi phím, toạ độ tương đối so với góc trên-trái của phím. */
     private static final int PN = 5;
@@ -68,8 +64,6 @@ public class KeystrokesModule extends HudModule {
     /** Xung sáng khi nhả (1 -> 0) và mức ảnh hưởng từ phím bên cạnh (0 -> 1). */
     private final float[] trail = new float[KEYS];
     private final float[] infl = new float[KEYS];
-    /** Đỉnh CPS gần đây (trôi chậm về giá trị hiện tại). */
-    private final float[] cpsPeak = new float[2];
     /** Phím nào nằm cạnh phím nào: 0 W, 1 A, 2 S, 3 D, 4 LMB, 5 RMB, 6 Space. */
     private static final int[][] NEIGH = { {1, 2, 3}, {0, 2}, {0, 1, 3}, {0, 2}, {5}, {4}, {4, 5} };
 
@@ -184,7 +178,7 @@ public class KeystrokesModule extends HudModule {
     // ------------------------------------------------------------------ vẽ phím
 
     /** Một phím: rơi vào có nảy, nhún lò xo, nhún theo phím bên cạnh, phát sáng, sóng lan, tia lửa. */
-    private void key(int idx, int x, int y, int w, int h, String label, boolean down, String sub, boolean preview) {
+    private void key(int idx, int x, int y, int w, int h, String label, boolean down, int cpsSide, boolean preview) {
         boolean fx = AnimationsModule.hud();
         step(idx, down, fx, w, h);
 
@@ -216,7 +210,7 @@ public class KeystrokesModule extends HudModule {
                 if (al > 2) Draw.ring(x - e, y - e, x + w + e, y + h + e, (al << 24) | (accentColor(x + y) & 0xFFFFFF));
             }
         }
-        keyInner(idx, x, y, w, h, label, sub, fx);
+        keyInner(idx, x, y, w, h, label, cpsSide, fx);
         if (fx && particles.value) drawParticles(idx, x, y);
         GlStateManager.popMatrix();
     }
@@ -274,7 +268,7 @@ public class KeystrokesModule extends HudModule {
         else Gui.drawRect(x1, y1, x2, y2, argb);
     }
 
-    private void keyInner(int idx, int x, int y, int w, int h, String label, String sub, boolean fx) {
+    private void keyInner(int idx, int x, int y, int w, int h, String label, int cpsSide, boolean fx) {
         float a = anim[idx];
         float e = 1f - (1f - a) * (1f - a); // ease-out
         FontRenderer fr = fr();
@@ -337,49 +331,37 @@ public class KeystrokesModule extends HudModule {
         }
 
         int tc = Draw.lerp(textColor(x + y), pressedText(), a);
-        // vis: mức hiện của CPS (chỉ phím chuột có sub). Chưa click -> chữ nằm giữa phím; click -> trượt lên nhường chỗ cho CPS.
-        float vis = sub == null ? 0f : cpsVis[idx == 4 ? 0 : 1];
-        int midY = y + (h - 8) / 2;
-        int ty = Math.round(midY + ((y + 3) - midY) * vis);
-        fr.drawString(label, x + (w - fr.getStringWidth(label)) / 2, ty, tc, shadow.value && a < 0.5f);
-
-        if (sub != null && vis > 0.05f) {
-            // Chữ CPS sáng dần khi click nhanh, mờ dần vào/ra theo vis.
-            float cps = cpsSmooth[idx == 4 ? 0 : 1];
-            int idleSub = Draw.lerp(0xFFAAAAAA, 0xFFFFFFFF, Math.min(1f, cps / 10f));
+        // Phím chuột: bình thường chỉ hiện "LMB"; khi đang click thì hiện "4 LMB" (số CPS đứng trước chữ).
+        String text = label;
+        if (cpsSide >= 0) {
+            int v = cpsValue(cpsSide);
+            if (v > 0) text = v + " " + label;
+        }
+        int tw = fr.getStringWidth(text);
+        int maxW = w - 4;
+        if (tw > maxW) { // số CPS 2 chữ số: thu nhỏ chữ cho lọt vào phím
+            float ts = (float) maxW / tw;
             GlStateManager.pushMatrix();
-            GlStateManager.scale(0.6f, 0.6f, 1f);
-            float s = 1f / 0.6f;
-            fr.drawString(sub, (int) ((x + (w - fr.getStringWidth(sub) * 0.6f) / 2f) * s), (int) ((y + 13) * s),
-                    Draw.mulAlpha(Draw.lerp(idleSub, 0xFF333333, a), vis), false);
+            GlStateManager.translate(x + w / 2f, y + h / 2f, 0f);
+            GlStateManager.scale(ts, ts, 1f);
+            fr.drawString(text, -tw / 2f, -4f, tc, shadow.value && a < 0.5f);
             GlStateManager.popMatrix();
-
-            if (cpsBar.value && w > 10) {
-                float frac = Math.min(1f, cps / 15f);
-                int barCol = Draw.lerp(Draw.withAlpha(accentColor(x + y), 0xDD), 0xFFFFFFFF, frac * 0.5f);
-                Draw.hbar(x + 4, y + h - 4, w - 8, 2, frac, Draw.mulAlpha(barCol, vis), Draw.mulAlpha(0x40888888, vis));
-                if (cpsPeakMark.value) {
-                    float pf = Math.min(1f, cpsPeak[idx == 4 ? 0 : 1] / 15f);
-                    if (pf > frac + 0.04f) {
-                        int mx = x + 4 + Math.round((w - 9) * pf);
-                        Gui.drawRect(mx, y + h - 5, mx + 1, y + h - 1, Draw.mulAlpha(0xCCFFFFFF, vis));
-                    }
-                }
-            }
+        } else {
+            fr.drawString(text, x + (w - tw) / 2, y + (h - 8) / 2, tc, shadow.value && a < 0.5f);
         }
 
-        // Gạch chân màu nhấn mọc ra từ giữa phím (phím chữ thường, hoặc phím chuột khi CPS đang ẩn).
-        float ul = sub == null ? 1f : 1f - vis;
-        if (ul > 0.02f && a > 0.02f) {
+        // Gạch chân màu nhấn mọc ra từ giữa phím khi bấm.
+        if (a > 0.02f) {
             int bw = Math.round((w - 8) * e);
             int bx = x + (w - bw) / 2;
-            Gui.drawRect(bx, y + h - 4, bx + bw, y + h - 3, Draw.withAlpha(accentColor(x + y), Math.round(210 * a * ul)));
+            Gui.drawRect(bx, y + h - 4, bx + bw, y + h - 3, Draw.withAlpha(accentColor(x + y), Math.round(210 * a)));
         }
     }
 
-    private String cpsText(int side, boolean preview) {
-        int v = (cpsRoll.value && !preview) ? Math.round(cpsSmooth[side]) : (side == 0 ? CpsModule.left() : CpsModule.right());
-        return v + " CPS";
+    /** CPS hiện tại của một nút chuột (0 = trái, 1 = phải). */
+    private int cpsValue(int side) {
+        if (cpsRoll.value) return Math.round(cpsSmooth[side]);
+        return side == 0 ? CpsModule.left() : CpsModule.right();
     }
 
     private static boolean down(KeyBinding k, boolean preview) {
@@ -406,18 +388,6 @@ public class KeystrokesModule extends HudModule {
         cpsSmooth[0] += ((preview ? 0 : CpsModule.left()) - cpsSmooth[0]) * ks;
         cpsSmooth[1] += ((preview ? 0 : CpsModule.right()) - cpsSmooth[1]) * ks;
 
-        // CPS chỉ hiện khi đang giữ chuột hoặc còn click trong vòng 1 giây gần đây; xem trước (preview) luôn hiện để chỉnh giao diện.
-        for (int i = 0; i < 2; i++) {
-            boolean active = preview || Mouse.isButtonDown(i) || (i == 0 ? CpsModule.left() : CpsModule.right()) > 0;
-            float speed = active ? 20f : 6f;
-            cpsVis[i] += ((active ? 1f : 0f) - cpsVis[i]) * (1f - (float) Math.exp(-speed * dt));
-        }
-
-        for (int i = 0; i < 2; i++) {
-            float pk = cpsPeak[i];
-            pk = cpsSmooth[i] > pk ? cpsSmooth[i] : pk + (cpsSmooth[i] - pk) * (1f - (float) Math.exp(-1.2f * dt));
-            cpsPeak[i] = pk;
-        }
         // Mức ảnh hưởng của phím bên cạnh (phím đang bấm kéo hàng xóm nhún theo).
         for (int i = 0; i < KEYS - 2; i++) {
             float sum = 0f;
@@ -425,23 +395,23 @@ public class KeystrokesModule extends HudModule {
             infl[i] = Math.min(1f, sum * 0.5f);
         }
 
-        key(0, x + U + G, y, U, U, "W", down(mc.gameSettings.keyBindForward, preview), null, preview);
+        key(0, x + U + G, y, U, U, "W", down(mc.gameSettings.keyBindForward, preview), -1, preview);
         int r2 = y + U + G;
-        key(1, x, r2, U, U, "A", down(mc.gameSettings.keyBindLeft, preview), null, preview);
-        key(2, x + U + G, r2, U, U, "S", down(mc.gameSettings.keyBindBack, preview), null, preview);
-        key(3, x + 2 * (U + G), r2, U, U, "D", down(mc.gameSettings.keyBindRight, preview), null, preview);
+        key(1, x, r2, U, U, "A", down(mc.gameSettings.keyBindLeft, preview), -1, preview);
+        key(2, x + U + G, r2, U, U, "S", down(mc.gameSettings.keyBindBack, preview), -1, preview);
+        key(3, x + 2 * (U + G), r2, U, U, "D", down(mc.gameSettings.keyBindRight, preview), -1, preview);
 
         int yy = r2 + U + G;
         if (showMouse.value) {
             int mw = (W - G) / 2;
             key(4, x, yy, mw, U, "LMB", !preview && Mouse.isButtonDown(0),
-                    showCps.value ? cpsText(0, preview) : null, preview);
+                    showCps.value ? 0 : -1, preview);
             key(5, x + mw + G, yy, mw, U, "RMB", !preview && Mouse.isButtonDown(1),
-                    showCps.value ? cpsText(1, preview) : null, preview);
+                    showCps.value ? 1 : -1, preview);
             yy += U + G;
         }
         if (showSpace.value) {
-            key(6, x, yy, W, SPACE_H, null, down(mc.gameSettings.keyBindJump, preview), null, preview);
+            key(6, x, yy, W, SPACE_H, null, down(mc.gameSettings.keyBindJump, preview), -1, preview);
         }
     }
 }
