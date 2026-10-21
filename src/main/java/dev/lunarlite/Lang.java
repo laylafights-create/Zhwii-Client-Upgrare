@@ -111,6 +111,16 @@ public final class Lang {
         p("Aim Smoothing", "Độ mượt khi ngắm"); p("Max Turn Speed", "Tốc độ xoay tối đa");
         p("Only While Attacking", "Chỉ khi đang đánh"); p("Ignore Invisible", "Bỏ qua người tàng hình");
 
+        // ---- Velocity
+        p("Velocity", "Giảm knockback"); p("Horizontal", "Ngang"); p("Vertical", "Dọc");
+        p("Giảm lực đẩy (knockback) khi bị đánh theo tỉ lệ ngang / dọc.", "Giảm lực đẩy (knockback) khi bị đánh. Ngang / Dọc là % lực còn lại (100% = không đổi, 0% = không bị đẩy).");
+
+        // ---- Bridge Assist
+        p("Bridge Assist", "Hỗ trợ bridge"); p("Edge Crouch", "Tự ngồi ở mép"); p("Bridge Aim", "Tự chỉnh góc bridge");
+        p("Auto Place", "Tự đặt block"); p("Only Holding Blocks", "Chỉ khi cầm block"); p("Min Pitch", "Góc nhìn xuống tối thiểu");
+        p("Place Delay", "Độ trễ đặt block");
+        p("Hỗ trợ bridge nhanh: tự ngồi ở mép, chỉnh góc ngắm và đặt block.", "Hỗ trợ bridge nhanh (bridge lùi): tự ngồi ở mép block, chỉnh góc nhìn xuống mặt bên block đang đứng và tự đặt block khi tâm ngắm trúng.");
+
         // ---- nhóm tùy chỉnh (tiêu đề mục trong menu)
         p("Appearance", "Giao diện"); p("Options", "Tùy chọn"); p("Loot Beam", "Tia sáng vật phẩm");
         p("Target Info", "Thông tin địch");

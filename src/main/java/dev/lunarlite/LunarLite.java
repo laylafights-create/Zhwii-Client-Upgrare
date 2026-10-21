@@ -58,7 +58,7 @@ public class LunarLite {
     public static final String VERSION = "2.0.0";
 
     public static final List<Module> MODULES = new ArrayList<Module>();
-    public static KeyBinding keyMenu, keyZoom, keyAim, keyShake;
+    public static KeyBinding keyMenu, keyZoom, keyAim, keyShake, keyBridge, keyVelocity;
 
     // Rung block khi đào + tắt hạt vỡ block
     public static boolean blockShake = true;
@@ -69,6 +69,8 @@ public class LunarLite {
 
     public static ZoomModule ZOOM;
     public static AimAssistModule AIM;
+    public static VelocityModule VELOCITY;
+    public static BridgeModule BRIDGE;
     public static BlockOutlineModule BLOCK_OUTLINE;
     public static EnemyDetectorModule ENEMY_DETECTOR;
     public static ScoreboardModule SCOREBOARD;
@@ -90,6 +92,8 @@ public class LunarLite {
     public void init(FMLInitializationEvent e) {
         ZOOM = new ZoomModule();
         AIM = new AimAssistModule();
+        VELOCITY = new VelocityModule();
+        BRIDGE = new BridgeModule();
         BLOCK_OUTLINE = new BlockOutlineModule();
         ENEMY_DETECTOR = new EnemyDetectorModule();
         SCOREBOARD = new ScoreboardModule();
@@ -110,6 +114,8 @@ public class LunarLite {
         MODULES.add(new ComboModule());
         MODULES.add(new KillBoardModule());
         MODULES.add(AIM);
+        MODULES.add(VELOCITY);
+        MODULES.add(BRIDGE);
         MODULES.add(new ArmorModule());
         MODULES.add(new PotionModule());
         MODULES.add(new ItemPickupModule());
@@ -143,11 +149,16 @@ public class LunarLite {
         ClientRegistry.registerKeyBinding(keyAim);
         keyShake = new KeyBinding("Bật/tắt rung block", Keyboard.KEY_NONE, "Zhwii Client");
         ClientRegistry.registerKeyBinding(keyShake);
+        keyBridge = new KeyBinding("Bật/tắt Hỗ trợ bridge", Keyboard.KEY_G, "Zhwii Client");
+        keyVelocity = new KeyBinding("Bật/tắt Giảm knockback", Keyboard.KEY_V, "Zhwii Client");
+        ClientRegistry.registerKeyBinding(keyBridge);
+        ClientRegistry.registerKeyBinding(keyVelocity);
 
         // Chat bar: chỉ tin người chơi + avatar/giường team + tự dịch tiếng Việt (cài đặt nằm trong menu)
         CHAT_BAR.register();
 
         MinecraftForge.EVENT_BUS.register(this);
+        MinecraftForge.EVENT_BUS.register(VELOCITY);
         FMLCommonHandler.instance().bus().register(this);
     }
 
@@ -172,6 +183,14 @@ public class LunarLite {
             AIM.toggle();
             saveConfig();
         }
+        if (keyBridge.isPressed() && mc.currentScreen == null) {
+            BRIDGE.toggle();
+            saveConfig();
+        }
+        if (keyVelocity.isPressed() && mc.currentScreen == null) {
+            VELOCITY.toggle();
+            saveConfig();
+        }
         if (keyShake.isPressed() && mc.currentScreen == null) {
             blockShake = !blockShake;
             saveConfig();
@@ -185,7 +204,9 @@ public class LunarLite {
 
     @SubscribeEvent
     public void onRenderTick(TickEvent.RenderTickEvent e) {
-        if (e.phase == TickEvent.Phase.START && AIM != null) AIM.onRender(e.renderTickTime);
+        if (e.phase != TickEvent.Phase.START) return;
+        if (AIM != null) AIM.onRender(e.renderTickTime);
+        if (BRIDGE != null) BRIDGE.onRender(e.renderTickTime);
     }
 
     @SubscribeEvent
