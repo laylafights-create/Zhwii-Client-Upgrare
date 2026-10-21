@@ -2,6 +2,10 @@ package dev.lunarlite.module;
 
 import dev.lunarlite.setting.BoolSetting;
 import dev.lunarlite.setting.SliderSetting;
+import net.minecraft.block.Block;
+import net.minecraft.block.BlockContainer;
+import net.minecraft.block.BlockFalling;
+import net.minecraft.block.BlockTNT;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.client.settings.KeyBinding;
@@ -22,12 +26,14 @@ public class BridgeModule extends Module {
     private final BoolSetting edgeCrouch = add(new BoolSetting("bridge_crouch", "Edge Crouch", true));
     private final BoolSetting aim = add(new BoolSetting("bridge_aim", "Bridge Aim", true));
     private final BoolSetting autoPlace = add(new BoolSetting("bridge_place", "Auto Place", true));
+    private final BoolSetting autoRefill = add(new BoolSetting("bridge_refill", "Auto Refill Blocks", true));
     private final BoolSetting onlyBlocks = add(new BoolSetting("bridge_blocks", "Only Holding Blocks", true));
     private final SliderSetting minPitch = add(new SliderSetting("bridge_min_pitch", "Min Pitch", 60, 40, 85, 1, "°"));
     private final SliderSetting smoothing = add(new SliderSetting("bridge_smooth", "Aim Smoothing", 0.5, 0.05, 1.0, 0.05, "x"));
     private final SliderSetting placeDelay = add(new SliderSetting("bridge_delay", "Place Delay", 1, 0, 4, 1, " tick"));
 
     private boolean forcingSneak;
+    private int blockSlot = -1; // ô hotbar vừa cầm block (để biết khi nào hết block)
     private int cooldown;
     private long lastNano, lastAim;
     private float yawVel, pitchVel;
@@ -42,6 +48,11 @@ public class BridgeModule extends Module {
         EnumFacing dir;       // hướng bridge kéo dài (phía sau lưng)
         double beyond;        // mắt nhô ra khỏi mép bao nhiêu khối
         double dy;            // độ cao mặt bên mục tiêu so với mắt (âm)
+    }
+
+    /** Chỉ coi là đang bridge khi giữ phím lùi (S). */
+    private boolean bridging(Minecraft mc) {
+        return mc.gameSettings.keyBindBack.isKeyDown();
     }
 
     private boolean active(Minecraft mc, EntityPlayerSP p) {
@@ -77,16 +88,54 @@ public class BridgeModule extends Module {
         return o;
     }
 
+    /** Block dùng để bridge: khối đặc, không rơi, không phải rương/TNT. */
+    private static boolean usable(ItemStack s) {
+        if (s == null || s.stackSize <= 0 || !(s.getItem() instanceof ItemBlock)) return false;
+        Block b = ((ItemBlock) s.getItem()).getBlock();
+        return b.isFullCube() && !(b instanceof BlockFalling) && !(b instanceof BlockContainer) && !(b instanceof BlockTNT);
+    }
+
+    /** Tay vừa hết block (đang giữ S) thì lấy block khác ra. */
+    private void tickRefill(Minecraft mc, EntityPlayerSP p) {
+        if (!autoRefill.value || !enabled || mc.theWorld == null || p == null
+                || mc.currentScreen != null || p.isSpectator()) return;
+        ItemStack h = p.getHeldItem();
+        int cur = p.inventory.currentItem;
+        if (h != null && h.stackSize > 0) {
+            blockSlot = h.getItem() instanceof ItemBlock ? cur : -1;
+            return;
+        }
+        // Tay trống: chỉ refill nếu ô này vừa cầm block và người chơi đang bridge (giữ S).
+        if (blockSlot != cur || !bridging(mc)) return;
+        blockSlot = refill(mc, p) ? p.inventory.currentItem : -1;
+    }
+
+    /** Ưu tiên hotbar (đổi ô), nếu không có thì kéo từ túi đồ vào ô đang cầm. */
+    private boolean refill(Minecraft mc, EntityPlayerSP p) {
+        ItemStack[] inv = p.inventory.mainInventory;
+        int best = -1;
+        for (int i = 0; i < 9; i++)
+            if (usable(inv[i]) && (best < 0 || inv[i].stackSize > inv[best].stackSize)) best = i;
+        if (best >= 0) { p.inventory.currentItem = best; return true; }
+        for (int i = 9; i < 36; i++)
+            if (usable(inv[i]) && (best < 0 || inv[i].stackSize > inv[best].stackSize)) best = i;
+        if (best < 0) return false;
+        // mode 2 = hoán đổi ô túi đồ với ô hotbar đang cầm
+        mc.playerController.windowClick(p.inventoryContainer.windowId, best, p.inventory.currentItem, 2, p);
+        return true;
+    }
+
     /** Mỗi client tick (END): ngồi ở mép + đặt block. */
     @Override
     public void onTick() {
         Minecraft mc = Minecraft.getMinecraft();
         EntityPlayerSP p = mc.thePlayer;
         if (cooldown > 0) cooldown--;
+        tickRefill(mc, p);
         if (!active(mc, p)) { releaseSneak(mc); return; }
 
         // 1) Ngồi ở mép: nếu bước tiếp theo sẽ rơi khỏi block thì giữ shift.
-        if (edgeCrouch.value && p.onGround && !p.capabilities.isFlying) {
+        if (edgeCrouch.value && bridging(mc) && p.onGround && !p.capabilities.isFlying) {
             boolean edge = mc.theWorld.getCollidingBoundingBoxes(p,
                     p.getEntityBoundingBox().offset(p.motionX * 3.0D, -0.5D, p.motionZ * 3.0D)).isEmpty();
             if (edge) {
@@ -96,7 +145,7 @@ public class BridgeModule extends Module {
         } else releaseSneak(mc);
 
         // 2) Đặt block khi tâm ngắm đang trúng mặt bên (hướng bridge) của block đang đứng.
-        if (!autoPlace.value || cooldown > 0 || p.getHeldItem() == null || p.getHeldItem().stackSize <= 0) return;
+        if (!autoPlace.value || !bridging(mc) || cooldown > 0 || p.getHeldItem() == null || p.getHeldItem().stackSize <= 0) return;
         if (p.rotationPitch < minPitch.getFloat() - 5.0F) return;
         MovingObjectPosition mop = mc.objectMouseOver;
         if (mop == null || mop.typeOfHit != MovingObjectPosition.MovingObjectType.BLOCK) return;
@@ -118,7 +167,8 @@ public class BridgeModule extends Module {
         Minecraft mc = Minecraft.getMinecraft();
         EntityPlayerSP p = mc.thePlayer;
         if (!aim.value || !active(mc, p) || !p.onGround) return;
-        if (p.rotationPitch < minPitch.getFloat() - 10.0F) return; // chỉ khi đang nhìn xuống kiểu bridge
+        if (!bridging(mc)) { yawVel = 0F; pitchVel = 0F; return; } // không giữ S = không bridge
+        if (p.rotationPitch < minPitch.getFloat() - 3.0F) return; // chỉ khi đã cúi đầu đúng kiểu bridge
 
         Pose o = pose(mc, p, pt);
         if (o == null || o.beyond < 0.02D || o.beyond > 0.4D) { yawVel = 0F; pitchVel = 0F; return; }
@@ -174,5 +224,6 @@ public class BridgeModule extends Module {
         if (!enabled) releaseSneak(Minecraft.getMinecraft());
         yawVel = 0F;
         pitchVel = 0F;
+        blockSlot = -1;
     }
 }
