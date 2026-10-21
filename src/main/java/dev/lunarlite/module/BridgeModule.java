@@ -11,6 +11,7 @@ import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.client.settings.KeyBinding;
 import net.minecraft.item.ItemBlock;
 import net.minecraft.item.ItemStack;
+import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.util.BlockPos;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.MathHelper;
@@ -31,6 +32,7 @@ public class BridgeModule extends Module {
     private final SliderSetting minPitch = add(new SliderSetting("bridge_min_pitch", "Min Pitch", 60, 40, 85, 1, "°"));
     private final SliderSetting smoothing = add(new SliderSetting("bridge_smooth", "Aim Smoothing", 0.5, 0.05, 1.0, 0.05, "x"));
     private final SliderSetting placeDelay = add(new SliderSetting("bridge_delay", "Place Delay", 1, 0, 4, 1, " tick"));
+    private final BoolSetting climbUp = add(new BoolSetting("bridge_climb", "Jump Climb (đặt lên cao)", true));
 
     private boolean forcingSneak;
     private int blockSlot = -1; // ô hotbar vừa cầm block (để biết khi nào hết block)
@@ -48,6 +50,9 @@ public class BridgeModule extends Module {
         EnumFacing dir;       // hướng bridge kéo dài (phía sau lưng)
         double beyond;        // mắt nhô ra khỏi mép bao nhiêu khối
         double dy;            // độ cao mặt bên mục tiêu so với mắt (âm)
+        double dyTop, dyBot;  // mép trên / mép dưới của mặt bên so với mắt
+        boolean climb;        // block phía sau đã có -> nhắm mặt TRÊN của nó để đặt lên cao
+        double climbH;        // mắt cao hơn mặt trên block đó bao nhiêu (số âm = mắt ở trên)
     }
 
     /** Chỉ coi là đang bridge khi giữ phím lùi (S). */
@@ -70,10 +75,25 @@ public class BridgeModule extends Module {
         double py = p.lastTickPosY + (p.posY - p.lastTickPosY) * pt;
         double pz = p.lastTickPosZ + (p.posZ - p.lastTickPosZ) * pt;
         // Block đang đứng: lùi vào phía đảo 0.3 khối so với tâm để vẫn tìm được khi người nhô ra mép.
-        BlockPos sup = new BlockPos(MathHelper.floor_double(px - dir.getFrontOffsetX() * 0.3D),
-                MathHelper.floor_double(py - 0.01D), MathHelper.floor_double(pz - dir.getFrontOffsetZ() * 0.3D));
-        if (mc.theWorld.getBlockState(sup).getBlock().getMaterial().isReplaceable()) return null;
-        if (!mc.theWorld.isAirBlock(sup.offset(dir))) return null;
+        int fx = MathHelper.floor_double(px - dir.getFrontOffsetX() * 0.3D);
+        int fz = MathHelper.floor_double(pz - dir.getFrontOffsetZ() * 0.3D);
+        int fy = MathHelper.floor_double(py - 0.01D);
+        // Đang nhảy: block đứng nằm thấp hơn chân, nên quét xuống tối đa 3 ô để tìm.
+        int maxDrop = p.onGround ? 0 : 3;
+        BlockPos sup = null;
+        for (int i = 0; i <= maxDrop; i++) {
+            BlockPos c = new BlockPos(fx, fy - i, fz);
+            if (!mc.theWorld.getBlockState(c).getBlock().getMaterial().isReplaceable()) { sup = c; break; }
+        }
+        if (sup == null) return null;
+        BlockPos back = sup.offset(dir);
+        boolean climb = false;
+        if (!mc.theWorld.isAirBlock(back)) {
+            // Đã có block phía sau: chỉ cho "leo" khi đang nhảy và phía trên block đó còn trống.
+            boolean solid = !mc.theWorld.getBlockState(back).getBlock().getMaterial().isReplaceable();
+            if (!solid || !climbUp.value || p.onGround || !mc.theWorld.isAirBlock(back.up())) return null;
+            climb = true;
+        }
 
         double ex = px, ey = py + p.getEyeHeight(), ez = pz;
         double plane = dir.getFrontOffsetX() != 0
@@ -85,6 +105,10 @@ public class BridgeModule extends Module {
         o.dir = dir;
         o.beyond = beyond;
         o.dy = (sup.getY() + 0.75D) - ey;
+        o.dyTop = (sup.getY() + 0.95D) - ey;
+        o.dyBot = (sup.getY() + 0.25D) - ey;
+        o.climb = climb;
+        o.climbH = (back.getY() + 1.0D) - ey;
         return o;
     }
 
@@ -150,8 +174,18 @@ public class BridgeModule extends Module {
         MovingObjectPosition mop = mc.objectMouseOver;
         if (mop == null || mop.typeOfHit != MovingObjectPosition.MovingObjectType.BLOCK) return;
         BlockPos hit = mop.getBlockPos();
-        if (mop.sideHit.getAxis().isVertical() || hit.getY() >= MathHelper.floor_double(p.posY)) return; // chỉ kéo dài cầu ở mức chân
-        if (!mc.theWorld.isAirBlock(hit.offset(mop.sideHit))) return;
+        EnumFacing side = mop.sideHit;
+        if (side.getAxis().isVertical()) {
+            // Mặt trên chỉ dùng để leo: đang nhảy + bật Jump Climb + đặt lên block thấp hơn chân.
+            if (side != EnumFacing.UP || p.onGround || !climbUp.value) return;
+        }
+        if (hit.getY() >= MathHelper.floor_double(p.posY)) return; // chỉ kéo dài cầu ở mức chân
+        BlockPos target = hit.offset(side);
+        if (!mc.theWorld.isAirBlock(target)) return;
+        // Chưa lên tới đỉnh nhảy thì block mới còn dính vào người -> chờ, không gửi gói vô ích.
+        AxisAlignedBB cell = new AxisAlignedBB(target.getX(), target.getY(), target.getZ(),
+                target.getX() + 1.0D, target.getY() + 1.0D, target.getZ() + 1.0D);
+        if (p.getEntityBoundingBox().intersectsWith(cell)) return;
         if (mc.playerController.onPlayerRightClick(p, mc.theWorld, p.getHeldItem(), hit, mop.sideHit, mop.hitVec)) {
             p.swingItem();
             cooldown = placeDelay.getInt();
@@ -166,23 +200,45 @@ public class BridgeModule extends Module {
 
         Minecraft mc = Minecraft.getMinecraft();
         EntityPlayerSP p = mc.thePlayer;
-        if (!aim.value || !active(mc, p) || !p.onGround) return;
+        if (!aim.value || !active(mc, p)) return;
+        if (p.capabilities.isFlying || p.isInWater() || p.isOnLadder()) return;
+        boolean air = !p.onGround;
         if (!bridging(mc)) { yawVel = 0F; pitchVel = 0F; return; } // không giữ S = không bridge
         if (p.rotationPitch < minPitch.getFloat() - 3.0F) return; // chỉ khi đã cúi đầu đúng kiểu bridge
 
         Pose o = pose(mc, p, pt);
-        if (o == null || o.beyond < 0.02D || o.beyond > 0.4D) { yawVel = 0F; pitchVel = 0F; return; }
+        double maxBeyond = o != null && o.climb ? 1.2D : (air ? 0.7D : 0.4D); // đang nhảy thì người lùi ra xa mép hơn
+        if (o == null || o.beyond < 0.02D || o.beyond > maxBeyond) { yawVel = 0F; pitchVel = 0F; return; }
         if (now - lastAim > 150000000L) { yawVel = 0F; pitchVel = 0F; }
         lastAim = now;
 
-        float wantPitch = MathHelper.clamp_float((float) (Math.atan2(-o.dy, o.beyond) * 180.0D / Math.PI), minPitch.getFloat(), 89.0F);
         float curPitch = p.prevRotationPitch + (p.rotationPitch - p.prevRotationPitch) * pt;
+        float wantPitch;
+        if (o.climb) {
+            // Nhắm xuống MẶT TRÊN của block vừa đặt (phía sau mép). Tia nhìn đi về phía trước nên chỉ trúng
+            // phần mặt trên nằm giữa mép và mắt: t = khoảng cách từ mép tới điểm trúng.
+            double h = -o.climbH; // mắt cao hơn mặt trên (dương)
+            double tNear = 0.05D;
+            double tFar = Math.min(0.95D, o.beyond * 0.9D);
+            float pLow = (float) (Math.atan2(h, Math.max(0.02D, o.beyond - tNear)) * 180.0D / Math.PI);
+            float pHigh = (float) (Math.atan2(h, Math.max(0.02D, o.beyond - tFar)) * 180.0D / Math.PI);
+            wantPitch = MathHelper.clamp_float(curPitch, pLow, pHigh);
+        } else if (air) {
+            // Mắt đang lên/xuống nhanh: chỉ cần tâm ngắm nằm trong mặt bên, không cần về đúng tâm.
+            float pTop = (float) (Math.atan2(-o.dyTop, o.beyond) * 180.0D / Math.PI);
+            float pBot = (float) (Math.atan2(-o.dyBot, o.beyond) * 180.0D / Math.PI);
+            wantPitch = MathHelper.clamp_float(curPitch, pTop, pBot);
+        } else {
+            wantPitch = (float) (Math.atan2(-o.dy, o.beyond) * 180.0D / Math.PI);
+        }
+        wantPitch = MathHelper.clamp_float(wantPitch, minPitch.getFloat(), 89.0F);
         float curYaw = p.prevRotationYaw + (p.rotationYaw - p.prevRotationYaw) * pt;
         float wantYaw = o.dir.getOpposite().getHorizontalIndex() * 90.0F;
         float yawDiff = MathHelper.wrapAngleTo180_float(wantYaw - curYaw);
         if (Math.abs(yawDiff) > 25.0F) { yawDiff = 0F; yawVel = 0F; } // lệch quá thì để người chơi tự xoay
 
         float smoothTime = 0.04F + (1.0F - smoothing.getFloat()) * 0.40F;
+        if (air) smoothTime *= 0.45F; // cú nhảy chỉ ~0.5s nên phải bám nhanh hơn
         float dyaw = damp(yawDiff, true, smoothTime, 600.0F, dt);
         float dpitch = damp(wantPitch - curPitch, false, smoothTime, 600.0F, dt);
         if (Math.abs(dyaw) < 0.002F && Math.abs(dpitch) < 0.002F) return;
