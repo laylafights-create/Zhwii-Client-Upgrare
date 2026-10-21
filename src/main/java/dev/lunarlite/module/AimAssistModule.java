@@ -20,7 +20,10 @@ public class AimAssistModule extends Module {
         super("aimassist", "Aim Assist", "Tự động aim vào kẻ địch gần nhất (bỏ qua đồng đội).", Category.PVP, false);
     }
 
-    private long lastNano;
+    private long lastNano, lastAim;
+    // Trạng thái làm mượt (SmoothDamp): vận tốc góc hiện tại (độ / giây) và mục tiêu đang bám.
+    private float yawVel, pitchVel;
+    private EntityPlayer current;
 
     /** Gọi mỗi khung hình (RenderTickEvent) để xoay mượt, không phụ thuộc FPS. */
     public void onRender(float pt) {
@@ -36,15 +39,25 @@ public class AimAssistModule extends Module {
         if (mc.thePlayer.isSpectator() || HypixelUtil.inLobby()) return;
 
         EntityPlayer target = findTarget(mc);
-        if (target == null) return;
+        if (target == null) { yawVel = 0F; pitchVel = 0F; return; }
+        if (now - lastAim > 150000000L) { yawVel = 0F; pitchVel = 0F; } // vừa bật lại -> không giật
+        lastAim = now;
 
         // Vị trí nội suy theo partialTicks cho khớp hình ảnh trên màn hình.
         double ex = lerp(mc.thePlayer.lastTickPosX, mc.thePlayer.posX, pt);
         double ey = lerp(mc.thePlayer.lastTickPosY, mc.thePlayer.posY, pt) + mc.thePlayer.getEyeHeight();
         double ez = lerp(mc.thePlayer.lastTickPosZ, mc.thePlayer.posZ, pt);
-        double dx = lerp(target.lastTickPosX, target.posX, pt) - ex;
-        double dy = lerp(target.lastTickPosY, target.posY, pt) + target.height * 0.85D - ey;
-        double dz = lerp(target.lastTickPosZ, target.posZ, pt) - ez;
+        double tx = lerp(target.lastTickPosX, target.posX, pt);
+        double ty = lerp(target.lastTickPosY, target.posY, pt);
+        double tz = lerp(target.lastTickPosZ, target.posZ, pt);
+
+        // Bù chuyển động: ngắm trước một chút theo vận tốc của địch (đỡ bị tụt lại khi địch chạy ngang).
+        tx += (target.posX - target.lastTickPosX) * 0.8D;
+        tz += (target.posZ - target.lastTickPosZ) * 0.8D;
+
+        // Điểm ngắm: điểm gần mắt nhất trong khoảng thân địch -> không phải ngước/cúi liên tục khi cùng độ cao.
+        double aimY = Math.max(ty + target.height * 0.35D, Math.min(ty + target.height * 0.9D, ey));
+        double dx = tx - ex, dy = aimY - ey, dz = tz - ez;
 
         float wantYaw = yawTo(dx, dz);
         float wantPitch = (float) -(Math.atan2(dy, Math.sqrt(dx * dx + dz * dz)) * 180.0D / Math.PI);
@@ -54,12 +67,12 @@ public class AimAssistModule extends Module {
         float yawDiff = MathHelper.wrapAngleTo180_float(wantYaw - curYaw);
         float pitchDiff = wantPitch - curPitch;
 
-        // Hệ số mượt độc lập FPS + giới hạn tốc độ xoay theo thời gian.
-        float k = 1.0F - (float) Math.pow(1.0D - smoothing.getFloat(), dt * 20.0F);
-        float limit = maxStep.getFloat() * dt * 20.0F;
-        float dyaw = limit(ease(yawDiff) * k, limit);
-        float dpitch = limit(ease(pitchDiff) * k, limit);
-        if (Math.abs(dyaw) < 0.01F && Math.abs(dpitch) < 0.01F) return;
+        // SmoothDamp (lò xo tắt dần tới hạn): tăng tốc êm, giảm tốc êm, không rung, độc lập FPS.
+        float smoothTime = 0.04F + (1.0F - smoothing.getFloat()) * 0.40F;
+        float maxSpeed = maxStep.getFloat() * 20.0F; // độ / giây
+        float dyaw = damp(yawDiff, true, smoothTime, maxSpeed, dt);
+        float dpitch = damp(pitchDiff, false, smoothTime, maxSpeed, dt);
+        if (Math.abs(dyaw) < 0.002F && Math.abs(dpitch) < 0.002F) return;
 
         // Cộng cùng một lượng vào cả giá trị trước đó để camera không bị giật.
         mc.thePlayer.rotationYaw += dyaw;
@@ -69,11 +82,22 @@ public class AimAssistModule extends Module {
         mc.thePlayer.rotationPitch = newPitch;
     }
 
-    /** Gần đúng hướng thì giảm tốc dần (ease-out), tránh rung quanh mục tiêu. */
-    private static float ease(float diff) {
-        float a = Math.abs(diff);
-        float f = a >= 8.0F ? 1.0F : 0.35F + 0.65F * (a / 8.0F);
-        return diff * f;
+    /** Một bước SmoothDamp cho một trục; trả về lượng xoay (độ) trong khung hình này. */
+    private float damp(float diff, boolean isYaw, float smoothTime, float maxSpeed, float dt) {
+        float omega = 2.0F / Math.max(0.0001F, smoothTime);
+        float x = omega * dt;
+        float exp = 1.0F / (1.0F + x + 0.48F * x * x + 0.235F * x * x * x);
+        float vel = isYaw ? yawVel : pitchVel;
+        float maxChange = maxSpeed * smoothTime;
+        float change = Math.max(-maxChange, Math.min(maxChange, -diff)); // target - current = diff
+        float temp = (vel + omega * change) * dt;
+        vel = (vel - omega * temp) * exp;
+        // Unity SmoothDamp với current = 0, target = diff  =>  bước = output - 0
+        float step = -change + (change + temp) * exp;
+        // Không vượt quá mục tiêu (chống overshoot)
+        if ((diff > 0F && step > diff) || (diff < 0F && step < diff)) { step = diff; vel = 0F; }
+        if (isYaw) yawVel = vel; else pitchVel = vel;
+        return step;
     }
 
     private static double lerp(double a, double b, float t) {
@@ -88,7 +112,8 @@ public class AimAssistModule extends Module {
             if (ignoreInvisible.value && p.isInvisible()) continue;
 
             // Kiểm tra rẻ trước (khoảng cách, FOV), kiểm tra đắt sau (tab list, team).
-            double dist = mc.thePlayer.getDistanceToEntity(p);
+            // Bám mục tiêu cũ: được ưu tiên 1.5 khối -> không nhảy qua lại giữa 2 người ở gần nhau.
+            double dist = mc.thePlayer.getDistanceToEntity(p) - (p == current ? 1.5D : 0.0D);
             if (dist > bestDist) continue;
 
             float yaw = yawTo(p.posX - mc.thePlayer.posX, p.posZ - mc.thePlayer.posZ);
@@ -104,6 +129,7 @@ public class AimAssistModule extends Module {
             bestDist = dist;
             best = p;
         }
+        current = best;
         return best;
     }
 
