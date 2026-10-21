@@ -33,6 +33,7 @@ public class BridgeModule extends Module {
     private final SliderSetting smoothing = add(new SliderSetting("bridge_smooth", "Aim Smoothing", 0.5, 0.05, 1.0, 0.05, "x"));
     private final SliderSetting placeDelay = add(new SliderSetting("bridge_delay", "Place Delay", 1, 0, 4, 1, " tick"));
     private final BoolSetting climbUp = add(new BoolSetting("bridge_climb", "Jump Climb (đặt lên cao)", true));
+    private final BoolSetting fallSafety = add(new BoolSetting("bridge_safety", "Fall Safety (bắt mép khi rơi)", true));
 
     private boolean forcingSneak;
     private int blockSlot = -1; // ô hotbar vừa cầm block (để biết khi nào hết block)
@@ -81,9 +82,15 @@ public class BridgeModule extends Module {
         // Đang nhảy: block đứng nằm thấp hơn chân, nên quét xuống tối đa 3 ô để tìm.
         int maxDrop = p.onGround ? 0 : 3;
         BlockPos sup = null;
-        for (int i = 0; i <= maxDrop; i++) {
+        for (int i = 0; i <= maxDrop && sup == null; i++) {
             BlockPos c = new BlockPos(fx, fy - i, fz);
             if (!mc.theWorld.getBlockState(c).getBlock().getMaterial().isReplaceable()) { sup = c; break; }
+            // Đang nhảy có thể trôi ngang một chút theo hướng motion: thử lệch 1 ô theo trục bridge
+            // trước khi bỏ cuộc ở độ cao này, để không mất dấu mép khi nhảy lệch nhịp.
+            if (!p.onGround) {
+                BlockPos side = c.offset(dir.getOpposite());
+                if (!mc.theWorld.getBlockState(side).getBlock().getMaterial().isReplaceable()) { sup = side; break; }
+            }
         }
         if (sup == null) return null;
         BlockPos back = sup.offset(dir);
@@ -170,7 +177,10 @@ public class BridgeModule extends Module {
 
         // 2) Đặt block khi tâm ngắm đang trúng mặt bên (hướng bridge) của block đang đứng.
         if (!autoPlace.value || !bridging(mc) || cooldown > 0 || p.getHeldItem() == null || p.getHeldItem().stackSize <= 0) return;
-        if (p.rotationPitch < minPitch.getFloat() - 5.0F) return;
+        // Đang nhảy thì cửa sổ đặt rất ngắn (~0.5s): nới lỏng điều kiện pitch để không bỏ lỡ nhịp
+        // trong lúc camera còn đang xoay xuống.
+        float pitchTolerance = p.onGround ? 5.0F : 10.0F;
+        if (p.rotationPitch < minPitch.getFloat() - pitchTolerance) return;
         MovingObjectPosition mop = mc.objectMouseOver;
         if (mop == null || mop.typeOfHit != MovingObjectPosition.MovingObjectType.BLOCK) return;
         BlockPos hit = mop.getBlockPos();
@@ -188,7 +198,9 @@ public class BridgeModule extends Module {
         if (p.getEntityBoundingBox().intersectsWith(cell)) return;
         if (mc.playerController.onPlayerRightClick(p, mc.theWorld, p.getHeldItem(), hit, mop.sideHit, mop.hitVec)) {
             p.swingItem();
-            cooldown = placeDelay.getInt();
+            // Trên không thì bỏ qua delay cấu hình (ưu tiên đặt kịp trước khi rơi); đứng đất mới
+            // dùng delay người dùng chọn để tránh gửi gói thừa.
+            cooldown = p.onGround ? placeDelay.getInt() : 0;
         }
     }
 
@@ -204,11 +216,17 @@ public class BridgeModule extends Module {
         if (p.capabilities.isFlying || p.isInWater() || p.isOnLadder()) return;
         boolean air = !p.onGround;
         if (!bridging(mc)) { yawVel = 0F; pitchVel = 0F; return; } // không giữ S = không bridge
-        if (p.rotationPitch < minPitch.getFloat() - 3.0F) return; // chỉ khi đã cúi đầu đúng kiểu bridge
+        // Trên không thì nới ngưỡng pitch vào: không chờ đầu đã cúi hẳn mới bắt đầu chỉnh,
+        // vì cửa sổ của một cú nhảy rất ngắn.
+        if (p.rotationPitch < minPitch.getFloat() - (air ? 8.0F : 3.0F)) return;
 
         Pose o = pose(mc, p, pt);
-        double maxBeyond = o != null && o.climb ? 1.2D : (air ? 0.7D : 0.4D); // đang nhảy thì người lùi ra xa mép hơn
+        // Đang nhảy thì người lùi ra xa mép hơn, nhưng hạ ngưỡng xuống một chút so với trước để
+        // việc chỉnh góc bắt đầu sớm hơn, tránh trôi gần tới mép mới xử lý.
+        double maxBeyond = o != null && o.climb ? 1.2D : (air ? 0.55D : 0.4D);
         if (o == null || o.beyond < 0.02D || o.beyond > maxBeyond) { yawVel = 0F; pitchVel = 0F; return; }
+        // Mức "khẩn cấp": càng gần ngưỡng rơi thì càng cần bám nhanh, không chờ smoothing êm nữa.
+        double urgency = air ? MathHelper.clamp_double(o.beyond / maxBeyond, 0.0D, 1.0D) : 0.0D;
         if (now - lastAim > 150000000L) { yawVel = 0F; pitchVel = 0F; }
         lastAim = now;
 
@@ -239,6 +257,12 @@ public class BridgeModule extends Module {
 
         float smoothTime = 0.04F + (1.0F - smoothing.getFloat()) * 0.40F;
         if (air) smoothTime *= 0.45F; // cú nhảy chỉ ~0.5s nên phải bám nhanh hơn
+        if (fallSafety.value && urgency > 0.5D) {
+            // Càng gần ngưỡng rơi (urgency -> 1) thì càng rút ngắn smoothTime, tối đa còn 1/4,
+            // để tâm ngắm bắt kịp mặt bên trước khi beyond vượt quá maxBeyond.
+            float urgentScale = 1.0F - (float) (urgency - 0.5D) * 1.5F; // 1.0 -> 0.25 khi urgency 0.5 -> 1.0
+            smoothTime *= MathHelper.clamp_float(urgentScale, 0.25F, 1.0F);
+        }
         float dyaw = damp(yawDiff, true, smoothTime, 600.0F, dt);
         float dpitch = damp(wantPitch - curPitch, false, smoothTime, 600.0F, dt);
         if (Math.abs(dyaw) < 0.002F && Math.abs(dpitch) < 0.002F) return;
