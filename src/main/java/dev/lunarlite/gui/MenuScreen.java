@@ -26,6 +26,10 @@ import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.OpenGlHelper;
+import net.minecraft.client.renderer.RenderHelper;
+import net.minecraft.init.Blocks;
+import net.minecraft.init.Items;
+import net.minecraft.item.ItemStack;
 import net.minecraft.util.ResourceLocation;
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
@@ -990,6 +994,36 @@ public class MenuScreen extends GuiScreen {
         drawFixedButtons(mx, my);
     }
 
+    /** Vật phẩm / khối Minecraft đại diện cho từng nhóm (null = dùng biểu tượng vẽ tay). */
+    private ItemStack stackFor(Category c, int i) {
+        if (c == null) return i == 0 ? new ItemStack(Items.nether_star) : null;
+        String k = (c.name() + " " + c.label).toLowerCase();
+        if (k.contains("pvp") || k.contains("combat") || k.contains("chiến")) return new ItemStack(Items.diamond_sword);
+        if (k.contains("block") || k.contains("khối")) return new ItemStack(Blocks.obsidian);
+        if (k.contains("gear") || k.contains("armor") || k.contains("giáp") || k.contains("trang bị")) return new ItemStack(Items.iron_chestplate);
+        if (k.contains("hud")) return new ItemStack(Items.clock);
+        if (k.contains("misc") || k.contains("khác")) return new ItemStack(Items.enchanted_book);
+        if (k.contains("effect") || k.contains("hiệu ứng")) return new ItemStack(Items.potionitem, 1, 8194);
+        return null;
+    }
+
+    /** Vẽ item Minecraft phóng to 2x (32px) tại (x, y). */
+    private void drawItemIcon(ItemStack s, int x, int y) {
+        GlStateManager.pushMatrix();
+        GlStateManager.translate(x, y, 0f);
+        GlStateManager.scale(2f, 2f, 1f);
+        GlStateManager.enableRescaleNormal();
+        RenderHelper.enableGUIStandardItemLighting();
+        mc.getRenderItem().renderItemAndEffectIntoGUI(s, 0, 0);
+        RenderHelper.disableStandardItemLighting();
+        GlStateManager.disableRescaleNormal();
+        GlStateManager.disableLighting();
+        GlStateManager.popMatrix();
+        GlStateManager.enableAlpha();
+        GlStateManager.enableBlend();
+        GlStateManager.color(1f, 1f, 1f, 1f);
+    }
+
     /** Một thẻ kính: biểu tượng lớn ở giữa, tên + gạch chân phía dưới, chấm trạng thái ở góc phải trên. */
     private void drawItem(int i, int x, int y, int w, int h, float hv) {
         FontRenderer fr = fontRendererObj;
@@ -1019,8 +1053,13 @@ public class MenuScreen extends GuiScreen {
 
         // biểu tượng lớn (có bóng nhẹ cho dễ đọc trên nền sáng)
         int ix = x + (w - 32) / 2, iy = y + 13;
-        Icons.draw(icon, ix + 2, iy + 2, 4, 0x44000000);
-        Icons.draw(icon, ix, iy, 4, iconCol);
+        ItemStack is = m == null ? stackFor(c, i) : null;
+        if (is != null) {
+            drawItemIcon(is, ix, iy);
+        } else {
+            Icons.draw(icon, ix + 2, iy + 2, 4, 0x44000000);
+            Icons.draw(icon, ix, iy, 4, iconCol);
+        }
 
         // chấm trạng thái (góc phải trên)
         int dot = on ? (m != null ? Skin.GREEN : acc) : 0x33FFFFFF;
