@@ -5,9 +5,11 @@ import dev.lunarlite.gui.MenuScreen;
 import dev.lunarlite.module.*;
 import dev.lunarlite.module.HideArmorModule;
 import dev.lunarlite.module.Module;
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.inventory.GuiChest;
@@ -82,10 +84,12 @@ public class LunarLite {
     public static LodModule LOD;
 
     private static Configuration config;
+    private static File configFile;
 
     @EventHandler
     public void preInit(FMLPreInitializationEvent e) {
-        config = new Configuration(e.getSuggestedConfigurationFile());
+        configFile = e.getSuggestedConfigurationFile();
+        config = new Configuration(configFile);
     }
 
     @EventHandler
@@ -162,12 +166,43 @@ public class LunarLite {
         FMLCommonHandler.instance().bus().register(this);
     }
 
+    /** Thư mục config của game (nơi chứa file config chính và thư mục hồ sơ). */
+    public static File configDir() {
+        File dir = configFile == null ? null : configFile.getParentFile();
+        return dir != null ? dir : new File("config");
+    }
+
+    /** Ghi toàn bộ cài đặt hiện tại vào {@code c} (không tự lưu file). */
+    public static void fill(Configuration c) {
+        for (Module m : MODULES) m.save(c);
+        c.get("general", "blockShake", true).set(blockShake);
+        c.get("general", "cleanInv", true).set(cleanInv);
+    }
+
     public static void saveConfig() {
         if (config == null) return;
-        for (Module m : MODULES) m.save(config);
-        config.get("general", "blockShake", true).set(blockShake);
-        config.get("general", "cleanInv", true).set(cleanInv);
+        fill(config);
         config.save();
+    }
+
+    /**
+     * Nạp cài đặt từ {@code c} (đã load). Chỉ tính năng có mặt trong {@code c} mới bị ghi đè.
+     * Sau đó lưu vào config chính. Trả về số tính năng đã nạp.
+     */
+    public static int applyConfig(Configuration c) {
+        Set<String> names = c.getCategoryNames();
+        int n = 0;
+        for (Module m : MODULES) {
+            if (!ProfileManager.has(names, m.id)) continue;
+            m.load(c);
+            n++;
+        }
+        if (ProfileManager.has(names, "general")) {
+            blockShake = c.getBoolean("blockShake", "general", true, "Rung block khi đào và tắt hạt vỡ block");
+            cleanInv = c.getBoolean("cleanInv", "general", true, "Bỏ nền đen khi mở kho đồ / rương");
+        }
+        saveConfig();
+        return n;
     }
 
     @SubscribeEvent
