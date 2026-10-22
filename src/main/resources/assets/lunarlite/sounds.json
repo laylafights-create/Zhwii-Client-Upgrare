@@ -1,3 +1,4 @@
 {
-  "zoom.use":  { "category": "player", "sounds": [ "item/spyglass_use" ] },
+  "zoom.use":  { "category": "player", "sounds": [ { "name": "item/zoom_use", "volume": 1.0, "pitch": 1.0 } ] },
+  "zoom.stop": { "category": "player", "sounds": [ { "name": "item/zoom_use", "volume": 1.0, "pitch": 0.7 } ] }
 }
