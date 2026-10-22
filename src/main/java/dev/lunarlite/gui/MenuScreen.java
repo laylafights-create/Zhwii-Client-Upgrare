@@ -360,6 +360,7 @@ public class MenuScreen extends GuiScreen {
 
     private void requestClose() {
         if (closing) return;
+        sfx("note.harp", 1.0F);
         if (!AnimationsModule.menu()) {
             mc.displayGuiScreen(null);
             return;
@@ -377,10 +378,22 @@ public class MenuScreen extends GuiScreen {
         return new Btn(kind, w, text);
     }
 
-    private void click() {
+    /** Phát âm thanh vanilla với cao độ tuỳ chỉnh (chuông nhẹ kiểu SAO). */
+    private void sfx(String name, float pitch) {
         mc.getSoundHandler().playSound(net.minecraft.client.audio.PositionedSoundRecord.create(
-                new net.minecraft.util.ResourceLocation("gui.button.press"), 1.0F));
+                new net.minecraft.util.ResourceLocation(name), pitch));
     }
+
+    private void click() {
+        sfx("note.harp", 1.6F);
+    }
+
+    private void sfxToggle(boolean on) {
+        sfx("note.pling", on ? 2.0F : 1.0F);
+    }
+
+    private boolean soundOpened;
+    private int lastHoverSfx = -1;
 
     // ------------------------------------------------------------------ khung ảo <-> màn hình
 
@@ -556,6 +569,7 @@ public class MenuScreen extends GuiScreen {
 
     private void openModule(Module m) {
         if (m == null) return;
+        sfx("note.pling", 1.8F);
         module = m;
         lastModule = m;
         detail = true;
@@ -565,6 +579,7 @@ public class MenuScreen extends GuiScreen {
     }
 
     private void goBack() {
+        sfx("note.harp", 1.2F);
         detail = false;
         active = null;
         dragBar = false;
@@ -583,6 +598,7 @@ public class MenuScreen extends GuiScreen {
 
     private void toggleModule(Module m) {
         m.toggle();
+        sfxToggle(m.enabled);
         for (Object o : buttonList) {
             if (o instanceof Btn && ((Btn) o).kind == K_ENABLE) refresh((Btn) o);
         }
@@ -803,6 +819,11 @@ public class MenuScreen extends GuiScreen {
 
     @Override
     public void initGui() {
+        if (!soundOpened) {
+            soundOpened = true;
+            sfx("note.harp", 1.5F);
+            sfx("note.pling", 2.0F);
+        }
         startBlur();
         rebuild();
     }
@@ -937,6 +958,10 @@ public class MenuScreen extends GuiScreen {
         int n = itemCount();
         int cw = cardW();
         int hi = itemAt(mx, my);
+        if (hi != lastHoverSfx) {
+            lastHoverSfx = hi;
+            if (hi >= 0 && !closing) sfx("note.harp", 2.0F);
+        }
         int fv = firstVisible();
         Module hoverMod = inMods && hi >= 0 ? shown.get(hi) : null;
 
@@ -1368,11 +1393,13 @@ public class MenuScreen extends GuiScreen {
                 break;
             case K_ENABLE:
                 b.m.toggle();
+                sfxToggle(b.m.enabled);
                 refresh(b);
                 break;
             case K_BOOL: {
                 long before = visSig(b.m);
                 ((BoolSetting) b.s).toggle();
+                sfxToggle(((BoolSetting) b.s).value);
                 if (visSig(b.m) != before) rebuild(); // có tuỳ chỉnh con được ẩn / hiện
                 break;
             }
