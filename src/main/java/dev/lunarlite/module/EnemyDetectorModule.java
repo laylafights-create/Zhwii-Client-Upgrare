@@ -11,6 +11,7 @@ import net.minecraft.client.entity.AbstractClientPlayer;
 import net.minecraft.client.model.ModelBase;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.OpenGlHelper;
+import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.client.renderer.entity.RenderManager;
 import net.minecraft.client.renderer.entity.RenderPlayer;
 import net.minecraft.entity.Entity;
@@ -907,17 +908,10 @@ public class EnemyDetectorModule extends HudModule {
         for (int id : outlineIds) forceBuf[n++] = id;
         if (n == 0) return;
 
-        // Camera: vị trí mắt + hướng nhìn (3D, có cả pitch) để loại người ở sau lưng.
-        // Không dùng Frustum nữa: nó dễ loại nhầm người ở trên / dưới (nhất là khi nhìn lên / xuống).
-        // Việc "có nằm trong màn hình không" đã do computeRect() xử lý chính xác hơn khi vẽ viền.
-        final double camX = view.lastTickPosX + (view.posX - view.lastTickPosX) * pt;
-        final double camY = view.lastTickPosY + (view.posY - view.lastTickPosY) * pt + view.getEyeHeight();
-        final double camZ = view.lastTickPosZ + (view.posZ - view.lastTickPosZ) * pt;
-        final float yawR = (view.prevRotationYaw + (view.rotationYaw - view.prevRotationYaw) * pt) * 0.017453292F;
-        final float pitR = (view.prevRotationPitch + (view.rotationPitch - view.prevRotationPitch) * pt) * 0.017453292F;
-        final double lookX = -Math.sin(yawR) * Math.cos(pitR);
-        final double lookY = -Math.sin(pitR);
-        final double lookZ = Math.cos(yawR) * Math.cos(pitR);
+        Frustum fr = new Frustum();
+        fr.setPosition(view.lastTickPosX + (view.posX - view.lastTickPosX) * pt,
+                view.lastTickPosY + (view.posY - view.lastTickPosY) * pt,
+                view.lastTickPosZ + (view.posZ - view.lastTickPosZ) * pt);
         RenderManager rm = mc.getRenderManager();
         for (int i = 0; i < n; i++) {
             int id = forceBuf[i];
@@ -926,10 +920,7 @@ public class EnemyDetectorModule extends HudModule {
             if (!throughWalls.value && !reachedIds.contains(id)) continue;
             Entity ent = mc.theWorld.getEntityByID(id);
             if (!(ent instanceof EntityPlayer) || ent.isDead) continue;
-            // Tâm thân người chơi (giữa chiều cao) so với camera: nằm sau lưng thì bỏ qua.
-            double ddx = ent.posX - camX, ddy = ent.posY + ent.height * 0.5 - camY, ddz = ent.posZ - camZ;
-            double dlen = Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz);
-            if (dlen > 3.0 && (ddx * lookX + ddy * lookY + ddz * lookZ) / dlen < -0.1) continue; // sau lưng
+            if (!fr.isBoundingBoxInFrustum(ent.getEntityBoundingBox().expand(0.5, 0.5, 0.5))) continue; // ngoài tầm nhìn
             forcing = true;
             try {
                 dbgForced++;
