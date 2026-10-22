@@ -71,7 +71,11 @@ public class ZoomModule extends Module {
 
     private void playSound(ResourceLocation loc) {
         if (!zoomSound.value) return;
-        Minecraft.getMinecraft().getSoundHandler().playSound(PositionedSoundRecord.create(loc, 1.0f));
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.thePlayer == null) return;
+        // create(loc, pitch) chỉ phát với volume 0.25 nên nghe như không có tiếng -> dùng bản có volume đầy đủ, đặt tại vị trí người chơi.
+        mc.getSoundHandler().playSound(PositionedSoundRecord.create(loc, 1.0f, 1.0f,
+                (float) mc.thePlayer.posX, (float) mc.thePlayer.posY, (float) mc.thePlayer.posZ));
     }
 
     public ZoomModule() {
