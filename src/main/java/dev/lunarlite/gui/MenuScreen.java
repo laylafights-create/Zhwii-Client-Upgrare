@@ -48,8 +48,8 @@ public class MenuScreen extends GuiScreen {
     private static final int VW = 520, VH = 300, PAD = 14;
     private static final int BH = 20, ROW = 24, GAP = 6, BAR_W = 6;
     // ---- các vùng theo trục dọc
-    private static final int CARD_Y = 94, CARD_H = 112, CARD_GAP = 8, CARDS_VIS = 6;
-    private static final int HINT_Y = 228, BTN_Y = 270;
+    private static final int CARD_Y = 98, CARD_H = 76, CARD_GAP = 8, CARDS_VIS = 6;
+    private static final int HINT_Y = 206, BTN_Y = 270;
     private static final int PANE_TOP = 78, PANE_BOTTOM = 264;
 
     // ---- màu
@@ -891,7 +891,7 @@ public class MenuScreen extends GuiScreen {
 
     /** Nền kính mờ: ô trắng trong suốt + viền trắng mảnh. */
     private static void glass(int x, int y, int w, int h, float hv, int border) {
-        Draw.rrect(x, y, x + w, y + h, 3, Draw.lerp(0x26FFFFFF, 0x45FFFFFF, hv));
+        Draw.rrect(x, y, x + w, y + h, 4, Draw.lerp(0x22FFFFFF, 0x40FFFFFF, hv));
         Draw.ring(x, y, x + w, y + h, border != 0 ? border : Draw.lerp(0x55FFFFFF, 0xCCFFFFFF, hv));
     }
 
@@ -1011,7 +1011,6 @@ public class MenuScreen extends GuiScreen {
             int[] cc = catCounts(c);
             on = cc[0] > 0;
             iconCol = Draw.lerp(0xFFD6D6E4, Draw.ACCENT_LIGHT, hv);
-            fr.drawStringWithShadow(cc[0] + "/" + cc[1], x + 6, y + 6, 0xAAFFFFFF);
         }
 
         boolean sel = m != null && m == module;
@@ -1019,7 +1018,7 @@ public class MenuScreen extends GuiScreen {
         glass(x, y, w, h, hv, border);
 
         // biểu tượng lớn (có bóng nhẹ cho dễ đọc trên nền sáng)
-        int ix = x + (w - 32) / 2, iy = y + 22;
+        int ix = x + (w - 32) / 2, iy = y + 13;
         Icons.draw(icon, ix + 2, iy + 2, 4, 0x44000000);
         Icons.draw(icon, ix, iy, 4, iconCol);
 
@@ -1036,11 +1035,11 @@ public class MenuScreen extends GuiScreen {
         // tên + gạch chân
         String nm = fit(label, w - 10);
         float cx = x + w / 2f;
-        fr.drawStringWithShadow(nm, cx - fr.getStringWidth(nm) / 2f, y + h - 26, 0xFFFFFFFF);
-        int uw = m != null && on ? 30 : 18;
-        int uy = y + h - 12;
-        int ucol = m != null ? (on ? Skin.GREEN : 0x66FFFFFF) : Draw.lerp(0x66FFFFFF, acc, hv);
-        Gui.drawRect(Math.round(cx - uw / 2f), uy, Math.round(cx + uw / 2f), uy + 2, ucol);
+        fr.drawStringWithShadow(nm, cx - fr.getStringWidth(nm) / 2f, y + h - 19, 0xFFFFFFFF);
+        int uw = m != null && on ? 24 : 12;
+        int uy = y + h - 8;
+        int ucol = m != null ? (on ? Skin.GREEN : 0x66FFFFFF) : Draw.lerp(0x77FFFFFF, acc, hv);
+        Gui.drawRect(Math.round(cx - uw / 2f), uy, Math.round(cx + uw / 2f), uy + 1, ucol);
     }
 
     private void drawFixedButtons(int mx, int my) {
