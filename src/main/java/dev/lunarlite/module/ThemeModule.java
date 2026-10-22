@@ -11,8 +11,8 @@ import dev.lunarlite.setting.SliderSetting;
  */
 public class ThemeModule extends Module {
     private static final String CUSTOM = "Tùy chỉnh";
-    private static final String[] NAMES = { "Xanh dương", "Tím indigo", "Xanh ngọc", "Hồng neon", "Trắng", CUSTOM };
-    private static final int[] RGB = { 0x5B9BFF, 0x8B7CFF, 0x2EC4B6, 0xFF6FAE, 0xE6E6E6 };
+    private static final String[] NAMES = { "Xanh dương", "Tím indigo", "Xanh ngọc", "Hồng neon", "Trắng", "Cam", CUSTOM };
+    private static final int[] RGB = { 0x5B9BFF, 0x8B7CFF, 0x2EC4B6, 0xFF6FAE, 0xE6E6E6, 0xFFA94D };
 
     private static ThemeModule instance;
 
