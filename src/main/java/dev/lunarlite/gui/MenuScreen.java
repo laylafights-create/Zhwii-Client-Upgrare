@@ -111,6 +111,10 @@ public class MenuScreen extends GuiScreen {
             this.kind = kind;
         }
 
+        /** Âm bấm do MenuScreen tự phát (chuông SAO), không dùng tiếng click vanilla. */
+        @Override
+        public void playPressSound(net.minecraft.client.audio.SoundHandler handler) {}
+
         /** Hàng tuỳ chỉnh = ô bo góc: nhãn bên trái + điều khiển bên phải; nút thường = nút bo góc. */
         @Override
         public void drawButton(Minecraft mc, int mouseX, int mouseY) {
@@ -129,8 +133,8 @@ public class MenuScreen extends GuiScreen {
 
             int x = xPosition, y = yPosition, w = width, h = height;
             int ty = y + (h - 8) / 2;
-            int col = enabled ? Sao.TEXT : 0xFF808080;
-            int acc = Sao.ACCENT;
+            int col = enabled ? Skin.TEXT : 0xFF808080;
+            int acc = Draw.ACCENT;
 
             GlStateManager.pushMatrix();
             GlStateManager.translate(fixed ? 0f : (1f - st) * 22f, 0f, 0f);
@@ -138,51 +142,52 @@ public class MenuScreen extends GuiScreen {
             switch (kind) {
                 case K_ENABLE:
                 case K_BOOL: {
-                    Sao.row(x, y, w, h, hov);
+                    Skin.row(x, y, w, h, hov);
                     String lb = kind == K_ENABLE ? "Bật tính năng" : Lang.vi(s.label);
                     fr.drawStringWithShadow(fr.trimStringToWidth(lb, w - 50), x + 9, ty, col);
                     drawSwitch(x + w - 32, y + (h - 12) / 2, sw);
                     break;
                 }
                 case K_MODE: {
-                    Sao.row(x, y, w, h, hov);
+                    Skin.row(x, y, w, h, hov);
                     String val = Lang.vi(((ModeSetting) s).get());
                     int bw2 = Math.min(w / 2, fr.getStringWidth(val) + 18);
                     int bx = x + w - bw2 - 4, by = y + 3;
-                    Sao.box(bx, by, bw2, h - 6, 3, Draw.lerp(Sao.STROKE, acc, hov), Sao.FIELD);
+                    Skin.box(bx, by, bw2, h - 6, 3, Draw.lerp(Skin.STROKE, acc, hov), Skin.FIELD);
                     String vt = fr.trimStringToWidth(val, bw2 - 8);
-                    fr.drawStringWithShadow(vt, bx + (bw2 - fr.getStringWidth(vt)) / 2f, ty, Sao.LIGHT);
+                    fr.drawStringWithShadow(vt, bx + (bw2 - fr.getStringWidth(vt)) / 2f, ty, Draw.ACCENT_LIGHT);
                     fr.drawStringWithShadow(fr.trimStringToWidth(Lang.vi(s.label), w - bw2 - 20), x + 9, ty, col);
                     break;
                 }
                 case K_COLOR: {
-                    Sao.row(x, y, w, h, hov);
+                    Skin.row(x, y, w, h, hov);
                     int sx = x + w - 46, sy = y + 3;
-                    Sao.box(sx, sy, 40, h - 6, 3, Draw.lerp(Sao.STROKE, 0xFFFFFFFF, hov * 0.6f),
+                    Skin.box(sx, sy, 40, h - 6, 3, Draw.lerp(Skin.STROKE, 0xFFFFFFFF, hov * 0.6f),
                             0xFF000000 | ((ColorSetting) s).value);
                     fr.drawStringWithShadow(fr.trimStringToWidth(Lang.vi(s.label), w - 66), x + 9, ty, col);
                     break;
                 }
                 case K_SLIDER: {
-                    Sao.row(x, y, w, h, hov);
+                    Skin.row(x, y, w, h, hov);
                     SliderSetting ss = (SliderSetting) s;
                     int tx = trackX(this);
                     int vx0 = tx - 44;
                     String val = ss.display();
-                    Sao.box(vx0, y + 3, 38, h - 6, 3, Sao.STROKE, Sao.FIELD);
+                    Skin.box(vx0, y + 3, 38, h - 6, 3, Skin.STROKE, Skin.FIELD);
                     String vt = fr.trimStringToWidth(val, 34);
-                    fr.drawStringWithShadow(vt, vx0 + (38 - fr.getStringWidth(vt)) / 2f, ty, Sao.TEXT);
+                    fr.drawStringWithShadow(vt, vx0 + (38 - fr.getStringWidth(vt)) / 2f, ty, Skin.TEXT);
                     fr.drawStringWithShadow(fr.trimStringToWidth(Lang.vi(s.label), Math.max(10, vx0 - x - 14)), x + 9, ty, col);
                     int ly = y + h / 2;
                     int hx = tx + Math.round((float) ss.ratio() * (TRACK_W - 8));
                     Draw.rrect(tx, ly - 1, tx + TRACK_W, ly + 2, 1, 0xFF3A3F45);
                     Draw.rrect(tx, ly - 1, hx + 4, ly + 2, 1, acc);
-                    Draw.rrect(hx, y + 4, hx + 8, y + h - 4, 3, Draw.lerp(0xFFE8EAEC, Sao.LIGHT, hov));
+                    Draw.rrect(hx - 1, y + 4, hx + 9, y + h - 4, 4, Draw.lerp(0xFFE4E7EA, acc, hov));
+                    Draw.rrect(hx + 1, y + 6, hx + 7, y + h - 6, 2, 0xFFFFFFFF);
                     break;
                 }
                 default: {
-                    int style = kind == K_DONE ? Sao.PRIMARY : kind == K_RESET ? Sao.DANGER : Sao.NORMAL;
-                    Sao.button(fr, x, y, w, h, displayString, hov, style);
+                    int style = kind == K_DONE ? Skin.PRIMARY : kind == K_RESET ? Skin.DANGER : Skin.NORMAL;
+                    Skin.button(fr, x, y, w, h, displayString, hov, style);
                     break;
                 }
             }
@@ -200,9 +205,9 @@ public class MenuScreen extends GuiScreen {
 
     /** Công tắc dạng viên thuốc: núm trượt, nền màu nhấn khi bật; a = 0..1 để trượt mượt. */
     private static void drawSwitch(int tx, int sy, float a) {
-        Draw.rrect(tx, sy, tx + 24, sy + 12, 6, Draw.lerp(0xFF3A3F45, Sao.ACCENT, a));
+        Draw.rrect(tx, sy, tx + 24, sy + 12, 6, Draw.lerp(0xFF3A3F45, Draw.ACCENT, a));
         int kx = tx + 2 + Math.round(12 * a);
-        Draw.rrect(kx, sy + 2, kx + 8, sy + 10, 4, Draw.lerp(0xFFF2F2F2, Sao.onAccent(), a));
+        Draw.rrect(kx, sy + 2, kx + 8, sy + 10, 4, 0xFFFFFFFF);
     }
 
     /** Thanh trượt phẳng (vẽ trong Btn.drawButton), kéo bằng chuột trái. */
@@ -360,7 +365,7 @@ public class MenuScreen extends GuiScreen {
 
     private void requestClose() {
         if (closing) return;
-        sfx("note.harp", 1.0F);
+        play("menu.close");
         if (!AnimationsModule.menu()) {
             mc.displayGuiScreen(null);
             return;
@@ -378,18 +383,23 @@ public class MenuScreen extends GuiScreen {
         return new Btn(kind, w, text);
     }
 
-    /** Phát âm thanh vanilla với cao độ tuỳ chỉnh (chuông nhẹ kiểu SAO). */
-    private void sfx(String name, float pitch) {
-        mc.getSoundHandler().playSound(net.minecraft.client.audio.PositionedSoundRecord.create(
-                new net.minecraft.util.ResourceLocation(name), pitch));
+    /** Phát âm thanh menu riêng (assets/lunarlite/sounds/menu/*.ogg, khai báo trong sounds.json). */
+    private void play(String ev) {
+        net.minecraft.util.ResourceLocation loc = new net.minecraft.util.ResourceLocation("lunarlite", ev);
+        if (mc.thePlayer != null) {
+            mc.getSoundHandler().playSound(net.minecraft.client.audio.PositionedSoundRecord.create(loc,
+                    (float) mc.thePlayer.posX, (float) mc.thePlayer.posY, (float) mc.thePlayer.posZ));
+        } else {
+            mc.getSoundHandler().playSound(net.minecraft.client.audio.PositionedSoundRecord.create(loc, 1.0F));
+        }
     }
 
     private void click() {
-        sfx("note.harp", 1.6F);
+        play("menu.click");
     }
 
     private void sfxToggle(boolean on) {
-        sfx("note.pling", on ? 2.0F : 1.0F);
+        play(on ? "menu.on" : "menu.off");
     }
 
     private boolean soundOpened;
@@ -569,7 +579,7 @@ public class MenuScreen extends GuiScreen {
 
     private void openModule(Module m) {
         if (m == null) return;
-        sfx("note.pling", 1.8F);
+        play("menu.select");
         module = m;
         lastModule = m;
         detail = true;
@@ -579,7 +589,7 @@ public class MenuScreen extends GuiScreen {
     }
 
     private void goBack() {
-        sfx("note.harp", 1.2F);
+        play("menu.back");
         detail = false;
         active = null;
         dragBar = false;
@@ -821,8 +831,7 @@ public class MenuScreen extends GuiScreen {
     public void initGui() {
         if (!soundOpened) {
             soundOpened = true;
-            sfx("note.harp", 1.5F);
-            sfx("note.pling", 2.0F);
+            play("menu.open");
         }
         startBlur();
         rebuild();
@@ -857,6 +866,8 @@ public class MenuScreen extends GuiScreen {
         if (blurOn) drawGradientRect(0, 0, width, height, Draw.mulAlpha(0x40000000, op), Draw.mulAlpha(0x55000000, op));
         else drawGradientRect(0, 0, width, height, Draw.mulAlpha(0xC0101214, op), Draw.mulAlpha(0xD0101214, op));
 
+        drawBackdrop(op);
+
         float k = AnimationsModule.menu() ? 0.35f : 1f;
         setScroll += (setTarget - setScroll) * k;
         if (Math.abs(setTarget - setScroll) < 0.4f) setScroll = setTarget;
@@ -873,9 +884,40 @@ public class MenuScreen extends GuiScreen {
         GlStateManager.color(1f, 1f, 1f, 1f);
     }
 
+    /** Nền kiểu Aincrad: tối viền, hạt sáng bay chậm lên trên, tia sáng ngang quét ra khi mở menu. */
+    private void drawBackdrop(float op) {
+        long t = System.currentTimeMillis();
+        drawGradientRect(0, 0, width, height / 3, Draw.mulAlpha(0x70000000, op), 0);
+        drawGradientRect(0, height * 2 / 3, width, height, 0, Draw.mulAlpha(0x80000000, op));
+        int acc = Draw.ACCENT & 0xFFFFFF;
+        for (int i = 0; i < 40; i++) {
+            long h = (i + 1) * 2654435761L;
+            float fx = ((h >>> 4) & 1023) / 1023f;
+            float ph = ((h >>> 14) & 1023) / 1023f;
+            float per = 16000f + ((h >>> 24) & 7) * 2600f;
+            float life = (t / per + ph) % 1f;
+            float px = fx * width + (float) Math.sin(t / 2100.0 + i) * 7f;
+            float py = height * (1.04f - life * 1.08f);
+            int a = Math.round((float) Math.sin(Math.PI * life) * 0x78 * op);
+            if (a < 6) continue;
+            int sz = (i % 4 == 0) ? 2 : 1;
+            int col = (a << 24) | (i % 5 == 0 ? acc : 0xFFFFFF);
+            Gui.drawRect(Math.round(px), Math.round(py), Math.round(px) + sz, Math.round(py) + sz, col);
+        }
+        if (op < 0.98f) {
+            float e = closing ? op : 1f - op;
+            int bw = Math.round(width * (closing ? 0.5f + 0.4f * op : 0.9f * op + 0.05f));
+            int cy = height / 2;
+            int a = Math.round(0xE0 * (closing ? 1f - op : e)) & 0xFF;
+            Draw.fadeLine(width / 2 - bw / 2, cy - 1, bw, 0xFFFFFF, a / 3);
+            Draw.fadeLine(width / 2 - bw / 2, cy, bw, 0xFFFFFF, a);
+            Draw.fadeLine(width / 2 - bw / 2, cy + 1, bw, acc, a / 3);
+        }
+    }
+
     private void drawPanel(int mx, int my) {
         FontRenderer fr = fontRendererObj;
-        int acc = Sao.ACCENT;
+        int acc = Draw.ACCENT;
 
         // trang chủ: không có khung, chỉ tiêu đề + một hàng thẻ trên nền blur
         if (!detail || module == null) {
@@ -884,27 +926,28 @@ public class MenuScreen extends GuiScreen {
         }
 
         // khung ngoài bo góc + bóng + vệt màu nhấn mờ dần ở mép trên
-        Sao.shadow(VW, VH);
-        Sao.box(0, 0, VW, VH, 7, 0xFFE6E8EA, Sao.BG);
+        Skin.shadow(VW, VH);
+        Skin.glossBox(0, 0, VW, VH, 7, Skin.SILVER, Skin.BG);
+        Skin.brackets(4, 4, VW - 8, VH - 8, 10, Draw.withAlpha(Draw.ACCENT, 0xB0));
         Draw.fadeLine(18, 0, VW - 36, acc & 0xFFFFFF, 0xCC);
         Draw.fadeLine(18, 1, VW - 36, acc & 0xFFFFFF, 0x60);
 
         {
             int col = colorOf(module);
-            Sao.tile(PAD, 10, 30, module.id, col);
+            Skin.tile(PAD, 10, 30, module.id, col);
             String nm = Lang.vi(module.name);
             int avail = VW - 2 * PAD - 40 - 70;
             float sc = fr.getStringWidth(nm) * 1.6f > avail ? 1.2f : 1.6f;
-            drawScaled(nm, PAD + 38, 12, sc, Sao.TEXT);
-            fr.drawStringWithShadow(module.category.label, PAD + 38, 31, Sao.LIGHT);
+            drawScaled(nm, PAD + 38, 12, sc, Skin.TEXT);
+            fr.drawStringWithShadow(module.category.label, PAD + 38, 31, Draw.ACCENT_LIGHT);
 
             boolean onM = module.enabled;
             int bw = 56, bx = VW - PAD - bw;
-            Sao.box(bx, 14, bw, 22, 11, onM ? 0xFF8BD450 : 0xFF5A6068, onM ? 0xFF22301A : Sao.RAISED);
-            Draw.rrect(bx + 10, 22, bx + 16, 28, 3, onM ? Sao.GREEN : 0xFF80858B);
-            fr.drawStringWithShadow(onM ? "BẬT" : "TẮT", bx + 22, 21, onM ? Sao.GREEN : Sao.SOFT);
+            Skin.box(bx, 14, bw, 22, 11, onM ? Skin.GREEN : Skin.STROKE, onM ? 0xFF1F2B18 : Skin.RAISED);
+            Draw.rrect(bx + 10, 22, bx + 16, 28, 3, onM ? Skin.GREEN : Skin.DIM);
+            fr.drawStringWithShadow(onM ? "BẬT" : "TẮT", bx + 22, 21, onM ? Skin.GREEN : Skin.SOFT);
             for (int i = 0; i < descLines.length; i++) {
-                fr.drawStringWithShadow(descLines[i], PAD, 46 + i * 10, Sao.SOFT);
+                fr.drawStringWithShadow(descLines[i], PAD, 46 + i * 10, Skin.SOFT);
             }
         }
         Draw.fadeLine(PAD, 69, VW - 2 * PAD, 0xFFFFFF, 0x30);
@@ -914,11 +957,15 @@ public class MenuScreen extends GuiScreen {
 
     // ----------------------------------------------------------- trang chủ
 
-    /** Ô kiểu SAO: nền xám than, viền trắng mảnh; rê chuột / chọn thì viền cam. */
+    /** Thẻ kiểu SAO: xám than, viền bạc mảnh + vệt sáng mép trên; rê chuột / chọn thì viền cam và hiện dấu ngoặc ở góc. */
     private static void glass(int x, int y, int w, int h, float hv, int border) {
-        Draw.rrect(x, y, x + w, y + h, 6, Draw.lerp(0xB0202327, 0xD02E3338, hv));
-        Draw.ring(x, y, x + w, y + h, border != 0 ? border : Draw.lerp(0xAAE8EAEC, 0xFFF5A623, hv));
-        Draw.rrect(x + 4, y + 1, x + w - 4, y + 2, 0, 0x30FFFFFF); // vệt sáng mép trên
+        Draw.rrect(x, y, x + w, y + h, 6, Draw.lerp(0xE023272C, 0xF0343941, hv));
+        Draw.ring(x, y, x + w, y + h, border != 0 ? border : Draw.lerp(0xA0E4E7EA, Draw.ACCENT, hv));
+        Gui.drawRect(x + 6, y + 1, x + w - 6, y + 2, Draw.lerp(0x22FFFFFF, 0x44FFFFFF, hv));
+        if (hv > 0.02f || border != 0) {
+            float a = border != 0 ? Math.max(hv, 0.85f) : hv;
+            Skin.brackets(x - 2, y - 2, w + 4, h + 4, 6, Draw.lerp(Draw.ACCENT & 0xFFFFFF, Draw.ACCENT, a));
+        }
     }
 
     private void drawHome(int mx, int my) {
@@ -934,25 +981,32 @@ public class MenuScreen extends GuiScreen {
         // tiêu đề căn giữa phía trên
         String title = "Zhwii";
         float ts = 3.2f;
-        drawScaled(title, VW / 2f - fr.getStringWidth(title) * ts / 2f, 34, ts, 0xFFFFFFFF);
+        float tx0 = VW / 2f - fr.getStringWidth(title) * ts / 2f;
+        drawScaled(title, tx0, 36, ts, Draw.withAlpha(Draw.ACCENT, 0x66)); // quầng sáng màu nhấn phía dưới
+        drawScaled(title, tx0, 34, ts, 0xFFFFFFFF);
         String sub = inMods ? (tabCat == null ? "Tất cả" : tabCat.label) + " · " + shown.size() + " tính năng"
                 : "Client Menu";
         float ss = 0.75f;
         drawScaled(sub, VW / 2f - fr.getStringWidth(sub) * ss / 2f, 63, ss, 0xFFA8A8B8);
 
-        Draw.fadeLine(VW / 2 - 90, 76, 180, 0xFFFFFF, 0x90);
-        Draw.rrect(VW / 2 - 3, 74, VW / 2 + 3, 80, 3, Sao.ACCENT);
+        Draw.fadeLine(VW / 2 - 125, 77, 112, 0xFFFFFF, 0xA0);
+        Draw.fadeLine(VW / 2 + 13, 77, 112, 0xFFFFFF, 0xA0);
+        Skin.diamond(VW / 2, 77, 4, Draw.ACCENT);
+        Skin.diamond(VW / 2, 77, 2, 0xFFFFFFFF);
 
         // nút quay lại hàng nhóm (trái) + số tính năng đang bật (phải)
         if (inMods) {
             boolean hb = Draw.in(mx, my, PAD, 12, 56, 16);
             glass(PAD, 12, 56, 16, hb ? 1f : 0f, 0);
-            drawCentered("« Nhóm", PAD + 28, 16, hb ? Sao.TEXT : Sao.SOFT);
+            drawCentered("« Nhóm", PAD + 28, 16, hb ? Skin.TEXT : Skin.SOFT);
         }
-        String pill = en + "/" + total + " đang bật";
-        int pw = fr.getStringWidth(pill) + 16;
-        glass(VW - PAD - pw, 12, pw, 16, 0f, 0);
-        fr.drawStringWithShadow(pill, VW - PAD - pw + 8, 16, Sao.SOFT);
+        // khung trạng thái kiểu SAO: tên + thanh HP (số tính năng đang bật)
+        int gw = 150, gx = VW - PAD - gw, gy = 8;
+        Skin.glossBox(gx, gy, gw, 24, 5, 0xB0E4E7EA, 0xE01B1E22);
+        fr.drawStringWithShadow("Zhwii", gx + 8, gy + 4, Skin.TEXT);
+        String cnt = en + "/" + total;
+        fr.drawStringWithShadow(cnt, gx + gw - 8 - fr.getStringWidth(cnt), gy + 4, Skin.SOFT);
+        Draw.hbar(gx + 8, gy + 15, gw - 16, 5, total > 0 ? en / (float) total : 0f, Skin.GREEN, 0xFF0E1012);
 
         // ---- hàng thẻ duy nhất
         int n = itemCount();
@@ -960,7 +1014,7 @@ public class MenuScreen extends GuiScreen {
         int hi = itemAt(mx, my);
         if (hi != lastHoverSfx) {
             lastHoverSfx = hi;
-            if (hi >= 0 && !closing) sfx("note.harp", 2.0F);
+            if (hi >= 0 && !closing) play("menu.hover");
         }
         int fv = firstVisible();
         Module hoverMod = inMods && hi >= 0 ? shown.get(hi) : null;
@@ -1002,8 +1056,8 @@ public class MenuScreen extends GuiScreen {
         if (maxRowScroll() > 0f) {
             boolean canL = rowScroll > 0.5f, canR = rowScroll < maxRowScroll() - 0.5f;
             int ay = CARD_Y + CARD_H / 2 - 4;
-            if (canL) drawCentered("<", PAD / 2f, ay, Draw.in(mx, my, 0, CARD_Y, PAD, CARD_H) ? Sao.TEXT : Sao.DIM);
-            if (canR) drawCentered(">", VW - PAD / 2f, ay, Draw.in(mx, my, VW - PAD, CARD_Y, PAD, CARD_H) ? Sao.TEXT : Sao.DIM);
+            if (canL) drawCentered("<", PAD / 2f, ay, Draw.in(mx, my, 0, CARD_Y, PAD, CARD_H) ? Skin.TEXT : Skin.DIM);
+            if (canR) drawCentered(">", VW - PAD / 2f, ay, Draw.in(mx, my, VW - PAD, CARD_Y, PAD, CARD_H) ? Skin.TEXT : Skin.DIM);
             int ty = CARD_Y + CARD_H + 10;
             int thumb = Math.max(24, Math.round(paneW() * (paneW() / (float) itemsW())));
             int tx = PAD + Math.round((paneW() - thumb) * (rowScroll / maxRowScroll()));
@@ -1016,12 +1070,12 @@ public class MenuScreen extends GuiScreen {
         int fcol;
         if (hoverMod != null && hoverMod.description != null && hoverMod.description.length() > 0) {
             foot = Lang.vi(hoverMod.description);
-            fcol = Sao.SOFT;
+            fcol = Skin.SOFT;
         } else {
             foot = inMods
                     ? "Chuột trái: tuỳ chỉnh · Chuột phải: bật/tắt · ←/→ cuộn · ↑/↓ đổi nhóm · ESC quay lại"
                     : "Chọn một nhóm · Phím 1-6 · ESC đóng";
-            fcol = Sao.DIM;
+            fcol = Skin.DIM;
         }
         foot = fr.trimStringToWidth(foot, VW - 2 * PAD);
         drawCentered(foot, VW / 2f, HINT_Y, fcol);
@@ -1103,7 +1157,7 @@ public class MenuScreen extends GuiScreen {
     /** Một thẻ kính: biểu tượng lớn ở giữa, tên + gạch chân phía dưới, chấm trạng thái ở góc phải trên. */
     private void drawItem(int i, int x, int y, int w, int h, float hv) {
         FontRenderer fr = fontRendererObj;
-        int acc = Sao.ACCENT;
+        int acc = Draw.ACCENT;
         Module m = inMods ? shown.get(i) : null;
         Category c = inMods || i == 0 ? null : tabCats.get(i - 1);
 
@@ -1114,33 +1168,37 @@ public class MenuScreen extends GuiScreen {
             label = Lang.vi(m.name);
             icon = m.id;
             on = m.enabled;
-            iconCol = on ? colorOf(m) : 0xFF9AA0A6;
+            iconCol = on ? Draw.lerp(colorOf(m), 0xFF000000, 0.25f) : 0xFF6B727B;
         } else {
             label = tabLabel(i);
             icon = tabIcon(i);
             int[] cc = catCounts(c);
             on = cc[0] > 0;
-            iconCol = Draw.lerp(0xFFE8EAEC, Sao.LIGHT, hv);
+            iconCol = Draw.lerp(0xFF4A5059, Draw.ACCENT, hv);
         }
 
         boolean sel = m != null && m == module;
         int border = sel ? (acc & 0xFFFFFF) | 0xDD000000 : 0;
         glass(x, y, w, h, hv, border);
 
-        // biểu tượng lớn (có bóng nhẹ cho dễ đọc trên nền sáng)
+        // biểu tượng lớn trong nút tròn trắng (như menu SAO)
         int ix = x + (w - 32) / 2, iy = y + 13;
+        int cs = 38, cxx = x + (w - cs) / 2, cyy = y + 10;
+        int ring = sel ? acc : Draw.lerp(on && m != null ? Skin.GREEN : 0xFFAEB4BC, acc, hv);
+        Draw.rrect(cxx, cyy, cxx + cs, cyy + cs, cs / 2, ring);
+        Draw.rrect(cxx + 2, cyy + 2, cxx + cs - 2, cyy + cs - 2, cs / 2 - 2, Draw.lerp(0xFFEEF0F2, 0xFFFFFFFF, hv));
+        Gui.drawRect(cxx + 10, cyy + 4, cxx + cs - 10, cyy + 5, 0x55FFFFFF);
         ItemStack is = m == null ? stackFor(c, i) : stackFor(m);
         if (is != null) {
             drawItemIcon(is, ix, iy);
         } else if (m == null && c == Category.HUD) {
             drawTargetIcon(ix, iy);
         } else {
-            Icons.draw(icon, ix + 2, iy + 2, 4, 0x44000000);
             Icons.draw(icon, ix, iy, 4, iconCol);
         }
 
         // chấm trạng thái (góc phải trên)
-        int dot = on ? (m != null ? Sao.GREEN : acc) : 0x33FFFFFF;
+        int dot = on ? (m != null ? Skin.GREEN : acc) : 0x33FFFFFF;
         Draw.rrect(x + w - 10, y + 6, x + w - 5, y + 11, 2, dot);
 
         // tim yêu thích (góc trái trên của thẻ tính năng)
@@ -1155,7 +1213,7 @@ public class MenuScreen extends GuiScreen {
         fr.drawStringWithShadow(nm, cx - fr.getStringWidth(nm) / 2f, y + h - 19, 0xFFFFFFFF);
         int uw = m != null && on ? 24 : 12;
         int uy = y + h - 8;
-        int ucol = m != null ? (on ? Sao.GREEN : 0x66FFFFFF) : Draw.lerp(0x77FFFFFF, acc, hv);
+        int ucol = m != null ? (on ? Skin.GREEN : 0x66FFFFFF) : Draw.lerp(0x77FFFFFF, acc, hv);
         Gui.drawRect(Math.round(cx - uw / 2f), uy, Math.round(cx + uw / 2f), uy + 1, ucol);
     }
 
@@ -1173,7 +1231,7 @@ public class MenuScreen extends GuiScreen {
         int top = PANE_TOP, bottom = PANE_BOTTOM;
         FontRenderer fr = fontRendererObj;
 
-        Sao.box(px, top, pw, bottom - top, 5, 0xFF5A6068, 0xFF17191C);
+        Skin.box(px, top, pw, bottom - top, 5, 0xFF3C4148, Skin.FIELD);
 
         int sc = Math.round(setScroll);
         for (Object o : buttonList) {
@@ -1192,10 +1250,10 @@ public class MenuScreen extends GuiScreen {
                 continue;
             }
             int hy = ry + (BH - 8) / 2;
-            Draw.rrect(px + 10, hy, px + 13, hy + 8, 1, Sao.ACCENT);
+            Skin.diamond(px + 13, hy + 4, 4, Draw.ACCENT);
             String head = r.header.toUpperCase();
-            fr.drawStringWithShadow(head, px + 19, hy, Sao.LIGHT);
-            Gui.drawRect(px + 19 + fr.getStringWidth(head) + 6, hy + 4, px + pw - 14, hy + 5, 0x22FFFFFF);
+            fr.drawStringWithShadow(head, px + 22, hy, Draw.ACCENT_LIGHT);
+            Gui.drawRect(px + 22 + fr.getStringWidth(head) + 6, hy + 4, px + pw - 14, hy + 5, 0x22FFFFFF);
         }
         for (Object o : buttonList) {
             Btn b = (Btn) o;
@@ -1246,7 +1304,7 @@ public class MenuScreen extends GuiScreen {
         int tx1 = x + 1 + Math.round((5 - tw) / 2f);
         pill(x + 1, y + 2, x + 6, y + viewH - 2, 0x55000000); // rãnh
         int alpha = dragBar ? 0xFF : 0x99 + Math.round(0x33 * barAnim);
-        pill(tx1, by + 2, tx1 + tw, Math.min(y + viewH - 2, by + bh - 2), (alpha << 24) | (Sao.ACCENT & 0xFFFFFF));
+        pill(tx1, by + 2, tx1 + tw, Math.min(y + viewH - 2, by + bh - 2), (alpha << 24) | (Draw.ACCENT & 0xFFFFFF));
     }
 
     /** Bấm chuột trái vào thanh cuộn: bắt đầu kéo (bấm ngoài tay nắm thì nhảy tới đó). */
@@ -1378,6 +1436,8 @@ public class MenuScreen extends GuiScreen {
     }
 
     private void handle(Btn b, boolean right) {
+        if (b.kind == K_MODE || b.kind == K_COLOR || b.kind == K_ACTION || b.kind == K_RESET
+                || b.kind == K_EDIT || b.kind == K_IMPORT) click();
         switch (b.kind) {
             case K_DONE:
                 requestClose();
@@ -1498,66 +1558,5 @@ public class MenuScreen extends GuiScreen {
     @Override
     public boolean doesGuiPauseGame() {
         return false;
-    }
-
-    // ------------------------------------------------------------ giao diện SAO
-
-    /** Bảng màu + hàm vẽ kiểu Sword Art Online: xám than, viền trắng, điểm nhấn cam, xanh lá như thanh HP. */
-    private static final class Sao {
-        static final int ACCENT = 0xFFF5A623, LIGHT = 0xFFFFC857;
-        static final int TEXT = 0xFFF2F2F2, SOFT = 0xFFB9BDC2, DIM = 0xFF80858B;
-        static final int GREEN = 0xFF8BD450;
-        static final int BG = 0xFF1F2226, RAISED = 0xFF2B2F34, FIELD = 0xFF16181B, STROKE = 0xFF6A7078;
-        static final int PRIMARY = 0, DANGER = 1, NORMAL = 2;
-
-        static int onAccent() {
-            return 0xFFFFFFFF;
-        }
-
-        /** Khung bo góc: viền stroke, nền fill (đặc). */
-        static void box(int x, int y, int w, int h, int r, int stroke, int fill) {
-            Draw.rrect(x, y, x + w, y + h, r, stroke);
-            Draw.rrect(x + 1, y + 1, x + w - 1, y + h - 1, Math.max(0, r - 1), fill);
-        }
-
-        static void shadow(int w, int h) {
-            for (int i = 1; i <= 4; i++) {
-                Draw.rrect(-i, -i, w + i, h + i + 2, 7 + i, 0x16000000);
-            }
-        }
-
-        /** Hàng tuỳ chỉnh: nền xám, vạch cam bên trái khi rê chuột. */
-        static void row(int x, int y, int w, int h, float hov) {
-            Draw.rrect(x, y, x + w, y + h, 3, Draw.lerp(0xFF2B2F34, 0xFF3A3F45, hov));
-            Gui.drawRect(x, y + 3, x + 2, y + h - 3, Draw.lerp(0x00F5A623, 0xFFF5A623, hov));
-        }
-
-        static void button(FontRenderer fr, int x, int y, int w, int h, String text, float hov, int style) {
-            int stroke, fill, tc;
-            if (style == PRIMARY) {
-                stroke = Draw.lerp(0xFFFFC857, 0xFFFFFFFF, hov);
-                fill = Draw.lerp(ACCENT, LIGHT, hov);
-                tc = 0xFF2A1A00;
-            } else if (style == DANGER) {
-                stroke = Draw.lerp(0xFFB5524E, 0xFFFFFFFF, hov);
-                fill = Draw.lerp(0xFF7A2E2B, 0xFFA33B37, hov);
-                tc = 0xFFFFFFFF;
-            } else {
-                stroke = Draw.lerp(0xFFC9CDD2, ACCENT, hov);
-                fill = Draw.lerp(0xFF2B2F34, 0xFF3A3F45, hov);
-                tc = TEXT;
-            }
-            box(x, y, w, h, 5, stroke, fill);
-            String t = fr.trimStringToWidth(text, w - 8);
-            float tx = x + (w - fr.getStringWidth(t)) / 2f, ty = y + (h - 8) / 2f;
-            if (style == PRIMARY) fr.drawString(t, tx, ty, tc, false);
-            else fr.drawStringWithShadow(t, tx, ty, tc);
-        }
-
-        /** Ô biểu tượng vuông ở tiêu đề chi tiết. */
-        static void tile(int x, int y, int size, String id, int col) {
-            box(x, y, size, size, 6, 0xFFE6E8EA, 0xFF2B2F34);
-            Icons.draw(id, x + (size - 24) / 2, y + (size - 24) / 2, 3, col);
-        }
     }
 }

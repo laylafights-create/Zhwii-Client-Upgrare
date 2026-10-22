@@ -12,13 +12,13 @@ public final class Draw {
     // ---- Bảng màu chung của giao diện (menu + HUD editor): nền tối trung tính + một màu nhấn.
     // Màu nhấn do người chơi chọn trong module "Màu giao diện" (ThemeModule.apply() gọi setAccent mỗi lần vẽ).
     /** Màu nhấn chính: vạch chọn, vạch rê chuột, gạch chân, thanh cuộn. */
-    public static int ACCENT = 0xFF5B9BFF;
+    public static int ACCENT = 0xFFF5A623;
     /** Màu nhấn sáng hơn: chữ tiêu đề mục trên nền tối, thanh cuộn khi đang kéo. */
-    public static int ACCENT_LIGHT = 0xFFA9C8FF;
+    public static int ACCENT_LIGHT = 0xFFFACE86;
     /** Đường kẻ mảnh / nền nút phụ khi rê chuột. */
-    public static int ACCENT_DIM = 0x555B9BFF;
+    public static int ACCENT_DIM = 0x55F5A623;
     /** Phần đã điền của thanh trượt. */
-    public static int ACCENT_FILL = 0x665B9BFF;
+    public static int ACCENT_FILL = 0x66F5A623;
 
     /** Đặt màu nhấn (RGB); các biến thể sáng / mờ được tính tự động từ màu này. */
     public static void setAccent(int rgb) {
