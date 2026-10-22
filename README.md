@@ -1,6 +1,6 @@
 # Zhwii Client
 
-Client HUD / PvP tiếng Việt cho **Minecraft 1.8.9 (Forge)**. Giao diện tối giản, bám phong cách Minecraft gốc. Mọi tính năng đều bật/tắt và chỉnh được trong menu, các HUD kéo thả được tới vị trí tuỳ ý.
+Client HUD / PvP tiếng Việt cho **Minecraft 1.8.9 (Forge)**. Giao diện tối, bo góc, màu nhấn đổi được. Mọi tính năng đều bật/tắt và chỉnh được trong menu, các HUD kéo thả được tới vị trí tuỳ ý.
 
 > Mod chỉ chạy phía client và chỉ hỗ trợ Minecraft 1.8.9.
 
@@ -24,6 +24,17 @@ Client HUD / PvP tiếng Việt cho **Minecraft 1.8.9 (Forge)**. Giao diện t�
 - **Animations:** animation mở/đóng menu, hover nút, chuyển trang, hiện HUD, mở kho đồ / rương.
 - **Chat Bar:** thanh chat bo góc kiểu kính, chỉ hiện tin người chơi, avatar và giường team, tự dịch tin nhận sang tiếng Việt và tin gửi sang tiếng Anh, có thể kéo khung chat tới vị trí tuỳ ý.
 - **Màu giao diện:** chọn màu nhấn có sẵn hoặc tự trộn màu cho menu và trình chỉnh HUD.
+
+### Nhập / Xuất cài đặt
+
+Trong menu bấm nút **Nhập / Xuất** (hàng nút dưới cùng):
+
+- **Xuất file mới:** lưu cài đặt hiện tại thành hồ sơ `.cfg` trong `config/zhwii-profiles/`.
+- **Nhập file đã chọn:** chọn một hồ sơ trong danh sách rồi bấm nút (hoặc bấm đúp, hoặc `Enter`). Muốn dùng hồ sơ của người khác thì chép file `.cfg` của họ vào thư mục trên.
+- **Sao chép mã / Dán từ clipboard:** chép toàn bộ cài đặt thành văn bản để gửi qua chat, hoặc nhập lại từ văn bản đã sao chép.
+- **Mở thư mục:** mở `config/zhwii-profiles/` trong trình quản lý file.
+
+Trước mỗi lần nhập, cài đặt hiện tại được tự sao lưu vào `before-import.cfg`; nhập lại file này để hoàn tác. Chỉ các tính năng có mặt trong file mới bị ghi đè, tính năng không có trong file giữ nguyên.
 
 ### Tính năng khác
 
@@ -66,7 +77,8 @@ Repo có sẵn workflow GitHub Actions (`.github/workflows/build.yml`) để t�
 src/main/java/dev/lunarlite/
 ├── LunarLite.java   # lớp mod chính, đăng ký module, phím, sự kiện
 ├── Lang.java        # bản dịch tiếng Việt
-├── gui/             # menu, trình chỉnh vị trí HUD, hàm vẽ
+├── ProfileManager.java  # nhập / xuất hồ sơ cài đặt
+├── gui/             # menu, màn nhập/xuất, trình chỉnh vị trí HUD, hàm vẽ (Draw, Skin)
 ├── module/          # các module tính năng
 └── setting/         # kiểu cài đặt: bool, slider, mode, màu, cầu vồng
 ```
