@@ -1,4 +1,12 @@
 {
   "zoom.use":  { "category": "player", "sounds": [ { "name": "item/zoom_use", "volume": 1.0, "pitch": 1.0 } ] },
-  "zoom.stop": { "category": "player", "sounds": [ { "name": "item/zoom_use", "volume": 1.0, "pitch": 0.7 } ] }
+  "zoom.stop": { "category": "player", "sounds": [ { "name": "item/zoom_use", "volume": 1.0, "pitch": 0.7 } ] },
+  "menu.open":   { "category": "master", "sounds": [ { "name": "menu/open",   "volume": 0.7 } ] },
+  "menu.close":  { "category": "master", "sounds": [ { "name": "menu/close",  "volume": 0.6 } ] },
+  "menu.hover":  { "category": "master", "sounds": [ { "name": "menu/hover",  "volume": 0.35 } ] },
+  "menu.click":  { "category": "master", "sounds": [ { "name": "menu/click",  "volume": 0.6 } ] },
+  "menu.select": { "category": "master", "sounds": [ { "name": "menu/select", "volume": 0.6 } ] },
+  "menu.back":   { "category": "master", "sounds": [ { "name": "menu/back",   "volume": 0.55 } ] },
+  "menu.on":     { "category": "master", "sounds": [ { "name": "menu/on",     "volume": 0.6 } ] },
+  "menu.off":    { "category": "master", "sounds": [ { "name": "menu/off",    "volume": 0.55 } ] }
 }
