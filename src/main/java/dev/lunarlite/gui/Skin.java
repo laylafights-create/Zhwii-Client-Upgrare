@@ -13,16 +13,16 @@ public final class Skin {
     private Skin() {}
 
     // ---- bảng màu (tất cả ARGB)
-    public static final int BG = 0xF21B1E22;      // nền khung chính
-    public static final int RAISED = 0xFF272B31;  // ô nổi (thẻ, tab, nút)
-    public static final int HOVER = 0xFF343941;   // ô khi rê chuột
-    public static final int FIELD = 0xFF15171A;   // ô lõm (giá trị, rãnh)
-    public static final int STROKE = 0xFF5C626B;  // viền mảnh
-    public static final int SILVER = 0xFFE4E7EA;  // viền sáng (khung chính, thẻ)
+    public static final int BG = 0xF20B1420;      // nền khung chính
+    public static final int RAISED = 0xFF142333;  // ô nổi (thẻ, tab, nút)
+    public static final int HOVER = 0xFF1D3548;   // ô khi rê chuột
+    public static final int FIELD = 0xFF09111A;   // ô lõm (giá trị, rãnh)
+    public static final int STROKE = 0xFF397A91;  // viền mảnh
+    public static final int SILVER = 0xFFB8EFFF;  // viền sáng (khung chính, thẻ)
     public static final int TEXT = 0xFFF4F5F7;
-    public static final int SOFT = 0xFFC3C7CD;
-    public static final int DIM = 0xFF868C95;
-    public static final int GREEN = 0xFF8BD450;   // xanh HP của SAO
+    public static final int SOFT = 0xFFC5E8F2;
+    public static final int DIM = 0xFF7197A8;
+    public static final int GREEN = 0xFF8DFFCF;   // xanh HP của SAO
     public static final int RED = 0xFFFF6B6B;
 
     public static final int NORMAL = 0, PRIMARY = 1, DANGER = 2;

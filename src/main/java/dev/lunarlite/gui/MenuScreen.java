@@ -59,7 +59,7 @@ public class MenuScreen extends GuiScreen {
     // ---- màu
     /** Mỗi tính năng một màu nhấn riêng (theo thứ tự đăng ký). */
     private static final int[] PALETTE = {
-        0x4ADE80, 0xFFB347, 0x35D0BA, 0x5B9BFF, 0xFF6B7A, 0xB070FF, 0xFF8A3D, 0xFF5FA2, 0xA0AEC0, 0x4DA3FF
+        0x35D9FF, 0x8DFFCF, 0x58B8FF, 0xA6F3FF, 0x62E6D5, 0x78A9FF, 0xB4F7FF, 0x5BD6FF, 0xA0D9E8, 0x4DA3FF
     };
 
     private static final int K_DONE = 0, K_EDIT = 1, K_ENABLE = 2, K_BOOL = 3, K_MODE = 4, K_COLOR = 5,
@@ -979,7 +979,7 @@ public class MenuScreen extends GuiScreen {
         clampRow();
 
         // tiêu đề căn giữa phía trên
-        String title = "Zhwii";
+        String title = "SWORD ART ONLINE  //  ZHWII";
         float ts = 3.2f;
         float tx0 = VW / 2f - fr.getStringWidth(title) * ts / 2f;
         drawScaled(title, tx0, 36, ts, Draw.withAlpha(Draw.ACCENT, 0x66)); // quầng sáng màu nhấn phía dưới
