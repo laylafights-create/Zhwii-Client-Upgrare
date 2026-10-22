@@ -52,7 +52,7 @@ public class MenuScreen extends GuiScreen {
     private static final int VW = 520, VH = 300, PAD = 14;
     private static final int BH = 20, ROW = 24, GAP = 6, BAR_W = 6;
     // ---- các vùng theo trục dọc
-    private static final int CARD_Y = 98, CARD_H = 76, CARD_GAP = 8, CARDS_VIS = 6;
+    private static final int CARD_Y = 92, CARD_H = 76, CARD_GAP = 8, CARDS_VIS = 6;
     private static final int HINT_Y = 206, BTN_Y = 270;
     private static final int PANE_TOP = 78, PANE_BOTTOM = 264;
 
@@ -910,12 +910,13 @@ public class MenuScreen extends GuiScreen {
         clampRow();
 
         // tiêu đề căn giữa phía trên
-        String title = "ZHWII CLIENT";
-        float ts = 2.6f;
-        drawScaled(title, VW / 2f - fr.getStringWidth(title) * ts / 2f, 20, ts, Skin.TEXT);
+        String title = "Zhwii";
+        float ts = 3.2f;
+        drawScaled(title, VW / 2f - fr.getStringWidth(title) * ts / 2f, 34, ts, 0xFFFFFFFF);
         String sub = inMods ? (tabCat == null ? "Tất cả" : tabCat.label) + " · " + shown.size() + " tính năng"
-                : "Tuỳ chỉnh tính năng";
-        drawCentered(sub, VW / 2f, 52, Skin.DIM);
+                : "Client Menu";
+        float ss = 0.75f;
+        drawScaled(sub, VW / 2f - fr.getStringWidth(sub) * ss / 2f, 63, ss, 0xFFA8A8B8);
 
         // nút quay lại hàng nhóm (trái) + số tính năng đang bật (phải)
         if (inMods) {
@@ -935,12 +936,18 @@ public class MenuScreen extends GuiScreen {
         int fv = firstVisible();
         Module hoverMod = inMods && hi >= 0 ? shown.get(hi) : null;
 
-        clip(PAD - 2, CARD_Y - 10, paneW() + 4, CARD_H + 20);
+        clip(PAD - 2, CARD_Y - 24, paneW() + 4, CARD_H + 48);
         for (int i = 0; i < n; i++) {
             int x = itemX(i);
             if (x + cw < PAD - 2 || x > VW - PAD + 2) continue;
-            float st = stagger(Math.max(0, i - fv));
-            boolean over = i == hi && st > 0.7f;
+            // hiệu ứng lăn tròn: thẻ lăn từ mép trái vào vị trí, so le theo thứ tự
+            float sp = 1f;
+            if (AnimationsModule.menu()) {
+                float t = (System.currentTimeMillis() - animStart) * AnimationsModule.speed() / 560f
+                        - Math.min(Math.max(0, i - fv), 10) * 0.07f;
+                sp = AnimationsModule.ease(t);
+            }
+            boolean over = i == hi && sp > 0.9f;
             Object key = inMods ? (Object) shown.get(i) : (i == 0 ? (Object) "ALL" : (Object) tabCats.get(i - 1));
             Float cur = hovAnim.get(key);
             float hv = cur == null ? 0f : cur.floatValue();
@@ -948,14 +955,13 @@ public class MenuScreen extends GuiScreen {
             if (Math.abs((over ? 1f : 0f) - hv) < 0.01f) hv = over ? 1f : 0f;
             hovAnim.put(key, Float.valueOf(hv));
 
-            // hiệu ứng quay vòng tròn: thẻ xoay một vòng 360° quanh tâm và phóng to dần khi xuất hiện
-            float sp = Math.max(0f, Math.min(1f, st));
+            // lăn thật: góc xoay = quãng đường đã lăn / bán kính (thẻ lăn sang phải nên xoay theo chiều kim đồng hồ)
             float ccx = x + cw / 2f, ccy = CARD_Y + CARD_H / 2f;
-            float zoom = 0.2f + 0.8f * sp;
+            float dx = -(1f - sp) * (x - (PAD - cw));
+            float roll = (float) Math.toDegrees(dx / (cw * 0.8f));
             GlStateManager.pushMatrix();
-            GlStateManager.translate(ccx, ccy - hv * 3f, 0f);
-            GlStateManager.rotate((1f - sp) * 360f, 0f, 0f, 1f);
-            GlStateManager.scale(zoom, zoom, 1f);
+            GlStateManager.translate(ccx + dx, ccy - hv * 3f, 0f);
+            GlStateManager.rotate(roll, 0f, 0f, 1f);
             GlStateManager.translate(-ccx, -ccy, 0f);
             drawItem(i, x, CARD_Y, cw, CARD_H, hv);
             GlStateManager.popMatrix();
@@ -996,15 +1002,56 @@ public class MenuScreen extends GuiScreen {
 
     /** Vật phẩm / khối Minecraft đại diện cho từng nhóm (null = dùng biểu tượng vẽ tay). */
     private ItemStack stackFor(Category c, int i) {
-        if (c == null) return i == 0 ? new ItemStack(Items.nether_star) : null;
-        String k = (c.name() + " " + c.label).toLowerCase();
-        if (k.contains("pvp") || k.contains("combat") || k.contains("chiến")) return new ItemStack(Items.diamond_sword);
-        if (k.contains("block") || k.contains("khối")) return new ItemStack(Blocks.obsidian);
-        if (k.contains("gear") || k.contains("armor") || k.contains("giáp") || k.contains("trang bị")) return new ItemStack(Items.iron_chestplate);
-        if (k.contains("hud")) return new ItemStack(Items.clock);
-        if (k.contains("misc") || k.contains("khác")) return new ItemStack(Items.enchanted_book);
-        if (k.contains("effect") || k.contains("hiệu ứng")) return new ItemStack(Items.potionitem, 1, 8194);
+        if (c == null) return i == 0 ? new ItemStack(Blocks.obsidian) : null;
+        switch (c) {
+            case PVP: return new ItemStack(Items.iron_sword);
+            case VISUAL: return new ItemStack(Items.chainmail_chestplate);
+            case EFFECT: return new ItemStack(Items.potionitem, 1, 8194);
+            case UTILITY: return new ItemStack(Items.enchanted_book);
+            default: return null; // HUD: vẽ khối "target" riêng (1.8.9 không có item này)
+        }
+    }
+
+    /** Vật phẩm Minecraft đại diện cho từng tính năng (null = dùng biểu tượng vẽ tay). */
+    private static ItemStack stackFor(Module m) {
+        String id = m.id;
+        if ("keystrokes".equals(id)) return new ItemStack(Blocks.stone_button);
+        if ("cps".equals(id)) return new ItemStack(Blocks.lever);
+        if ("bowtrajectory".equals(id)) return new ItemStack(Items.bow);
+        if ("targetinfo".equals(id)) return new ItemStack(Items.skull, 1, 3);
+        if ("combo".equals(id)) return new ItemStack(Items.fire_charge);
+        if ("killboard".equals(id)) return new ItemStack(Items.diamond_sword);
+        if ("aimassist".equals(id)) return new ItemStack(Items.compass);
+        if ("enemy_detector".equals(id)) return new ItemStack(Items.spider_eye);
+        if ("armor".equals(id)) return new ItemStack(Items.iron_chestplate);
+        if ("hide_armor".equals(id)) return new ItemStack(Items.leather_chestplate);
+        if ("potions".equals(id)) return new ItemStack(Items.potionitem, 1, 8194);
+        if ("itempickup".equals(id)) return new ItemStack(Blocks.hopper);
+        if ("ping".equals(id)) return new ItemStack(Items.redstone);
+        if ("serverip".equals(id)) return new ItemStack(Items.name_tag);
+        if ("scoreboard".equals(id)) return new ItemStack(Items.sign);
+        if ("togglesprint".equals(id)) return new ItemStack(Items.iron_boots);
+        if ("zoom".equals(id)) return new ItemStack(Items.ender_eye);
+        if ("fullbright".equals(id)) return new ItemStack(Blocks.glowstone);
+        if ("blockoutline".equals(id)) return new ItemStack(Blocks.glass);
+        if ("farhorizons".equals(id)) return new ItemStack(Items.map);
+        if ("itemphysics".equals(id)) return new ItemStack(Items.apple);
+        if ("animations".equals(id)) return new ItemStack(Items.clock);
+        if ("hotbar_animation".equals(id)) return new ItemStack(Blocks.crafting_table);
+        if ("chatbar".equals(id)) return new ItemStack(Items.writable_book);
+        if ("guitheme".equals(id)) return new ItemStack(Items.dye, 1, 5);
+        if ("velocity".equals(id)) return new ItemStack(Items.slime_ball);
+        if ("bridge".equals(id)) return new ItemStack(Blocks.cobblestone);
         return null;
+    }
+
+    /** Khối "target" (bia bắn) vẽ bằng các vòng vuông đồng tâm, 32x32 tại (x, y). */
+    private static void drawTargetIcon(int x, int y) {
+        int[] inset = {0, 2, 6, 10, 13};
+        int[] col = {0xFF7A4A44, 0xFFE9D6CE, 0xFFD2584A, 0xFFE9D6CE, 0xFFD2584A};
+        for (int i = 0; i < inset.length; i++) {
+            Gui.drawRect(x + inset[i], y + inset[i], x + 32 - inset[i], y + 32 - inset[i], col[i]);
+        }
     }
 
     /** Vẽ item Minecraft phóng to 2x (32px) tại (x, y). */
@@ -1053,9 +1100,11 @@ public class MenuScreen extends GuiScreen {
 
         // biểu tượng lớn (có bóng nhẹ cho dễ đọc trên nền sáng)
         int ix = x + (w - 32) / 2, iy = y + 13;
-        ItemStack is = m == null ? stackFor(c, i) : null;
+        ItemStack is = m == null ? stackFor(c, i) : stackFor(m);
         if (is != null) {
             drawItemIcon(is, ix, iy);
+        } else if (m == null && c == Category.HUD) {
+            drawTargetIcon(ix, iy);
         } else {
             Icons.draw(icon, ix + 2, iy + 2, 4, 0x44000000);
             Icons.draw(icon, ix, iy, 4, iconCol);
