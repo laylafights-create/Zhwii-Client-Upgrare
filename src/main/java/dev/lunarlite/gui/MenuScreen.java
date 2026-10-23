@@ -49,12 +49,12 @@ public class MenuScreen extends GuiScreen {
     };
 
     // ---- khung ảo
-    private static final int VW = 520, VH = 300, PAD = 14;
+    private static final int VW = 520, VH = 254, PAD = 14;
     private static final int BH = 26, ROW = 30, GAP = 6, BAR_W = 6;
     // ---- các vùng theo trục dọc
     private static final int CARD_Y = 92, CARD_H = 76, CARD_GAP = 8, CARDS_VIS = 6;
     private static final int HINT_Y = 206, BTN_Y = 270;
-    private static final int PANE_TOP = 78, PANE_BOTTOM = 284;
+    // vùng cuộn của bảng tuỳ chỉnh: đáy thẳng hàng với thẻ nhân vật và danh sách (LPY + LPH)
 
     // ---- màu
     /** Mỗi tính năng một màu nhấn riêng (theo thứ tự đăng ký). */
@@ -457,7 +457,9 @@ public class MenuScreen extends GuiScreen {
     private float ctrCur;
 
     private float ui() {
-        return Math.min(MENU_SCALE, Math.min((width - 8f) / VW, (height - 8f) / VH));
+        // mở tuỳ chỉnh thì cụm rộng thêm HOME_OFF px: tính vào bề rộng để không bị cắt mép màn hình khi GUI scale lớn
+        float vw = VW + HOME_OFF * dshift;
+        return Math.min(MENU_SCALE, Math.min((width - 8f) / vw, (height - 8f) / VH));
     }
 
     private int vx(int mx) {
@@ -489,8 +491,18 @@ public class MenuScreen extends GuiScreen {
         return VW - DETAIL_X - PAD - 10;
     }
 
+    /** Đáy vùng cuộn = đáy thẻ nhân vật / danh sách, để ba cột thẳng hàng. */
+    private int paneBottom() {
+        return LPY + LPH;
+    }
+
+    /** Đỉnh vùng cuộn: thẳng hàng với đỉnh thẻ nhân vật và danh sách (không còn ô tiêu đề / mô tả). */
+    private int paneTop() {
+        return LPY;
+    }
+
     private int setViewH() {
-        return PANE_BOTTOM - PANE_TOP;
+        return paneBottom() - paneTop();
     }
 
     // ----------------------------------------------------------- nhóm + danh sách
@@ -1116,31 +1128,7 @@ public class MenuScreen extends GuiScreen {
         GlStateManager.translate((1f - AnimationsModule.easeOutBack(dshift)) * 90f, 0f, 0f);
         final int PX = paneX(), PW = paneW();
         long tn = System.currentTimeMillis();
-        // cửa sổ SAO phủ toàn bộ trang chi tiết
-        Skin.saoRow(PX, 4, PW, 36, 0f);
-        if (descLines.length > 0) Skin.saoRow(PX, 46, PW, descLines.length * 10 + 6, 0f);
-        {
-            boolean onM = module.enabled;
-            Skin.saoDisc(PX + 22, 22, 14f, SaoIcons.forModule(module), onM ? 0xFF3FB86F : 0xFF9AA0A6);
-            String nm = Lang.vi(module.name);
-            int avail = PW - 44 - 58;
-            int nw = Math.max(1, fr.getStringWidth(nm));
-            float sc = nw * 1.5f > avail ? 1.15f : 1.5f;
-            if (nw * sc > avail) sc = Math.max(0.8f, avail / (float) nw);
-            GlStateManager.pushMatrix();
-            GlStateManager.translate(PX + 44, 7f, 0f);
-            GlStateManager.scale(sc, sc, 1f);
-            fr.drawString(nm, 0, 0, Skin.INK, false);
-            GlStateManager.popMatrix();
-            fr.drawString(module.category.label, PX + 44, 26, Skin.INK_DIM, false);
-
-            int bw = 46, bx = (PX + PW) - bw - 8;
-            Skin.saoPill(fr, bx, 12, bw, 20, onM, tn);
-            for (int i = 0; i < descLines.length; i++) {
-                fr.drawString(descLines[i], PX + 8, 49 + i * 10, Skin.INK_SOFT, false);
-            }
-        }
-
+        // đã bỏ ô tiêu đề + ô mô tả phía trên: tên tính năng đã hiện ở danh sách bên trái, công tắc nằm ở hàng "Bật tính năng"
         drawDetail(mx, my);
         GlStateManager.popMatrix();
     }
@@ -1822,7 +1810,7 @@ public class MenuScreen extends GuiScreen {
 
     private void drawDetail(int mx, int my) {
         int px = paneX(), pw = paneW();
-        int top = PANE_TOP, bottom = PANE_BOTTOM;
+        int top = paneTop(), bottom = paneBottom();
         FontRenderer fr = fontRendererObj;
 
 
@@ -1906,8 +1894,8 @@ public class MenuScreen extends GuiScreen {
         int viewH = setViewH();
         if (contentH <= viewH) return false;
         int x = barX();
-        if (mx < x - 3 || mx >= x + BAR_W + 2 || my < PANE_TOP || my >= PANE_TOP + viewH) return false;
-        int by = thumbY(PANE_TOP, viewH, contentH, setScroll), bh = thumbH(viewH, contentH);
+        if (mx < x - 3 || mx >= x + BAR_W + 2 || my < paneTop() || my >= paneTop() + viewH) return false;
+        int by = thumbY(paneTop(), viewH, contentH, setScroll), bh = thumbH(viewH, contentH);
         dragBar = true;
         dragOff = (my >= by && my < by + bh) ? my - by : bh / 2;
         dragTo(my);
@@ -1917,7 +1905,7 @@ public class MenuScreen extends GuiScreen {
     private void dragTo(int my) {
         int viewH = setViewH();
         int range = Math.max(1, viewH - thumbH(viewH, contentH));
-        float v = (my - dragOff - PANE_TOP) / (float) range * (contentH - viewH);
+        float v = (my - dragOff - paneTop()) / (float) range * (contentH - viewH);
         setTarget = setScroll = v;
         clampScroll();
     }
@@ -1939,7 +1927,7 @@ public class MenuScreen extends GuiScreen {
     }
 
     private boolean inPane(int mx, int my) {
-        return mx >= paneX() && mx < paneX() + paneW() && my >= PANE_TOP && my < PANE_BOTTOM;
+        return mx >= paneX() && mx < paneX() + paneW() && my >= paneTop() && my < paneBottom();
     }
 
     @Override
