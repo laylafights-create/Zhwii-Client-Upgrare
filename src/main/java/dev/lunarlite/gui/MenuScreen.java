@@ -944,6 +944,10 @@ public class MenuScreen extends GuiScreen {
 
             boolean onM = module.enabled;
             int bw = 56, bx = VW - PAD - bw;
+            if (onM) {
+                int ga = 0x14 + Math.round(0x1C * (0.5f + 0.5f * (float) Math.sin(System.currentTimeMillis() / 450.0)));
+                Draw.rrect(bx - 3, 11, bx + bw + 3, 39, 14, (ga << 24) | 0x8DFFCF);
+            }
             Skin.box(bx, 14, bw, 22, 11, onM ? Skin.GREEN : Skin.STROKE, onM ? 0xFF1F2B18 : Skin.RAISED);
             Draw.rrect(bx + 10, 22, bx + 16, 28, 3, onM ? Skin.GREEN : Skin.DIM);
             fr.drawStringWithShadow(onM ? "BẬT" : "TẮT", bx + 22, 21, onM ? Skin.GREEN : Skin.SOFT);
@@ -952,6 +956,12 @@ public class MenuScreen extends GuiScreen {
             }
         }
         Draw.fadeLine(PAD, 69, VW - 2 * PAD, 0xFFFFFF, 0x30);
+        { // vệt sáng chạy dọc đường kẻ dưới tiêu đề
+            long tn = System.currentTimeMillis();
+            int sw = 70, span = VW - 2 * PAD - sw;
+            int sx = PAD + Math.round((tn % 2600L) / 2600f * span);
+            Draw.fadeLine(sx, 69, sw, Draw.ACCENT & 0xFFFFFF, 0xA0);
+        }
 
         drawDetail(mx, my);
     }
@@ -1001,6 +1011,16 @@ public class MenuScreen extends GuiScreen {
     }
 
     private boolean actionsOpen;
+
+    /** Số tính năng của nút tròn i (0 = tất cả). */
+    private int countIn(int i) {
+        if (i <= 0) return LunarLite.MODULES.size();
+        if (i > tabCats.size()) return 0;
+        Category c = tabCats.get(i - 1);
+        int n = 0;
+        for (Module m : LunarLite.MODULES) if (m.category == c) n++;
+        return n;
+    }
     /** Hiệu ứng bấm nút tròn: co lại rồi bật ra + gợn sáng lan ra. */
     private int pressCircle = -1;
     private long pressAt;
@@ -1133,6 +1153,16 @@ public class MenuScreen extends GuiScreen {
         hpAnim += (hpT - hpAnim) * (AnimationsModule.menu() ? 0.07f : 1f);
         if (Math.abs(hpT - hpAnim) < 0.002f) hpAnim = hpT;
         Draw.hbar(CPX + 14, CPY + 15, CPW - 28, 3, hpAnim, 0xFF3FBF7F, 0xFFCFD2D5);
+        // dòng phụ: nhóm đang rê / đang chọn + số tính năng
+        int subI = hc >= 0 ? hc : selCircle();
+        String sub = subI < 0 ? "Chọn một nhóm bên phải"
+                : subI == tabCount() ? "Thao tác nhanh"
+                : Lang.vi(tabLabel(subI)) + " · " + countIn(subI) + " tính năng";
+        GlStateManager.pushMatrix();
+        GlStateManager.translate(CPX + CPW / 2f - fr.getStringWidth(sub) * 0.375f, CPY + 28f, 0f);
+        GlStateManager.scale(0.75f, 0.75f, 1f);
+        fr.drawString(sub, 0, 0, hc >= 0 ? 0xFF2E6B8A : 0xFF7A8087, false);
+        GlStateManager.popMatrix();
         // dấu ngoặc ở góc thẻ nhân vật, nhấp nháy nhẹ như cửa sổ hologram
         int brA = 120 + Math.round(70f * (float) Math.sin(now / 520.0));
         Skin.brackets(CPX - 3, CPY - 3, CPW + 6, CPH + 8, 7, (brA << 24) | (Draw.ACCENT & 0xFFFFFF));
@@ -1166,6 +1196,30 @@ public class MenuScreen extends GuiScreen {
             fcol = Skin.DIM;
         }
         drawCentered(fr.trimStringToWidth(foot, VW - 2 * PAD), VW / 2f, 248, fcol);
+        // thanh trạng thái dưới cùng: tên + phiên bản, phím tắt, số tính năng bật
+        float barA = AnimationsModule.menu() ? Math.min(1f, Math.max(0f, ((now - openStart) * AnimationsModule.speed() - 250f) / 300f)) : 1f;
+        if (barA > 0.05f) {
+            int ba = Math.round(0x70 * barA);
+            Draw.fadeLine(PAD, 262, VW - 2 * PAD, 0xB8EFFF, ba);
+            int dc = (Math.round(255 * barA) << 24) | 0x7C99A8;
+            GlStateManager.pushMatrix();
+            GlStateManager.translate(PAD, 267f, 0f);
+            GlStateManager.scale(0.8f, 0.8f, 1f);
+            fr.drawString("ZHWII CLIENT", 0, 0, dc, false);
+            GlStateManager.popMatrix();
+            String hint = "↑↓ đổi nhóm   ·   Chuột phải: bật/tắt   ·   Esc: đóng";
+            GlStateManager.pushMatrix();
+            GlStateManager.translate(VW / 2f - fr.getStringWidth(hint) * 0.4f, 267f, 0f);
+            GlStateManager.scale(0.8f, 0.8f, 1f);
+            fr.drawString(hint, 0, 0, dc, false);
+            GlStateManager.popMatrix();
+            String cnt = en + "/" + total + " bật";
+            GlStateManager.pushMatrix();
+            GlStateManager.translate(VW - PAD - fr.getStringWidth(cnt) * 0.8f, 267f, 0f);
+            GlStateManager.scale(0.8f, 0.8f, 1f);
+            fr.drawString(cnt, 0, 0, (Math.round(255 * barA) << 24) | 0x8DFFCF, false);
+            GlStateManager.popMatrix();
+        }
 
         // ---- cột nút tròn
         GlStateManager.pushMatrix();
@@ -1252,6 +1306,18 @@ public class MenuScreen extends GuiScreen {
                 int len = Math.max(1, Math.round(9 * sv));
                 for (int c = 0; c < len; c++) Gui.drawRect(ax + c, cy - c, ax + c + 1, cy + c + 1, tc);
             }
+            if (!act) { // huy hiệu số tính năng ở góc dưới phải nút
+                String bt = String.valueOf(countIn(i));
+                int bwid = Math.max(10, Math.round(fr.getStringWidth(bt) * 0.7f) + 6);
+                int bx = CX + CR - bwid + 6, by = cy + CR - 7;
+                Draw.rrect(bx - 1, by - 1, bx + bwid + 1, by + 10, 5, 0xFF0B1420);
+                Draw.rrect(bx, by, bx + bwid, by + 9, 4, Draw.lerp(0xFF2A3A4C, SAO_ORANGE, sv));
+                GlStateManager.pushMatrix();
+                GlStateManager.translate(bx + (bwid - fr.getStringWidth(bt) * 0.7f) / 2f, by + 1.5f, 0f);
+                GlStateManager.scale(0.7f, 0.7f, 1f);
+                fr.drawString(bt, 0, 0, 0xFFFFFFFF, false);
+                GlStateManager.popMatrix();
+            }
             GlStateManager.popMatrix();
 
             // nhãn nổi bên cạnh khi rê chuột (chỉ lúc cụm đang đứng giữa, chưa mở danh sách)
@@ -1298,6 +1364,16 @@ public class MenuScreen extends GuiScreen {
         }
         Draw.endScissor();
         GlStateManager.color(1f, 1f, 1f, 1f);
+        if (showList && listMax() > 0) { // thanh cuộn mảnh bên phải danh sách
+            int bx = LPX + LPW + 4;
+            int th = Math.max(14, lh * lh / Math.max(1, listContentH()));
+            int ty = ly + Math.round((lh - th) * (listScroll / (float) listMax()));
+            int sa = Math.round(255f * Math.min(1f, shift));
+            if (sa > 8) {
+                Draw.rrect(bx, ly, bx + 2, ly + lh, 1, (Math.round(0x33 * Math.min(1f, shift)) << 24) | 0xFFFFFF);
+                Draw.rrect(bx, ty, bx + 2, ty + th, 1, (sa << 24) | 0xF0A30A);
+            }
+        }
 
         drawFixedButtons(mx, my);
 
@@ -1346,13 +1422,26 @@ public class MenuScreen extends GuiScreen {
         Gui.drawRect(x, y, x + w, y + 1, 0x99FFFFFF);
         Gui.drawRect(x, y + h - 1, x + w, y + h, 0xFF7C838A);
         Gui.drawRect(x, y + h, x + w, y + h + 1, 0x44000000);
-        if (sel) Gui.drawRect(x, y, x + 3, y + h, SAO_ORANGE);
-        else if (hv > 0.02f) Gui.drawRect(x, y, x + 2, y + h, Draw.mulAlpha(Draw.ACCENT, hv));
+        long nowR = System.currentTimeMillis();
+        if (hv > 0.05f) { // vệt sáng quét ngang + gạch chân màu nhấn lan ra khi rê chuột
+            int sx = x + Math.round((nowR % 1500L) / 1500f * (w + 30)) - 30;
+            int x1 = Math.max(x, sx), x2 = Math.min(x + w, sx + 24);
+            if (x2 > x1) Gui.drawRect(x1, y + 1, x2, y + h - 1, Math.round(0x30 * hv) << 24 | 0xFFFFFF);
+            Gui.drawRect(x, y + h - 1, x + Math.round(w * hv), y + h, Draw.mulAlpha(Draw.ACCENT, hv));
+        }
+        if (sel) {
+            int pa2 = 0xC0 + Math.round(0x3F * (0.5f + 0.5f * (float) Math.sin(nowR / 300.0)));
+            Gui.drawRect(x, y, x + 3, y + h, (pa2 << 24) | 0xF0A30A);
+        } else if (hv > 0.02f) Gui.drawRect(x, y, x + 2, y + h, Draw.mulAlpha(Draw.ACCENT, hv));
 
         int cx = x + 18, cy = y + h / 2;
         Draw.rrect(cx - 12, cy - 12, cx + 12, cy + 12, 12, 0xFFFFFFFF);
         Draw.rrect(cx - 11, cy - 11, cx + 11, cy + 11, 11, on ? 0xFF2E6B4A : 0xFF39404C);
         SaoIcons.draw(SaoIcons.forModule(m), cx - 8, cy - 8, 0xFFFFFFFF);
+        if (on) { // chấm xanh báo đang bật ở góc nút tròn
+            Draw.rrect(cx + 5, cy + 5, cx + 12, cy + 12, 4, 0xFFFFFFFF);
+            Draw.rrect(cx + 6, cy + 6, cx + 11, cy + 11, 3, 0xFF3FBF7F);
+        }
 
         String nm = fit(Lang.vi(m.name), Math.round((w - 112) / 1.2f));
         GlStateManager.pushMatrix();
@@ -1363,7 +1452,12 @@ public class MenuScreen extends GuiScreen {
 
         String st = on ? "BẬT" : "TẮT";
         int pw = 34, px = x + w - pw - 24;
+        if (on) { // quầng xanh đập nhẹ quanh viên BẬT
+            int ga = 0x18 + Math.round(0x18 * (0.5f + 0.5f * (float) Math.sin(nowR / 420.0)));
+            Draw.rrect(px - 2, y + 4, px + pw + 2, y + h - 4, 9, (ga << 24) | 0x3FBF7F);
+        }
         Draw.rrect(px, y + 6, px + pw, y + h - 6, 7, on ? 0xFF3FBF7F : 0xFF8E949B);
+        Draw.rrect(on ? px + pw - 5 : px + 2, y + 8, on ? px + pw - 2 : px + 5, y + h - 8, 1, 0x88FFFFFF);
         fr.drawStringWithShadow(st, px + (pw - fr.getStringWidth(st)) / 2f, y + (h - 8) / 2, 0xFFFFFFFF);
 
         boolean fav = FAVS.contains(m.id);
