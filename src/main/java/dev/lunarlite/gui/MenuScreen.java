@@ -39,7 +39,7 @@ import org.lwjgl.input.Mouse;
  *   TRANG CHỦ : mỗi tính năng là một ô có biểu tượng riêng, số phím tắt 1-9 / 0, trạng thái BẬT / TẮT.
  *               Thanh nhóm ở trên lọc theo nhóm, ô chia thành từng trang (10 ô / trang).
  *   CHI TIẾT  : bấm một ô (hoặc nhấn phím số) để mở bảng tuỳ chỉnh của tính năng đó.
- * Chuột trái vào ô = mở tuỳ chỉnh, chuột phải = bật/tắt nhanh. ESC = quay lại / đóng menu.
+ * Chuột trái vào ô = hộp xác nhận bật/tắt, chuột phải = mở tuỳ chỉnh. ESC = quay lại / đóng menu.
  *
  * Toàn bộ giao diện được vẽ trong một khung ảo VW x VH rồi tự thu nhỏ cho vừa màn hình.
  */
@@ -612,6 +612,106 @@ public class MenuScreen extends GuiScreen {
         openModule(shown.get(j));
     }
 
+    // ----------------------------------------------------------- hộp xác nhận bật / tắt (kiểu hộp "Invite" của SAO)
+
+    private static final int DW = 214, DH = 122, DX = (VW - DW) / 2, DY = (VH - DH) / 2, DR = 13;
+    private Module confirmMod;
+    private long confirmAt;
+    private float okHov, noHov;
+
+    private void askToggle(Module m) {
+        if (m == null) return;
+        play("menu.select");
+        confirmMod = m;
+        confirmAt = System.currentTimeMillis();
+        okHov = noHov = 0f;
+    }
+
+    private void closeConfirm(boolean ok) {
+        Module m = confirmMod;
+        confirmMod = null;
+        if (ok && m != null) toggleModule(m);
+        else play("menu.back");
+    }
+
+    private boolean onOk(int mx, int my) {
+        int cx = DX + DW / 2 - 36, cy = DY + DH - 19;
+        return (mx - cx) * (mx - cx) + (my - cy) * (my - cy) <= (DR + 3) * (DR + 3);
+    }
+
+    private boolean onNo(int mx, int my) {
+        int cx = DX + DW / 2 + 36, cy = DY + DH - 19;
+        return (mx - cx) * (mx - cx) + (my - cy) * (my - cy) <= (DR + 3) * (DR + 3);
+    }
+
+    private void confirmClick(int mx, int my) {
+        if (onOk(mx, my)) closeConfirm(true);
+        else if (onNo(mx, my) || !Draw.in(mx, my, DX, DY, DW, DH)) closeConfirm(false);
+    }
+
+    private void drawConfirm(int mx, int my) {
+        FontRenderer fr = fontRendererObj;
+        float k = AnimationsModule.menu() ? 0.3f : 1f;
+        okHov += ((onOk(mx, my) ? 1f : 0f) - okHov) * k;
+        noHov += ((onNo(mx, my) ? 1f : 0f) - noHov) * k;
+        float pop = AnimationsModule.menu()
+                ? Math.max(0f, AnimationsModule.easeOutBack((System.currentTimeMillis() - confirmAt) * AnimationsModule.speed() / 220f)) : 1f;
+        Gui.drawRect(-VW, -VH, 2 * VW, 2 * VH, Math.round(0x70 * Math.min(1f, pop)) << 24);
+        GlStateManager.pushMatrix();
+        GlStateManager.translate(VW / 2f, VH / 2f, 0f);
+        GlStateManager.scale(pop, pop, 1f);
+        GlStateManager.translate(-VW / 2f, -VH / 2f, 0f);
+
+        boolean on = confirmMod.enabled;
+        Gui.drawRect(DX - 1, DY - 1, DX + DW + 1, DY + DH + 2, 0x66000000);
+        // thanh tiêu đề sáng
+        vgrad(DX, DY, DX + DW, DY + 22, 0xFFF6F7F8, 0xFFDEE0E2);
+        Gui.drawRect(DX, DY + 22, DX + DW, DY + 23, 0xFFB9BCBF);
+        String title = on ? "Tắt tính năng" : "Bật tính năng";
+        fr.drawString(title, DX + (DW - fr.getStringWidth(title)) / 2f, DY + 7, 0xFF3A3F45, false);
+        // thân xám
+        Gui.drawRect(DX, DY + 23, DX + DW, DY + DH - 38, 0xF28E9296);
+        Gui.drawRect(DX, DY + 23, DX + DW, DY + 24, 0x22000000);
+        String l1 = on ? "Bạn có muốn tắt" : "Bạn có muốn bật";
+        String l2 = fit(Lang.vi(confirmMod.name), DW - 24) + "?";
+        fr.drawStringWithShadow(l1, DX + (DW - fr.getStringWidth(l1)) / 2f, DY + 40, 0xFFFFFFFF);
+        fr.drawStringWithShadow(l2, DX + (DW - fr.getStringWidth(l2)) / 2f, DY + 54, 0xFFFFE2A8);
+        // chân hộp + hai nút tròn
+        vgrad(DX, DY + DH - 38, DX + DW, DY + DH, 0xFFF1F2F3, 0xFFDEE0E2);
+        Gui.drawRect(DX, DY + DH - 38, DX + DW, DY + DH - 37, 0xFFFFFFFF);
+        Draw.fadeLine(DX + 12, DY + DH - 37, DW - 24, Draw.ACCENT & 0xFFFFFF, 0x80);
+        int cy = DY + DH - 19;
+        int okx = DX + DW / 2 - 36, nox = DX + DW / 2 + 36;
+        // OK: xanh dương, vòng trắng
+        Draw.disc(okx, cy + 1.5f, DR + 2f, 0x30000000, 0x00000000);
+        if (okHov > 0.02f) Draw.disc(okx, cy, DR + 6f, Math.round(okHov * 80) << 24 | 0x2F7CF0, 0x002F7CF0);
+        Draw.disc(okx, cy, DR + 1.5f, 0xFFFFFFFF);
+        Draw.disc(okx, cy, DR, Draw.lerp(0xFF63A4FF, 0xFF8FC0FF, okHov), Draw.lerp(0xFF1F63D8, 0xFF2F7CF0, okHov));
+        Draw.circleRing(okx, cy, 4.2f, 6.2f, 0xFFFFFFFF);
+        // Huỷ: đỏ hồng, dấu X trắng
+        Draw.disc(nox, cy + 1.5f, DR + 2f, 0x30000000, 0x00000000);
+        if (noHov > 0.02f) Draw.disc(nox, cy, DR + 6f, Math.round(noHov * 80) << 24 | 0xE8506E, 0x00E8506E);
+        Draw.disc(nox, cy, DR + 1.5f, 0xFFFFFFFF);
+        Draw.disc(nox, cy, DR, Draw.lerp(0xFFFF8CA3, 0xFFFFA9BB, noHov), Draw.lerp(0xFFD93A5E, 0xFFE8506E, noHov));
+        Draw.line(nox - 4.5f, cy - 4.5f, nox + 4.5f, cy + 4.5f, 2.4f, 0xFFFFFFFF);
+        Draw.line(nox + 4.5f, cy - 4.5f, nox - 4.5f, cy + 4.5f, 2.4f, 0xFFFFFFFF);
+        Skin.brackets(DX - 3, DY - 3, DW + 6, DH + 6, 8, (0xB0 << 24) | (Draw.ACCENT & 0xFFFFFF));
+        GlStateManager.popMatrix();
+        GlStateManager.color(1f, 1f, 1f, 1f);
+    }
+
+    /** Màu riêng cho biểu tượng của từng tính năng (xanh lá, đỏ, cam, xanh dương, tím, ...). */
+    private static final int[] ICON_COLORS = {
+        0xFF3FB86F, 0xFFE8505B, 0xFFF0A30A, 0xFF3F8EF0, 0xFF9B59D6, 0xFF1FB5A8, 0xFFE0609E, 0xFFD9A400
+    };
+
+    private static int iconColor(Module m, boolean on) {
+        int i = LunarLite.MODULES.indexOf(m);
+        if (i < 0) i = 0;
+        int c = ICON_COLORS[i % ICON_COLORS.length];
+        return on ? c : Draw.lerp(c, 0xFF9AA0A6, 0.35f);
+    }
+
     private void toggleModule(Module m) {
         m.toggle();
         sfxToggle(m.enabled);
@@ -883,7 +983,8 @@ public class MenuScreen extends GuiScreen {
         GlStateManager.scale(kk, kk, 1f);
         GlStateManager.translate(-VW / 2f, -VH / 2f, 0f);
 
-        drawPanel(curMx, curMy);
+        drawPanel(confirmMod != null ? -9999 : curMx, confirmMod != null ? -9999 : curMy);
+        if (confirmMod != null) drawConfirm(curMx, curMy);
 
         GlStateManager.popMatrix();
         GlStateManager.color(1f, 1f, 1f, 1f);
@@ -1012,8 +1113,8 @@ public class MenuScreen extends GuiScreen {
 
     /** Nền hàng danh sách: chuyển màu dọc (sáng ở trên, đậm dần xuống dưới) thay vì một màu phẳng. */
     private void rowBg(int x, int y, int w, int h, float hv) {
-        int top = Draw.lerp(0xF0D2D6DB, 0xF0F6F8FA, hv);
-        int bot = Draw.lerp(0xF0B0B5BB, 0xF0DADFE3, hv);
+        int top = Draw.lerp(0xDEF4F4F5, 0xF2FFFFFF, hv);
+        int bot = Draw.lerp(0xD6E4E6E8, 0xEEF2F3F4, hv);
         drawGradientRect(x, y, x + w, y + h, top, bot);
         GlStateManager.enableBlend();
         GlStateManager.color(1f, 1f, 1f, 1f);
@@ -1310,7 +1411,7 @@ public class MenuScreen extends GuiScreen {
 
         // ---- bảng danh sách tính năng
         int ly = listY(), lh = listH();
-        clip(LPX - 4, ly, LPW + 14, lh);
+        clip(LPX - 12, ly, LPW + 22, lh);
         int sc = Math.round(listScroll);
         int fv = Math.max(0, sc / LSTEP);
         boolean showList = expanded || shift > 0.03f;
@@ -1392,52 +1493,32 @@ public class MenuScreen extends GuiScreen {
         FontRenderer fr = fontRendererObj;
         int x = LPX, w = LPW, h = LRH;
         boolean on = m.enabled;
-        rowBg(x, y, w, h, hv);
-        Gui.drawRect(x, y, x + w, y + 1, 0x99FFFFFF);
-        Gui.drawRect(x, y + h - 1, x + w, y + h, 0xFF7C838A);
-        Gui.drawRect(x, y + h, x + w, y + h + 1, 0x44000000);
-        long nowR = System.currentTimeMillis();
-        if (hv > 0.05f) { // vệt sáng quét ngang + gạch chân màu nhấn lan ra khi rê chuột
-            int sx = x + Math.round((nowR % 1500L) / 1500f * (w + 30)) - 30;
-            int x1 = Math.max(x, sx), x2 = Math.min(x + w, sx + 24);
-            if (x2 > x1) Gui.drawRect(x1, y + 1, x2, y + h - 1, Math.round(0x30 * hv) << 24 | 0xFFFFFF);
-            Gui.drawRect(x, y + h - 1, x + Math.round(w * hv), y + h, Draw.mulAlpha(Draw.ACCENT, hv));
-        }
+        // nền trắng mờ như menu SAO mẫu: sáng hơn khi rê chuột, cam khi đang chọn
         if (sel) {
-            int pa2 = 0xC0 + Math.round(0x3F * (0.5f + 0.5f * (float) Math.sin(nowR / 300.0)));
-            Gui.drawRect(x, y, x + 3, y + h, (pa2 << 24) | 0xF0A30A);
-        } else if (hv > 0.02f) Gui.drawRect(x, y, x + 2, y + h, Draw.mulAlpha(Draw.ACCENT, hv));
-
-        int cx = x + 18, cy = y + h / 2;
-        Draw.disc(cx, cy, 12.5f, 0xFFFFFFFF);
-        {
-            int cb = on ? 0xFF2E6B4A : 0xFF39404C;
-            Draw.disc(cx, cy, 11.3f, Draw.lerp(cb, 0xFFFFFFFF, 0.22f), Draw.lerp(cb, 0xFF000000, 0.2f));
-            Draw.disc(cx, cy - 5.5f, 5.5f, 0x40FFFFFF, 0x00FFFFFF);
+            vgrad(x, y, x + w, y + h, 0xF5F2A53A, 0xF5E0881C);
+            for (int c = 0; c < 9; c++) Gui.drawRect(x - 9 + c, y + h / 2 - c, x - 8 + c, y + h / 2 + c + 1, 0xFFE6E8EA);
+        } else {
+            rowBg(x, y, w, h, hv);
+            if (hv > 0.02f) Gui.drawRect(x, y, x + 2, y + h, Draw.mulAlpha(Draw.ACCENT, hv));
         }
+        Gui.drawRect(x, y, x + w, y + 1, 0xCCFFFFFF);
+        Gui.drawRect(x, y + h - 1, x + w, y + h, sel ? 0x55000000 : 0x55808890);
+        Gui.drawRect(x, y + h, x + w, y + h + 1, 0x22000000);
+
+        // biểu tượng: vòng tròn phẳng có màu + glyph trắng (xám khi tính năng đang tắt)
+        int cx = x + 19, cy = y + h / 2;
+        int base = on ? ICON_COLORS[Math.max(0, LunarLite.MODULES.indexOf(m)) % ICON_COLORS.length] : 0xFF9AA0A6;
+        Draw.disc(cx + 0.5f, cy + 1.5f, 13f, 0x28000000, 0x00000000);
+        Draw.disc(cx, cy, 12f, Draw.lerp(base, 0xFFFFFFFF, 0.18f), Draw.lerp(base, 0xFF000000, 0.08f));
+        Draw.disc(cx, cy - 5.5f, 5.5f, 0x30FFFFFF, 0x00FFFFFF);
         SaoIcons.draw(SaoIcons.forModule(m), cx - 8, cy - 8, 0xFFFFFFFF);
-        if (on) { // chấm xanh báo đang bật ở góc nút tròn
-            Draw.disc(cx + 8.5f, cy + 8.5f, 4f, 0xFFFFFFFF);
-            Draw.disc(cx + 8.5f, cy + 8.5f, 2.8f, 0xFF6FE3A6, 0xFF2FA866);
-        }
 
-        String nm = fit(Lang.vi(m.name), Math.round((w - 112) / 1.2f));
+        String nm = fit(Lang.vi(m.name), Math.round((w - 70) / 1.3f));
         GlStateManager.pushMatrix();
-        GlStateManager.translate(x + 36, y + (h - 10) / 2f + 1f, 0f);
-        GlStateManager.scale(1.2f, 1.2f, 1f);
-        fr.drawString(nm, 0, 0, 0xFF22262B, false);
+        GlStateManager.translate(x + 40, y + (h - 10) / 2f + 1f, 0f);
+        GlStateManager.scale(1.3f, 1.3f, 1f);
+        fr.drawString(nm, 0, 0, sel ? 0xFFFFFFFF : (on ? 0xFF2B3036 : 0xFF6A7178), sel);
         GlStateManager.popMatrix();
-
-        String st = on ? "BẬT" : "TẮT";
-        int pw = 34, px = x + w - pw - 24;
-        if (on) { // quầng xanh đập nhẹ quanh viên BẬT
-            int ga = 0x18 + Math.round(0x18 * (0.5f + 0.5f * (float) Math.sin(nowR / 420.0)));
-            Draw.rrect(px - 2, y + 4, px + pw + 2, y + h - 4, 9, (ga << 24) | 0x3FBF7F);
-        }
-        Draw.rrect(px, y + 6, px + pw, y + h - 6, 7, on ? 0xFF3FBF7F : 0xFF8E949B);
-        Gui.drawRect(px + 4, y + 7, px + pw - 4, y + 8, on ? 0x66FFFFFF : 0x44FFFFFF); // vệt bóng trên viên
-        Draw.rrect(on ? px + pw - 5 : px + 2, y + 8, on ? px + pw - 2 : px + 5, y + h - 8, 1, 0x88FFFFFF);
-        fr.drawStringWithShadow(st, px + (pw - fr.getStringWidth(st)) / 2f, y + (h - 8) / 2, 0xFFFFFFFF);
 
         boolean fav = FAVS.contains(m.id);
         if (fav || hv > 0.3f) Icons.draw("heart", x + w - 18, y + (h - 8) / 2, 1, fav ? 0xFFFF5577 : 0x66000000);
@@ -1712,6 +1793,10 @@ public class MenuScreen extends GuiScreen {
         if (closing) return;
         if (btn != 0 && btn != 1) return;
         int mx = vx(rawX), my = vy(rawY);
+        if (confirmMod != null) {
+            if (btn == 0) confirmClick(mx, my);
+            return;
+        }
 
         if (!detail) {
             int ci = circleAt(mx, my);
@@ -1760,8 +1845,8 @@ public class MenuScreen extends GuiScreen {
                     buildShown();
                     return;
                 }
-                if (btn == 1) toggleModule(hit);
-                else openModule(hit);
+                if (btn == 1) openModule(hit);
+                else askToggle(hit);
                 return;
             }
         } else if (btn == 0 && startBarDrag(mx, my)) {
@@ -1825,9 +1910,7 @@ public class MenuScreen extends GuiScreen {
                 mc.displayGuiScreen(new ProfileScreen());
                 break;
             case K_ENABLE:
-                b.m.toggle();
-                sfxToggle(b.m.enabled);
-                refresh(b);
+                askToggle(b.m);
                 break;
             case K_BOOL: {
                 long before = visSig(b.m);
@@ -1881,6 +1964,11 @@ public class MenuScreen extends GuiScreen {
 
     @Override
     protected void keyTyped(char c, int key) throws IOException {
+        if (confirmMod != null) {
+            if (key == Keyboard.KEY_ESCAPE) closeConfirm(false);
+            else if (key == Keyboard.KEY_RETURN || key == Keyboard.KEY_NUMPADENTER) closeConfirm(true);
+            return;
+        }
         if (key == Keyboard.KEY_ESCAPE) {
             if (detail) goBack();
             else requestClose();
