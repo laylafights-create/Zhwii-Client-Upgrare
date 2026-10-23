@@ -624,6 +624,7 @@ public class MenuScreen extends GuiScreen {
 
     private static final int DW = 214, DH = 122, DX = (VW - DW) / 2, DY = (VH - DH) / 2, DR = 13;
     private Module confirmMod;
+    private boolean confirmQuit; // true: hộp xác nhận đăng xuất khỏi map (confirmMod chỉ là giá trị đánh dấu)
     private long confirmAt;
     private float okHov, noHov;
 
@@ -635,10 +636,35 @@ public class MenuScreen extends GuiScreen {
         okHov = noHov = 0f;
     }
 
+    private void askQuit() {
+        if (LunarLite.MODULES.isEmpty()) return;
+        play("menu.select");
+        confirmQuit = true;
+        confirmMod = LunarLite.MODULES.get(0);
+        confirmAt = System.currentTimeMillis();
+        okHov = noHov = 0f;
+    }
+
+    /** Thoát khỏi map như nút "Disconnect" của game: về menu chính (đang chơi đơn) hoặc danh sách server. */
+    private void quitWorld() {
+        if (mc.theWorld == null) {
+            requestClose();
+            return;
+        }
+        boolean local = mc.isIntegratedServerRunning();
+        mc.theWorld.sendQuittingDisconnectingPacket();
+        mc.loadWorld((net.minecraft.client.multiplayer.WorldClient) null);
+        if (local) mc.displayGuiScreen(new net.minecraft.client.gui.GuiMainMenu());
+        else mc.displayGuiScreen(new net.minecraft.client.gui.GuiMultiplayer(new net.minecraft.client.gui.GuiMainMenu()));
+    }
+
     private void closeConfirm(boolean ok) {
         Module m = confirmMod;
+        boolean quit = confirmQuit;
         confirmMod = null;
-        if (ok && m != null) toggleModule(m);
+        confirmQuit = false;
+        if (ok && quit) quitWorld();
+        else if (ok && m != null) toggleModule(m);
         else play("menu.back");
     }
 
@@ -675,13 +701,13 @@ public class MenuScreen extends GuiScreen {
         // thanh tiêu đề sáng
         vgrad(DX, DY, DX + DW, DY + 22, 0xFFF6F7F8, 0xFFDEE0E2);
         Gui.drawRect(DX, DY + 22, DX + DW, DY + 23, 0xFFB9BCBF);
-        String title = on ? "Tắt tính năng" : "Bật tính năng";
+        String title = confirmQuit ? "Đăng xuất" : on ? "Tắt tính năng" : "Bật tính năng";
         fr.drawString(title, DX + (DW - fr.getStringWidth(title)) / 2f, DY + 7, 0xFF3A3F45, false);
         // thân xám
         Gui.drawRect(DX, DY + 23, DX + DW, DY + DH - 38, 0xF28E9296);
         Gui.drawRect(DX, DY + 23, DX + DW, DY + 24, 0x22000000);
-        String l1 = on ? "Bạn có muốn tắt" : "Bạn có muốn bật";
-        String l2 = fit(Lang.vi(confirmMod.name), DW - 24) + "?";
+        String l1 = confirmQuit ? "Bạn có muốn thoát khỏi map" : on ? "Bạn có muốn tắt" : "Bạn có muốn bật";
+        String l2 = confirmQuit ? "và về danh sách server?" : fit(Lang.vi(confirmMod.name), DW - 24) + "?";
         fr.drawStringWithShadow(l1, DX + (DW - fr.getStringWidth(l1)) / 2f, DY + 40, 0xFFFFFFFF);
         fr.drawStringWithShadow(l2, DX + (DW - fr.getStringWidth(l2)) / 2f, DY + 54, 0xFFFFE2A8);
         // chân hộp + hai nút tròn
@@ -1167,7 +1193,7 @@ public class MenuScreen extends GuiScreen {
     }
 
     private int listCount() {
-        return actionsOpen ? 3 : shown.size();
+        return actionsOpen ? 4 : shown.size();
     }
 
     private int circleAt(int mx, int my) {
@@ -1439,10 +1465,6 @@ public class MenuScreen extends GuiScreen {
                 sp = AnimationsModule.easeOutBack(t);
             }
             if (!expanded) sp = Math.min(sp, shift);
-            if (AnimationsModule.menu()) { // hàng co lại khi trượt tới mép trên / dưới danh sách
-                float ed = Math.min(y - ly, ly + lh - (y + LRH));
-                sp = Math.min(sp, 0.55f + 0.45f * Math.max(0f, Math.min(1f, ed / 26f)));
-            }
             Object hkeyObj = actionsOpen ? (Object) ("act" + i) : (Object) shown.get(i);
             float hv = hover(hkeyObj, i == hr && sp > 0.9f, k);
             if (sp <= 0.02f) continue;
@@ -1479,7 +1501,7 @@ public class MenuScreen extends GuiScreen {
         }
     }
 
-    private static final String[] ACT_LABEL = {"Nhập / Xuất", "Sửa vị trí HUD", "Xong"};
+    private static final String[] ACT_LABEL = {"Nhập / Xuất", "Sửa vị trí HUD", "Đăng xuất", "Xong"};
 
     /** Hàng thao tác (nút tròn cuối cột): cùng kiểu hàng xám với danh sách tính năng. */
     private void drawActionRow(int i, int y, float hv) {
@@ -1489,16 +1511,16 @@ public class MenuScreen extends GuiScreen {
         Gui.drawRect(x, y, x + w, y + 1, 0x99FFFFFF);
         Gui.drawRect(x, y + h - 1, x + w, y + h, 0xFF7C838A);
         Gui.drawRect(x, y + h, x + w, y + h + 1, 0x44000000);
-        if (i == 2) Gui.drawRect(x, y, x + 3, y + h, SAO_ORANGE);
+        if (i == 3) Gui.drawRect(x, y, x + 3, y + h, SAO_ORANGE);
         else if (hv > 0.02f) Gui.drawRect(x, y, x + 2, y + h, Draw.mulAlpha(Draw.ACCENT, hv));
         int cx = x + 18, cy = y + h / 2;
         Draw.disc(cx, cy, 12.5f, 0xFFFFFFFF);
         {
-            int cb = i == 2 ? 0xFFB9770E : 0xFF39404C;
+            int cb = i == 3 ? 0xFFB9770E : i == 2 ? 0xFFB03A3A : 0xFF39404C;
             Draw.disc(cx, cy, 11.3f, Draw.lerp(cb, 0xFFFFFFFF, 0.22f), Draw.lerp(cb, 0xFF000000, 0.2f));
             Draw.disc(cx, cy - 5.5f, 5.5f, 0x40FFFFFF, 0x00FFFFFF);
         }
-        SaoIcons.draw(i == 0 ? "arrows" : i == 1 ? "monitor" : "check", cx - 8, cy - 8, 0xFFFFFFFF);
+        SaoIcons.draw(i == 0 ? "arrows" : i == 1 ? "monitor" : i == 2 ? "chevron" : "check", cx - 8, cy - 8, 0xFFFFFFFF);
         GlStateManager.pushMatrix();
         GlStateManager.translate(x + 36, y + (h - 10) / 2f + 1f, 0f);
         GlStateManager.scale(1.2f, 1.2f, 1f);
@@ -1697,9 +1719,7 @@ public class MenuScreen extends GuiScreen {
             if (b.baseY < 0) continue;
             b.yPosition = top + b.baseY - sc;
             b.visible = b.yPosition + BH > top && b.yPosition < bottom;
-            float ed = Math.min(b.yPosition - top, bottom - (b.yPosition + BH));
-            float et = Math.max(0f, Math.min(1f, ed / 24f));
-            b.edgeDx = AnimationsModule.menu() ? (1f - et) * (1f - et) * 16f : 0f;
+            b.edgeDx = 0f;
         }
         clip(px, top, pw, setViewH());
         for (Row r : rows) {
@@ -1853,6 +1873,7 @@ public class MenuScreen extends GuiScreen {
                 if (btn != 0) return;
                 if (ri == 0) mc.displayGuiScreen(new ProfileScreen());
                 else if (ri == 1) mc.displayGuiScreen(new HudEditorScreen());
+                else if (ri == 2) askQuit();
                 else requestClose();
                 return;
             }
