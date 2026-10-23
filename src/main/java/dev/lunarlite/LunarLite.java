@@ -73,6 +73,7 @@ public class LunarLite {
     public static AimAssistModule AIM;
     public static VelocityModule VELOCITY;
     public static BridgeModule BRIDGE;
+    public static HitEffectModule HIT_FX;
     public static BlockOutlineModule BLOCK_OUTLINE;
     public static EnemyDetectorModule ENEMY_DETECTOR;
     public static ScoreboardModule SCOREBOARD;
@@ -98,6 +99,7 @@ public class LunarLite {
         AIM = new AimAssistModule();
         VELOCITY = new VelocityModule();
         BRIDGE = new BridgeModule();
+        HIT_FX = new HitEffectModule();
         BLOCK_OUTLINE = new BlockOutlineModule();
         ENEMY_DETECTOR = new EnemyDetectorModule();
         SCOREBOARD = new ScoreboardModule();
@@ -116,6 +118,7 @@ public class LunarLite {
         MODULES.add(BOW_TRAJECTORY);
         MODULES.add(new TargetInfoModule());
         MODULES.add(new ComboModule());
+        MODULES.add(HIT_FX);
         MODULES.add(new KillBoardModule());
         MODULES.add(AIM);
         MODULES.add(VELOCITY);
@@ -249,6 +252,7 @@ public class LunarLite {
             double d2 = e.getDistanceSqToEntity(mc.thePlayer);
             if (d2 > 64.0 * 64.0) continue;
             dev.lunarlite.gui.SaoShatter.burst(e); // vỡ thành mảnh đa giác kiểu SAO
+            if (HIT_FX != null) HIT_FX.onDeath(e);  // hiệu ứng chết kiểu anime
             if (played < 3 && d2 <= 48.0 * 48.0) {
                 mc.getSoundHandler().playSound(net.minecraft.client.audio.PositionedSoundRecord.create(
                         new net.minecraft.util.ResourceLocation("lunarlite", "sao.death"),
@@ -343,6 +347,7 @@ public class LunarLite {
     public void onAttack(AttackEntityEvent e) {
         if (e.entityPlayer == Minecraft.getMinecraft().thePlayer && e.target instanceof EntityLivingBase) {
             ComboModule.onAttack();
+            if (HIT_FX != null) HIT_FX.onHit((EntityLivingBase) e.target);
         }
     }
 
@@ -392,6 +397,7 @@ public class LunarLite {
         if (ENEMY_DETECTOR != null) ENEMY_DETECTOR.renderMarkers(e.partialTicks);
         renderShake(e.partialTicks);
         dev.lunarlite.gui.SaoShatter.render(e.partialTicks);
+        dev.lunarlite.gui.AnimeHit.render(e.partialTicks);
     }
 
     /** Ẩn thân xác sinh vật / người chơi khác đang chết: đã được thay bằng mảnh vỡ SAO. */
