@@ -1358,7 +1358,7 @@ public class MenuScreen extends GuiScreen {
         String pname = mc.thePlayer != null ? mc.thePlayer.getName() : "Zhwii";
         { // tên người chơi: phóng to, canh giữa tiêu đề, màu xám than + bóng nhấn nhẹ (đã bỏ thanh xanh)
             int nw = Math.max(1, fr.getStringWidth(pname));
-            float ns = Math.min(1.7f, (CPW - 20f) / nw);
+            float ns = Math.min(2.0f, (CPW - 20f) / nw);
             float nx = CPX + (CPW - nw * ns) / 2f;
             float ny = CPY + (22f - 8f * ns) / 2f + 0.5f;
             GlStateManager.pushMatrix();
@@ -1565,7 +1565,7 @@ public class MenuScreen extends GuiScreen {
             Draw.rrect(ex - 24, ey, ex + 24, ey + 4, 2, 0x1E000000);
             Draw.rrect(ex - 15, ey + 1, ex + 15, ey + 3, 1, 0x2A000000);
             GlStateManager.color(1f, 1f, 1f, 1f);
-            net.minecraft.client.gui.inventory.GuiInventory.drawEntityOnScreen(ex, ey, 72, ex + gdx() - mx, ey - 50 - my, mc.thePlayer);
+            net.minecraft.client.gui.inventory.GuiInventory.drawEntityOnScreen(ex, ey, 72, 0f, 0f, mc.thePlayer); // đứng thẳng, không xoay theo chuột
             GlStateManager.popMatrix();
             GlStateManager.enableAlpha();
             GlStateManager.enableBlend();
