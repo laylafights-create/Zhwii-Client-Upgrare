@@ -1153,7 +1153,7 @@ public class MenuScreen extends GuiScreen {
         Draw.ring(x, y, x + w, y + h, border != 0 ? border : Draw.lerp(0xB0B8EFFF, Draw.ACCENT, hv));
         Gui.drawRect(x + 6, y + 1, x + w - 6, y + 2, Draw.lerp(0x22FFFFFF, 0x44FFFFFF, hv));
         AnimeFx.shine(x, y, w, h, hv);
-        if (hv > 0.6f) AnimeFx.star(x + w - 7, y + 6, 4.5f * hv, 0xFFFFFF, (hv - 0.6f) * 2.2f * (0.7f + 0.3f * (float) Math.sin(System.currentTimeMillis() / 160.0)));
+        if (hv > 0.6f) AnimeFx.star(x + w - 7, y + 6, 4.5f * hv, 0xFF6FA8, (hv - 0.6f) * 2.2f * (0.7f + 0.3f * (float) Math.sin(System.currentTimeMillis() / 160.0)));
         if (hv > 0.02f || border != 0) {
             float a = border != 0 ? Math.max(hv, 0.85f) : hv;
             Skin.brackets(x - 2, y - 2, w + 4, h + 4, 6, Draw.lerp(Draw.ACCENT & 0xFFFFFF, Draw.ACCENT, a));
@@ -1577,11 +1577,39 @@ public class MenuScreen extends GuiScreen {
             Draw.rrect(ex - 24, ey, ex + 24, ey + 4, 2, 0x1E000000);
             Draw.rrect(ex - 15, ey + 1, ex + 15, ey + 3, 1, 0x2A000000);
             GlStateManager.color(1f, 1f, 1f, 1f);
-            net.minecraft.client.gui.inventory.GuiInventory.drawEntityOnScreen(ex, ey, 72, 0f, 0f, mc.thePlayer); // đứng thẳng, không xoay theo chuột
+            drawHero(ex, ey, now);
             GlStateManager.popMatrix();
             GlStateManager.enableAlpha();
             GlStateManager.enableBlend();
             GlStateManager.color(1f, 1f, 1f, 1f);
+        }
+    }
+
+    /** Nhân vật trong thẻ: khoá tư thế (không đi bộ, không cúi, không vung tay) để đứng thẳng nhìn thẳng ra trước. */
+    private void drawHero(int ex, int ey, long now) {
+        net.minecraft.entity.player.EntityPlayer p = mc.thePlayer;
+        if (p == null) return;
+        float ls = p.limbSwing, lsa = p.limbSwingAmount, plsa = p.prevLimbSwingAmount;
+        float sw = p.swingProgress, psw = p.prevSwingProgress;
+        int ht = p.hurtTime;
+        boolean sn = p.isSneaking();
+        p.limbSwing = 0f;
+        p.limbSwingAmount = 0f;
+        p.prevLimbSwingAmount = 0f;
+        p.swingProgress = 0f;
+        p.prevSwingProgress = 0f;
+        p.hurtTime = 0;
+        p.setSneaking(false);
+        try {
+            net.minecraft.client.gui.inventory.GuiInventory.drawEntityOnScreen(ex, ey, 72, 0f, 0f, p);
+        } finally {
+            p.limbSwing = ls;
+            p.limbSwingAmount = lsa;
+            p.prevLimbSwingAmount = plsa;
+            p.swingProgress = sw;
+            p.prevSwingProgress = psw;
+            p.hurtTime = ht;
+            p.setSneaking(sn);
         }
     }
 

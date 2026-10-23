@@ -144,12 +144,17 @@ public final class AnimeFx {
 
     /** Sao bốn cánh (hai hình thoi mảnh) kèm quầng sáng nhỏ ở tâm. */
     public static void star(float cx, float cy, float r, int rgb, float a) {
+        star(cx, cy, r, rgb, a, true);
+    }
+
+    /** {@code additive = false}: trộn thường, nhìn rõ cả trên nền sáng (thẻ xám trắng của menu). */
+    public static void star(float cx, float cy, float r, int rgb, float a, boolean additive) {
         if (r <= 0.3f || a <= 0.01f) return;
-        begin(true);
+        begin(additive);
         Tessellator ts = Tessellator.getInstance();
         WorldRenderer wr = ts.getWorldRenderer();
         int c = al(rgb, a);
-        int core = al(0xFFFFFF, a);
+        int core = additive ? al(0xFFFFFF, a) : al(rgb, a);
         float th = r * 0.16f;
         wr.begin(6, DefaultVertexFormats.POSITION_COLOR);
         v(wr, cx, cy, core);
@@ -209,17 +214,17 @@ public final class AnimeFx {
      */
     public static void shine(int x, int y, int w, int h, float hv) {
         if (hv <= 0.03f || hv >= 0.97f || w < 12 || h < 8) return;
-        float a = (float) Math.sin(Math.PI * hv) * 0.32f;
+        float a = (float) Math.sin(Math.PI * hv) * 0.62f;
         float cxm = x + (hv * 1.5f - 0.25f) * w;
         float slant = h * 0.55f;
-        float bw = w * 0.14f;
+        float bw = w * 0.2f;
         float xt = cxm + slant / 2f, xb = cxm - slant / 2f;
         float lo = x + 1, hi = x + w - 1;
-        begin(true);
+        begin(false);
         Tessellator ts = Tessellator.getInstance();
         WorldRenderer wr = ts.getWorldRenderer();
         wr.begin(7, DefaultVertexFormats.POSITION_COLOR);
-        int clear = al(0xFFFFFF, 0f), white = al(0xFFF1F7, a);
+        int clear = al(0xFF7FB2, 0f), white = al(0xFF7FB2, a);
         // nửa trái: trong suốt -> trắng
         v(wr, clamp(xt - bw, lo, hi), y + 1, clear);
         v(wr, clamp(xt, lo, hi), y + 1, white);
@@ -240,37 +245,49 @@ public final class AnimeFx {
 
     // ---------------------------------------------------------------- bấm chuột
 
-    private static final List<float[]> BURSTS = new ArrayList<float[]>(); // {x, y, startMs, rgb}
+    private static final class Burst {
+        final float x, y;
+        final int rgb, seed;
+        final long start = System.currentTimeMillis();
+
+        Burst(float x, float y, int rgb) {
+            this.x = x;
+            this.y = y;
+            this.rgb = rgb;
+            this.seed = (int) (start & 0xFFFFFF);
+        }
+    }
+
+    private static final List<Burst> BURSTS = new ArrayList<Burst>();
 
     /** Tạo vụ nổ sao + sóng tròn tại (x, y) theo toạ độ màn hình. */
     public static void burst(float x, float y, int rgb) {
         if (BURSTS.size() > 12) BURSTS.remove(0);
-        BURSTS.add(new float[] {x, y, (float) (System.currentTimeMillis() & 0x3FFFFFFL), rgb & 0xFFFFFF});
+        BURSTS.add(new Burst(x, y, rgb & 0xFFFFFF));
     }
 
     /** Vẽ các vụ nổ đang chạy (gọi ở toạ độ màn hình, sau khi đã pop ma trận menu). */
     public static void drawBursts() {
         if (BURSTS.isEmpty()) return;
-        long now = System.currentTimeMillis() & 0x3FFFFFFL;
-        for (Iterator<float[]> it = BURSTS.iterator(); it.hasNext(); ) {
-            float[] b = it.next();
-            float age = (now - (long) b[2]) / 650f;
-            if (age < 0f || age >= 1f) {
+        long now = System.currentTimeMillis();
+        for (Iterator<Burst> it = BURSTS.iterator(); it.hasNext(); ) {
+            Burst b = it.next();
+            float age = (now - b.start) / 700f;
+            if (age >= 1f) {
                 it.remove();
                 continue;
             }
+            if (age < 0f) age = 0f;
             float e = 1f - (1f - age) * (1f - age) * (1f - age);
-            int rgb = (int) b[3];
             float fade = 1f - age;
-            Draw.circleRing(b[0], b[1], e * 20f, e * 20f + 1.6f * fade + 0.4f, al(0xFFFFFF, fade * 0.8f));
-            Draw.circleRing(b[0], b[1], e * 12f, e * 12f + 1.2f * fade, al(rgb, fade * 0.7f));
-            int seed = (int) b[2];
+            Draw.circleRing(b.x, b.y, e * 26f, e * 26f + 2.2f * fade + 0.6f, al(0xFF6FA8, fade * 0.9f));
+            Draw.circleRing(b.x, b.y, e * 15f, e * 15f + 1.6f * fade, al(b.rgb, fade * 0.9f));
             for (int i = 0; i < 8; i++) {
-                float ang = (float) (Math.PI * 2.0 * i / 8.0) + hash(seed, i) * 0.5f;
-                float dist = 5f + e * (22f + 10f * hash(seed, i + 8));
-                float r = (2.6f + 2.4f * hash(seed, i + 16)) * fade;
-                star(b[0] + (float) Math.cos(ang) * dist, b[1] + (float) Math.sin(ang) * dist,
-                        r, i % 2 == 0 ? 0xFFFFFF : 0xFFB7D0, fade);
+                float ang = (float) (Math.PI * 2.0 * i / 8.0) + hash(b.seed, i) * 0.5f;
+                float dist = 6f + e * (28f + 12f * hash(b.seed, i + 8));
+                float r = (4f + 3f * hash(b.seed, i + 16)) * (0.4f + 0.6f * fade);
+                star(b.x + (float) Math.cos(ang) * dist, b.y + (float) Math.sin(ang) * dist,
+                        r, i % 2 == 0 ? 0xFF6FA8 : b.rgb, fade, false);
             }
         }
     }
