@@ -205,12 +205,14 @@ public class LunarLite {
         return n;
     }
 
-    private static boolean sfxDead, sfxLow;
+    private static boolean sfxDead;
+    private static net.minecraft.client.audio.ISound lowSound;
 
-    /** Âm SAO: tiếng chết khi máu về 0, cảnh báo khi còn rất ít máu (mỗi lần tụt xuống chỉ phát một lần). */
+    /** Âm SAO: tiếng chết khi máu về 0; cảnh báo máu lặp liên tục khi dưới 5 tim, tự dừng khi hồi lên từ 5 tim. */
     private static void playHealthSounds(Minecraft mc) {
         float hp = mc.thePlayer.getHealth();
         if (hp <= 0f || mc.thePlayer.isDead) {
+            stopLow(mc);
             if (!sfxDead) {
                 sfxDead = true;
                 sfx("sao.death");
@@ -218,22 +220,47 @@ public class LunarLite {
             return;
         }
         sfxDead = false;
-        if (hp <= 6f) {
-            if (!sfxLow) {
-                sfxLow = true;
-                sfx("sao.critical_health");
+        if (hp < 10f) {
+            if (lowSound == null || !mc.getSoundHandler().isSoundPlaying(lowSound)) {
+                lowSound = sfx("sao.critical_health");
             }
-        } else if (hp > 8f) {
-            sfxLow = false;
+        } else {
+            stopLow(mc);
         }
     }
 
-    private static void sfx(String ev) {
+    /** Tiếng chết SAO cho mọi sinh vật khác (động vật, mob, người chơi) khi chúng bắt đầu chết, phát tại chỗ chúng. */
+    private static void playNearbyDeaths(Minecraft mc) {
+        if (mc.theWorld == null) return;
+        int played = 0;
+        for (Object o : mc.theWorld.loadedEntityList) {
+            if (!(o instanceof net.minecraft.entity.EntityLivingBase) || o == mc.thePlayer) continue;
+            if (o instanceof net.minecraft.entity.item.EntityArmorStand) continue;
+            net.minecraft.entity.EntityLivingBase e = (net.minecraft.entity.EntityLivingBase) o;
+            if (e.deathTime != 1) continue;
+            if (e.getDistanceSqToEntity(mc.thePlayer) > 48.0 * 48.0) continue;
+            mc.getSoundHandler().playSound(net.minecraft.client.audio.PositionedSoundRecord.create(
+                    new net.minecraft.util.ResourceLocation("lunarlite", "sao.death"),
+                    (float) e.posX, (float) e.posY, (float) e.posZ));
+            if (++played >= 3) break;
+        }
+    }
+
+    private static void stopLow(Minecraft mc) {
+        if (lowSound != null) {
+            mc.getSoundHandler().stopSound(lowSound);
+            lowSound = null;
+        }
+    }
+
+    private static net.minecraft.client.audio.ISound sfx(String ev) {
         Minecraft mc = Minecraft.getMinecraft();
-        if (mc.thePlayer == null) return;
-        mc.getSoundHandler().playSound(net.minecraft.client.audio.PositionedSoundRecord.create(
+        if (mc.thePlayer == null) return null;
+        net.minecraft.client.audio.ISound snd = net.minecraft.client.audio.PositionedSoundRecord.create(
                 new net.minecraft.util.ResourceLocation("lunarlite", ev),
-                (float) mc.thePlayer.posX, (float) mc.thePlayer.posY, (float) mc.thePlayer.posZ));
+                (float) mc.thePlayer.posX, (float) mc.thePlayer.posY, (float) mc.thePlayer.posZ);
+        mc.getSoundHandler().playSound(snd);
+        return snd;
     }
 
     @SubscribeEvent
@@ -242,10 +269,11 @@ public class LunarLite {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.thePlayer == null) {
             sfxDead = false;
-            sfxLow = false;
+            lowSound = null;
             return;
         }
         playHealthSounds(mc);
+        playNearbyDeaths(mc);
 
         if (keyMenu.isPressed() && mc.currentScreen == null) {
             mc.displayGuiScreen(new MenuScreen());
