@@ -43,7 +43,7 @@ public final class SaoShatter {
 
     /** Thân xác của sinh vật đang chết bị ẩn (thay bằng mảnh vỡ). Không áp dụng cho chính người chơi. */
     public static boolean hides(EntityLivingBase e) {
-        return enabled && e != null && e.deathTime > 0 && e != Minecraft.getMinecraft().thePlayer;
+        return enabled && e != null && (e.deathTime > 0 || e.getHealth() <= 0f) && e != Minecraft.getMinecraft().thePlayer;
     }
 
     public static void clear() {
