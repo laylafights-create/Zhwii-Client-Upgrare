@@ -20,14 +20,14 @@ public final class AnimeHit {
     private AnimeHit() {}
 
     private static final int FLASH = 0, SLASH = 1, RING = 2, PETAL = 3, STAR = 4;
-    private static final int MAX = 420;
+    private static final int MAX = 520;
     private static final Random R = new Random();
 
     private static final class P {
         int type;
         double x, y, z;
         float vx, vy, vz;
-        float size, rot, spin, life, delay;
+        float size, rot, spin, life, delay, g;
         long born;
         int c1, c2;
     }
@@ -51,6 +51,7 @@ public final class AnimeHit {
         p.born = System.currentTimeMillis();
         p.c1 = 0xFFFFFF;
         p.c2 = 0xFF7FB2;
+        p.g = type == PETAL ? 0.9f : 0f;
         LIST.add(p);
         return p;
     }
@@ -124,6 +125,48 @@ public final class AnimeHit {
                 p.spin = (R.nextFloat() - 0.5f) * 6f;
                 p.c2 = R.nextBoolean() ? 0xFFC93C : 0xFF7FB2;
             }
+        }
+        while (LIST.size() > MAX) LIST.remove(0);
+    }
+
+    /** Hiệu ứng chết: chớp sao lớn, chém chéo, sóng tròn, cánh hoa xoáy bay lên và sao bay lên như linh hồn. */
+    public static void death(EntityLivingBase t, float amount) {
+        if (t == null) return;
+        float w = Math.max(0.4f, t.width), h = Math.max(0.5f, t.height);
+        double x = t.posX, y = t.posY + h * 0.55, z = t.posZ;
+        float body = Math.max(1f, Math.min(2.2f, h * 0.7f));
+
+        make(FLASH, x, y, z, 1.7f * body, 0.55f, 0f);
+        make(RING, x, y, z, 1.6f * body, 0.7f, 0f);
+        make(RING, x, y, z, 2.4f * body, 0.9f, 0.14f);
+        for (int i = 0; i < 4; i++) { // hai nhát chém chéo hình chữ X
+            P s = make(SLASH, x, y, z, 1.9f * body, 0.34f, 0.06f + (i / 2) * 0.1f);
+            s.rot = (i % 2 == 0 ? 0.785f : -0.785f) + (R.nextFloat() - 0.5f) * 0.2f;
+        }
+        int np = Math.round(36f * amount);
+        for (int i = 0; i < np; i++) {
+            float a = R.nextFloat() * 6.2832f, rad = w * 0.5f + R.nextFloat() * 0.3f;
+            P p = make(PETAL, x + Math.cos(a) * rad, t.posY + R.nextFloat() * h, z + Math.sin(a) * rad,
+                    0.08f + R.nextFloat() * 0.07f, 1.3f + R.nextFloat() * 1.0f, R.nextFloat() * 0.15f);
+            float sp = 1.0f + R.nextFloat() * 1.0f;
+            p.vx = (float) (-Math.sin(a)) * sp + (float) Math.cos(a) * 0.6f; // xoáy quanh thân
+            p.vz = (float) Math.cos(a) * sp + (float) Math.sin(a) * 0.6f;
+            p.vy = 2.5f + R.nextFloat() * 2.5f;
+            p.g = -0.6f; // bay lên
+            p.spin = (R.nextFloat() - 0.5f) * 12f;
+            p.c1 = 0xFFE9F1;
+            p.c2 = 0xFF8FBB;
+        }
+        int ns = Math.round(24f * amount);
+        for (int i = 0; i < ns; i++) {
+            float a = R.nextFloat() * 6.2832f, rad = R.nextFloat() * w * 0.6f;
+            P p = make(STAR, x + Math.cos(a) * rad, t.posY + R.nextFloat() * h, z + Math.sin(a) * rad,
+                    0.10f + R.nextFloat() * 0.14f, 0.9f + R.nextFloat() * 0.8f, R.nextFloat() * 0.25f);
+            p.vx = (R.nextFloat() - 0.5f) * 1.2f;
+            p.vz = (R.nextFloat() - 0.5f) * 1.2f;
+            p.vy = 2.0f + R.nextFloat() * 2.2f;
+            p.spin = (R.nextFloat() - 0.5f) * 5f;
+            p.c2 = R.nextBoolean() ? 0xFFC93C : (R.nextBoolean() ? 0xFF7FB2 : 0x9FE4FF);
         }
         while (LIST.size() > MAX) LIST.remove(0);
     }
@@ -210,7 +253,7 @@ public final class AnimeHit {
         float fade = 1f - u;
         double d = (1f - Math.exp(-3.0 * age)) / 3.0; // lao nhanh rồi giảm tốc
         double wx = p.x + p.vx * d, wz = p.z + p.vz * d;
-        double wy = p.y + p.vy * d - (p.type == PETAL ? 0.9 * age * age : 0.0);
+        double wy = p.y + p.vy * d - p.g * age * age;
         switch (p.type) {
             case FLASH: {
                 float r = p.size * (0.35f + 0.65f * ease(u * 3.2f));
