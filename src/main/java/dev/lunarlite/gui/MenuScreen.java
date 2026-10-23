@@ -1047,7 +1047,11 @@ public class MenuScreen extends GuiScreen {
         if (Math.abs(setTarget - setScroll) < 0.4f) setScroll = setTarget;
 
         GlStateManager.pushMatrix();
-        float kk = (0.95f + 0.05f * op) * ui();
+        float pop = 0.88f + 0.12f * op;
+        if (!closing && AnimationsModule.menu()) { // mở menu: phóng to vượt nhẹ rồi về đúng cỡ (đàn hồi kiểu anime)
+            pop = 0.80f + 0.20f * AnimationsModule.easeOutBack((System.currentTimeMillis() - openStart) * AnimationsModule.speed() / 420f);
+        }
+        float kk = pop * ui();
         GlStateManager.translate(width / 2f, height / 2f + (1f - op) * 10f, 0f);
         GlStateManager.scale(kk, kk, 1f);
         float ctrT = confirmMod != null ? 0f : DET_CENTER_OFF * dshift;
@@ -1059,6 +1063,7 @@ public class MenuScreen extends GuiScreen {
         if (confirmMod != null) drawConfirm(curMx, curMy);
 
         GlStateManager.popMatrix();
+        AnimeFx.drawBursts();
         GlStateManager.color(1f, 1f, 1f, 1f);
     }
 
@@ -1108,7 +1113,7 @@ public class MenuScreen extends GuiScreen {
         if (!detail || module == null) return;
 
         GlStateManager.pushMatrix();
-        GlStateManager.translate((1f - dshift) * 90f, 0f, 0f);
+        GlStateManager.translate((1f - AnimationsModule.easeOutBack(dshift)) * 90f, 0f, 0f);
         final int PX = paneX(), PW = paneW();
         long tn = System.currentTimeMillis();
         // cửa sổ SAO phủ toàn bộ trang chi tiết
@@ -1147,6 +1152,8 @@ public class MenuScreen extends GuiScreen {
         Draw.rrect(x, y, x + w, y + h, 6, Draw.lerp(0xE60F1A27, 0xF01D3548, hv));
         Draw.ring(x, y, x + w, y + h, border != 0 ? border : Draw.lerp(0xB0B8EFFF, Draw.ACCENT, hv));
         Gui.drawRect(x + 6, y + 1, x + w - 6, y + 2, Draw.lerp(0x22FFFFFF, 0x44FFFFFF, hv));
+        AnimeFx.shine(x, y, w, h, hv);
+        if (hv > 0.6f) AnimeFx.star(x + w - 7, y + 6, 4.5f * hv, 0xFFFFFF, (hv - 0.6f) * 2.2f * (0.7f + 0.3f * (float) Math.sin(System.currentTimeMillis() / 160.0)));
         if (hv > 0.02f || border != 0) {
             float a = border != 0 ? Math.max(hv, 0.85f) : hv;
             Skin.brackets(x - 2, y - 2, w + 4, h + 4, 6, Draw.lerp(Draw.ACCENT & 0xFFFFFF, Draw.ACCENT, a));
@@ -1204,6 +1211,7 @@ public class MenuScreen extends GuiScreen {
         drawGradientRect(x, y, x + w, y + h, top, bot);
         GlStateManager.enableBlend();
         GlStateManager.color(1f, 1f, 1f, 1f);
+        AnimeFx.shine(x, y, w, h, hv);
     }
 
     /** Khung gradient dọc dùng chung (thẻ nhân vật, nền). */
@@ -1342,11 +1350,12 @@ public class MenuScreen extends GuiScreen {
         GlStateManager.translate(gdx(), 0f, 0f);
         // ---- thẻ nhân vật bên trái (tên, thanh HP = số tính năng bật, 4 ô giáp); mô hình vẽ ở cuối hàm
         float pa = AnimationsModule.menu()
-                ? AnimationsModule.ease((now - openStart) * AnimationsModule.speed() / 340f) : 1f;
+                ? AnimationsModule.easeOutBack((now - openStart) * AnimationsModule.speed() / 480f) : 1f;
         if (cs > 0.02f) {
         GlStateManager.pushMatrix();
         GlStateManager.translate(-(1f - pa) * 36f, 0f, 0f);
         GlStateManager.translate(CPX + CPW / 2f, CPY + CPH / 2f, 0f);
+        GlStateManager.rotate(-(1f - Math.min(1f, pa)) * 5f, 0f, 0f, 1f); // nghiêng nhẹ rồi dựng thẳng khi vào
         GlStateManager.scale(cs, cs, 1f);
         GlStateManager.translate(-(CPX + CPW / 2f), -(CPY + CPH / 2f), 0f);
         Gui.drawRect(CPX - 1, CPY - 1, CPX + CPW + 1, CPY + CPH + 2, 0x55000000);
@@ -1438,13 +1447,15 @@ public class MenuScreen extends GuiScreen {
             // co lại rồi bật ra khi bấm
             float press = 1f;
             float pp = (now - pressAt) / 260f;
-            if (i == pressCircle && pp >= 0f && pp < 1f) press = 1f - 0.16f * (float) Math.sin(Math.PI * pp);
+            float sq = 0f; // bóp ngang rồi bật dọc, dao động tắt dần (lò xo kiểu anime)
+            float p2 = (now - pressAt) / 560f;
+            if (i == pressCircle && p2 >= 0f && p2 < 1f) sq = -0.2f * (float) (Math.exp(-5.0 * p2) * Math.cos(p2 * 20.0));
             float scl = pop * press * (1f + 0.05f * hv + 0.08f * sv);
             float pulse = 0.5f + 0.5f * (float) Math.sin(now / 280.0);
 
             GlStateManager.pushMatrix();
             GlStateManager.translate(CX, cy, 0f);
-            GlStateManager.scale(scl, scl, 1f);
+            GlStateManager.scale(scl * (1f - sq), scl * (1f + sq), 1f);
             GlStateManager.translate(-CX, -cy, 0f);
 
             // gợn sáng lan ra khi bấm
@@ -1541,9 +1552,10 @@ public class MenuScreen extends GuiScreen {
             float hv = hover(hkeyObj, i == hr && sp > 0.9f, k);
             if (sp <= 0.02f) continue;
             GlStateManager.pushMatrix();
-            GlStateManager.translate(lpx(), 0f, 0f);
-            GlStateManager.scale(sp, 1f, 1f);
-            GlStateManager.translate(-lpx(), 0f, 0f);
+            float rcy = y + LRH / 2f;
+            GlStateManager.translate(lpx() + (1f - Math.min(1f, sp)) * 46f + hv * 4f, rcy, 0f); // trượt từ phải vào, rê chuột thì nhích sang phải
+            GlStateManager.scale(sp, 0.75f + 0.25f * Math.min(1.1f, sp), 1f);
+            GlStateManager.translate(-lpx(), -rcy, 0f);
             if (actionsOpen) drawActionRow(i, y, hv);
             else drawRow(shown.get(i), y, hv, shown.get(i) == module);
             GlStateManager.popMatrix();
@@ -1907,6 +1919,7 @@ public class MenuScreen extends GuiScreen {
         if (closing) return;
         if (btn != 0 && btn != 1) return;
         int mx = vx(rawX), my = vy(rawY);
+        AnimeFx.burst(rawX, rawY, Draw.ACCENT & 0xFFFFFF);
         if (confirmMod != null) {
             if (btn == 0) confirmClick(mx, my);
             return;
