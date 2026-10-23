@@ -418,9 +418,6 @@ public class HudEditorScreen extends GuiScreen {
                 ? AnimationsModule.ease((System.currentTimeMillis() - selAt) * AnimationsModule.speed() / 200f) : 1f;
 
         // nền + hai đường kẻ trên / dưới (như khung của menu), hiện dần khi chọn HUD
-        Gui.drawRect(px, py, px + PW, py + ph, Draw.mulAlpha(0x99000000, e));
-        Gui.drawRect(px, py, px + PW, py + 1, 0x33FFFFFF);
-        Gui.drawRect(px, py + ph - 1, px + PW, py + ph, 0x33FFFFFF);
 
         // tiêu đề
         GlStateManager.pushMatrix();
@@ -465,7 +462,7 @@ public class HudEditorScreen extends GuiScreen {
         panelScroll += (panelTarget - panelScroll) * (AnimationsModule.menu() ? 0.35f : 1f);
         if (Math.abs(panelTarget - panelScroll) < 0.4f) panelScroll = panelTarget;
 
-        drawGradientRect(0, 0, width, height, Draw.mulAlpha(0x98101010, op), Draw.mulAlpha(0xA8101010, op));
+        drawGradientRect(0, 0, width, height, Draw.mulAlpha(0x40101010, op), Draw.mulAlpha(0x58101010, op)); // nền nhạt, thấy rõ thế giới
         layoutPanel(sr);
 
         // đường giữa mờ

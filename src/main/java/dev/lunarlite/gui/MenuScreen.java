@@ -930,14 +930,6 @@ public class MenuScreen extends GuiScreen {
             return;
         }
 
-        // khung ngoài bo góc + bóng + vệt màu nhấn mờ dần ở mép trên
-        Skin.shadow(VW, VH);
-        Skin.glossBox(0, 0, VW, VH, 7, Skin.SILVER, Skin.BG);
-        vgrad(2, 2, VW - 2, 70, (0x26 << 24) | (Draw.ACCENT & 0xFFFFFF), 0);
-        Skin.brackets(4, 4, VW - 8, VH - 8, 10, Draw.withAlpha(Draw.ACCENT, 0xB0));
-        Draw.fadeLine(18, 0, VW - 36, acc & 0xFFFFFF, 0xCC);
-        Draw.fadeLine(18, 1, VW - 36, acc & 0xFFFFFF, 0x60);
-
         {
             int col = colorOf(module);
             Skin.tile(PAD, 10, 30, module.id, col);
@@ -985,7 +977,7 @@ public class MenuScreen extends GuiScreen {
     }
 
     // ---- bố cục kiểu menu SAO: cột nút tròn (nhóm) bên trái, bảng danh sách tính năng bên phải
-    private static final int CX = 232, CR = 16;
+    private static final int CX = 232, CR = 14;
     private static final int LPX = 268, LPW = 238, LPY = 14, LPH = 226, LRH = 26, LSTEP = 30;
     private static final int CPX = 16, CPY = 14, CPW = 160, CPH = 226; // thẻ nhân vật bên trái
     private float listYCur = -1f;
@@ -1007,7 +999,7 @@ public class MenuScreen extends GuiScreen {
 
     private int circleStep() {
         int n = circleCount();
-        return n <= 1 ? 42 : Math.min(42, (LPH - 2 * (CR + 3)) / (n - 1));
+        return n <= 1 ? 42 : Math.min(42, (LPH + 24 - 2 * (CR + 3)) / (n - 1)); // đủ chỗ để các nút không dính nhau
     }
 
     private int circleY(int i) {
@@ -1226,15 +1218,6 @@ public class MenuScreen extends GuiScreen {
             Gui.drawRect(CX - 2, yy - 6, CX + 2, yy + 6, 0x18B8EFFF);
             Gui.drawRect(CX - 1, yy - 4, CX + 1, yy + 4, 0x66FFFFFF);
             Gui.drawRect(CX - 1, yy - 1, CX + 1, yy + 1, 0xCCFFFFFF);
-        }
-        {   // nền kính mờ dạng viên thuốc sau cả cột nút, cho nút nổi bật trên mọi nền
-            int ca = Math.round(0x40 * lineP);
-            int cx1 = CX - CR - 9, cx2 = CX + CR + 9;
-            int cy1 = circleY(0) - CR - 9, cy2 = circleY(n - 1) + CR + 9;
-            if (ca > 3) {
-                Draw.rrect(cx1, cy1, cx2, cy2, CR + 9, (ca << 24) | 0x0B1420);
-                Draw.ring(cx1, cy1, cx2, cy2, (Math.round(0x38 * lineP) << 24) | 0xB8EFFF);
-            }
         }
         int selTab = selCircle();
         for (int i = 0; i < n; i++) {
@@ -1611,7 +1594,7 @@ public class MenuScreen extends GuiScreen {
         int top = PANE_TOP, bottom = PANE_BOTTOM;
         FontRenderer fr = fontRendererObj;
 
-        Skin.box(px, top, pw, bottom - top, 5, 0xFF3C4148, Skin.FIELD);
+        Draw.rrect(px, top, px + pw, bottom, 5, 0x40000000);
 
         int sc = Math.round(setScroll);
         for (Object o : buttonList) {
