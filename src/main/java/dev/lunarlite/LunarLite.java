@@ -237,25 +237,70 @@ public class LunarLite {
         }
     }
 
-    /** Tiếng chết SAO cho mọi sinh vật khác (động vật, mob, người chơi) khi chúng bắt đầu chết, phát tại chỗ chúng. */
+    /** Thực thể đang theo dõi (id -> thực thể) và id đã kích hoạt hiệu ứng chết, để không kích hoạt hai lần. */
+    private static final java.util.Map<Integer, net.minecraft.entity.EntityLivingBase> tracked =
+            new java.util.HashMap<Integer, net.minecraft.entity.EntityLivingBase>();
+    private static final java.util.Map<Integer, Integer> lastHurt = new java.util.HashMap<Integer, Integer>();
+    private static final java.util.Set<Integer> fired = new java.util.HashSet<Integer>();
+    private static int fxTick;
+
+    private static boolean isDying(net.minecraft.entity.EntityLivingBase e) {
+        return e.deathTime > 0 || e.getHealth() <= 0f;
+    }
+
+    private static int playedThisTick;
+
+    private static void triggerDeath(Minecraft mc, net.minecraft.entity.EntityLivingBase e) {
+        double d2 = e.getDistanceSqToEntity(mc.thePlayer);
+        if (d2 > 64.0 * 64.0) return;
+        dev.lunarlite.gui.SaoShatter.burst(e); // vỡ thành mảnh đa giác kiểu SAO
+        if (playedThisTick < 3 && d2 <= 48.0 * 48.0) {
+            mc.getSoundHandler().playSound(net.minecraft.client.audio.PositionedSoundRecord.create(
+                    new net.minecraft.util.ResourceLocation("lunarlite", "sao.death"),
+                    (float) e.posX, (float) e.posY, (float) e.posZ));
+            playedThisTick++;
+        }
+    }
+
+    /**
+     * Hiệu ứng + tiếng chết SAO cho mọi sinh vật khác (mob, người chơi). Trên server (vd Hypixel) người chơi chết thường
+     * bị xoá khỏi thế giới ngay nên deathTime không bao giờ tới 1; vì thế nhận diện thêm: máu về 0, hoặc thực thể
+     * biến mất ở gần ngay sau khi bị đánh / máu thấp.
+     */
     private static void playNearbyDeaths(Minecraft mc) {
         if (mc.theWorld == null) return;
-        int played = 0;
+        fxTick++;
+        playedThisTick = 0;
+        java.util.Set<Integer> present = new java.util.HashSet<Integer>();
         for (Object o : mc.theWorld.loadedEntityList) {
             if (!(o instanceof net.minecraft.entity.EntityLivingBase) || o == mc.thePlayer) continue;
             if (o instanceof net.minecraft.entity.item.EntityArmorStand) continue;
             net.minecraft.entity.EntityLivingBase e = (net.minecraft.entity.EntityLivingBase) o;
-            if (e.deathTime != 1) continue;
-            double d2 = e.getDistanceSqToEntity(mc.thePlayer);
-            if (d2 > 64.0 * 64.0) continue;
-            dev.lunarlite.gui.SaoShatter.burst(e); // vỡ thành mảnh đa giác kiểu SAO
-            if (played < 3 && d2 <= 48.0 * 48.0) {
-                mc.getSoundHandler().playSound(net.minecraft.client.audio.PositionedSoundRecord.create(
-                        new net.minecraft.util.ResourceLocation("lunarlite", "sao.death"),
-                        (float) e.posX, (float) e.posY, (float) e.posZ));
-                played++;
+            int id = e.getEntityId();
+            present.add(id);
+            tracked.put(id, e);
+            if (e.hurtTime > 0) lastHurt.put(id, fxTick);
+            if (!fired.contains(id) && (isDying(e) || e.isDead)) {
+                fired.add(id);
+                triggerDeath(mc, e);
             }
         }
+        // thực thể vừa biến mất khỏi thế giới
+        for (java.util.Iterator<java.util.Map.Entry<Integer, net.minecraft.entity.EntityLivingBase>> it =
+                     tracked.entrySet().iterator(); it.hasNext(); ) {
+            java.util.Map.Entry<Integer, net.minecraft.entity.EntityLivingBase> en = it.next();
+            int id = en.getKey();
+            if (present.contains(id)) continue;
+            net.minecraft.entity.EntityLivingBase e = en.getValue();
+            it.remove();
+            Integer lh = lastHurt.remove(id);
+            boolean already = fired.remove(id);
+            if (already || e == null) continue;
+            boolean recentlyHit = lh != null && fxTick - lh <= 20;
+            boolean near = e.getDistanceSqToEntity(mc.thePlayer) <= 24.0 * 24.0;
+            if (near && (recentlyHit || e.getHealth() <= 4f)) triggerDeath(mc, e);
+        }
+        if (fxTick % 200 == 0) fired.retainAll(present);
     }
 
     /** Âm lặp gốc của OpenAL (không delay, không suy giảm theo khoảng cách) nên nối liền mạch, không bị hở giữa các lần. */
@@ -295,6 +340,7 @@ public class LunarLite {
             lowSound = null;
             dev.lunarlite.gui.SaoDeath.update(false);
             dev.lunarlite.gui.SaoShatter.clear();
+            tracked.clear(); lastHurt.clear(); fired.clear();
             return;
         }
         playHealthSounds(mc);
