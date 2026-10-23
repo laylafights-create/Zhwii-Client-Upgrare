@@ -28,14 +28,6 @@ minecraft {
     makeObfSourceJar = false
 }
 
-sourceSets {
-    main {
-        resources {
-            srcDir 'src/main/java/resources'
-        }
-    }
-}
-
 processResources {
     inputs.property "version", project.version
     inputs.property "mcversion", project.minecraft.version
