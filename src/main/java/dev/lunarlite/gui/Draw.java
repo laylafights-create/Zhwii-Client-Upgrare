@@ -145,6 +145,7 @@ public final class Draw {
         int seg = Math.max(32, Math.round(r * 6f));
         GlStateManager.enableBlend();
         GlStateManager.disableTexture2D();
+        GlStateManager.disableCull(); // tam giác vẽ theo chiều kim đồng hồ nên phải tắt cull, không thì bị cắt mất
         GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0);
         Tessellator t = Tessellator.getInstance();
         WorldRenderer wr = t.getWorldRenderer();
@@ -166,6 +167,7 @@ public final class Draw {
             t.draw();
         }
         GlStateManager.enableTexture2D();
+        GlStateManager.enableCull();
         GlStateManager.color(1f, 1f, 1f, 1f);
     }
 
@@ -179,6 +181,7 @@ public final class Draw {
         int seg = Math.max(32, Math.round(r2 * 6f));
         GlStateManager.enableBlend();
         GlStateManager.disableTexture2D();
+        GlStateManager.disableCull(); // tam giác vẽ theo chiều kim đồng hồ nên phải tắt cull, không thì bị cắt mất
         GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0);
         Tessellator t = Tessellator.getInstance();
         WorldRenderer wr = t.getWorldRenderer();
@@ -191,6 +194,103 @@ public final class Draw {
         }
         t.draw();
         GlStateManager.enableTexture2D();
+        GlStateManager.enableCull();
         GlStateManager.color(1f, 1f, 1f, 1f);
+    }
+
+    // ---- nét vẽ mịn cho biểu tượng: đường, cung, đa giác (mỗi hình là MỘT lần vẽ nên màu trong suốt không bị chồng)
+
+    private static void glBegin() {
+        GlStateManager.enableBlend();
+        GlStateManager.disableTexture2D();
+        GlStateManager.disableCull();
+        GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0);
+    }
+
+    private static void glEnd() {
+        GlStateManager.enableTexture2D();
+        GlStateManager.enableCull();
+        GlStateManager.color(1f, 1f, 1f, 1f);
+    }
+
+    /** Đoạn thẳng đầu cắt phẳng, dày w. */
+    public static void line(float x0, float y0, float x1, float y1, float w, int c) {
+        float dx = x1 - x0, dy = y1 - y0;
+        float len = (float) Math.sqrt(dx * dx + dy * dy);
+        if (len < 0.001f) return;
+        float nx = -dy / len * w / 2f, ny = dx / len * w / 2f;
+        glBegin();
+        Tessellator t = Tessellator.getInstance();
+        WorldRenderer wr = t.getWorldRenderer();
+        wr.begin(5, DefaultVertexFormats.POSITION_COLOR);
+        vtx(wr, x0 - nx, y0 - ny, c);
+        vtx(wr, x0 + nx, y0 + ny, c);
+        vtx(wr, x1 - nx, y1 - ny, c);
+        vtx(wr, x1 + nx, y1 + ny, c);
+        t.draw();
+        glEnd();
+    }
+
+    /** Đoạn thẳng hai đầu tròn (hình viên thuốc), dày w. */
+    public static void capsule(float x0, float y0, float x1, float y1, float w, int c) {
+        float dx = x1 - x0, dy = y1 - y0;
+        if (dx * dx + dy * dy < 0.0001f) {
+            disc(x0, y0, w / 2f, c);
+            return;
+        }
+        double th = Math.atan2(dy, dx);
+        float r = w / 2f;
+        int n = 8;
+        glBegin();
+        Tessellator t = Tessellator.getInstance();
+        WorldRenderer wr = t.getWorldRenderer();
+        wr.begin(6, DefaultVertexFormats.POSITION_COLOR);
+        vtx(wr, (x0 + x1) / 2f, (y0 + y1) / 2f, c);
+        for (int i = 0; i <= n; i++) {
+            double a = th - Math.PI / 2 + Math.PI * i / n;
+            vtx(wr, x1 + (float) Math.cos(a) * r, y1 + (float) Math.sin(a) * r, c);
+        }
+        for (int i = 0; i <= n; i++) {
+            double a = th + Math.PI / 2 + Math.PI * i / n;
+            vtx(wr, x0 + (float) Math.cos(a) * r, y0 + (float) Math.sin(a) * r, c);
+        }
+        vtx(wr, x1 + (float) Math.cos(th - Math.PI / 2) * r, y1 + (float) Math.sin(th - Math.PI / 2) * r, c);
+        t.draw();
+        glEnd();
+    }
+
+    /** Cung tròn dày w từ góc a0 đến a1 (radian, trục y hướng xuống). */
+    public static void arc(float cx, float cy, float r, double a0, double a1, float w, int c) {
+        int seg = Math.max(8, (int) Math.ceil(Math.abs(a1 - a0) * Math.max(r, 2f) * 2.0));
+        float r1 = r - w / 2f, r2 = r + w / 2f;
+        glBegin();
+        Tessellator t = Tessellator.getInstance();
+        WorldRenderer wr = t.getWorldRenderer();
+        wr.begin(5, DefaultVertexFormats.POSITION_COLOR);
+        for (int i = 0; i <= seg; i++) {
+            double a = a0 + (a1 - a0) * i / seg;
+            float cs = (float) Math.cos(a), sn = (float) Math.sin(a);
+            vtx(wr, cx + cs * r1, cy + sn * r1, c);
+            vtx(wr, cx + cs * r2, cy + sn * r2, c);
+        }
+        t.draw();
+        glEnd();
+    }
+
+    /** Đa giác đặc dạng "hình sao" quanh trọng tâm (lồi hoặc sao): p = x0,y0,x1,y1,... */
+    public static void poly(float[] p, int c) {
+        int n = p.length / 2;
+        if (n < 3) return;
+        float mx = 0f, my = 0f;
+        for (int i = 0; i < n; i++) { mx += p[2 * i]; my += p[2 * i + 1]; }
+        mx /= n; my /= n;
+        glBegin();
+        Tessellator t = Tessellator.getInstance();
+        WorldRenderer wr = t.getWorldRenderer();
+        wr.begin(6, DefaultVertexFormats.POSITION_COLOR);
+        vtx(wr, mx, my, c);
+        for (int i = 0; i <= n; i++) vtx(wr, p[2 * (i % n)], p[2 * (i % n) + 1], c);
+        t.draw();
+        glEnd();
     }
 }
