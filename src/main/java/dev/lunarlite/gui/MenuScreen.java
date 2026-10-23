@@ -408,7 +408,7 @@ public class MenuScreen extends GuiScreen {
     // ------------------------------------------------------------------ khung ảo <-> màn hình
 
     /** Độ phóng to tối đa của menu (1.0 = cỡ gốc). Chỉnh số này để menu to / nhỏ hơn. */
-    private static final float MENU_SCALE = 0.75f;
+    private static final float MENU_SCALE = 0.95f;
 
     private float ui() {
         return Math.min(MENU_SCALE, Math.min((width - 8f) / VW, (height - 8f) / VH));
@@ -1182,7 +1182,7 @@ public class MenuScreen extends GuiScreen {
                     Draw.lerp(Draw.lerp(0xFFF2F4F6, 0xFFFFE2A8, hv), SAO_ORANGE, sv));
             Gui.drawRect(CX - 8, cy - CR + 3, CX + 8, cy - CR + 4, 0x66FFFFFF);
             int ic = Draw.lerp(Draw.lerp(0xFFC4C8CD, 0xFF8A9096, hv), 0xFFFFFFFF, sv);
-            Icons.draw(act ? "gear" : tabIcon(i), CX - 8, cy - 8, 2, ic);
+            SaoIcons.draw(act ? "gear" : SaoIcons.cat(i == 0 ? null : tabCats.get(i - 1)), CX - 8, cy - 8, ic);
             if (sv > 0.05f) { // mũi tên chỉ sang bảng bên phải, trượt ra từ nút
                 int ax = CX + CR + 4;
                 int len = Math.round(9 * sv);
@@ -1253,9 +1253,12 @@ public class MenuScreen extends GuiScreen {
         int cx = x + 18, cy = y + h / 2;
         Draw.rrect(cx - 12, cy - 12, cx + 12, cy + 12, 12, 0xFFFFFFFF);
         Draw.rrect(cx - 11, cy - 11, cx + 11, cy + 11, 11, i == 2 ? 0xFFB9770E : 0xFF39404C);
-        ItemStack is = new ItemStack(i == 0 ? Items.paper : i == 1 ? Items.compass : Items.emerald);
-        drawItemSmall(is, cx - 8, cy - 8);
-        fr.drawString(ACT_LABEL[i], x + 36, y + (h - 8) / 2, 0xFF22262B, false);
+        SaoIcons.draw(i == 0 ? "arrows" : i == 1 ? "monitor" : "check", cx - 8, cy - 8, 0xFFFFFFFF);
+        GlStateManager.pushMatrix();
+        GlStateManager.translate(x + 36, y + (h - 10) / 2f + 1f, 0f);
+        GlStateManager.scale(1.2f, 1.2f, 1f);
+        fr.drawString(ACT_LABEL[i], 0, 0, 0xFF22262B, false);
+        GlStateManager.popMatrix();
     }
 
     /** Một hàng tính năng: xám phẳng như menu SAO, nút tròn có biểu tượng bên trái, viên BẬT/TẮT bên phải. */
@@ -1273,12 +1276,14 @@ public class MenuScreen extends GuiScreen {
         int cx = x + 18, cy = y + h / 2;
         Draw.rrect(cx - 12, cy - 12, cx + 12, cy + 12, 12, 0xFFFFFFFF);
         Draw.rrect(cx - 11, cy - 11, cx + 11, cy + 11, 11, on ? 0xFF2E6B4A : 0xFF39404C);
-        ItemStack is = stackFor(m);
-        if (is != null) drawItemSmall(is, cx - 8, cy - 8);
-        else Icons.draw(m.id, cx - 8, cy - 8, 2, 0xFFFFFFFF);
+        SaoIcons.draw(SaoIcons.forModule(m), cx - 8, cy - 8, 0xFFFFFFFF);
 
-        String nm = fit(Lang.vi(m.name), w - 112);
-        fr.drawString(nm, x + 36, y + (h - 8) / 2, 0xFF22262B, false);
+        String nm = fit(Lang.vi(m.name), Math.round((w - 112) / 1.2f));
+        GlStateManager.pushMatrix();
+        GlStateManager.translate(x + 36, y + (h - 10) / 2f + 1f, 0f);
+        GlStateManager.scale(1.2f, 1.2f, 1f);
+        fr.drawString(nm, 0, 0, 0xFF22262B, false);
+        GlStateManager.popMatrix();
 
         String st = on ? "BẬT" : "TẮT";
         int pw = 34, px = x + w - pw - 24;
