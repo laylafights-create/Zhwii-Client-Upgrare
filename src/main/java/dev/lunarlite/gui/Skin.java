@@ -137,12 +137,22 @@ public final class Skin {
 
     /** Hàng tuỳ chỉnh không nền: chỉ có đường kẻ mảnh; rê chuột thì sáng nhẹ + vạch màu nhấn. */
     public static void saoRow(int x, int y, int w, int h, float hv) {
-        if (hv > 0.02f) Gui.drawRect(x, y, x + w, y + h, Draw.mulAlpha(0x22FFFFFF, hv));
-        Gui.drawRect(x, y + h - 1, x + w, y + h, 0x40FFFFFF);
+        vgrad(x, y, x + w, y + h, Draw.lerp(0xDEF4F4F5, 0xF2FFFFFF, hv), Draw.lerp(0xD6E4E6E8, 0xEEF2F3F4, hv));
+        Gui.drawRect(x, y, x + w, y + 1, 0xCCFFFFFF);
+        Gui.drawRect(x, y + h - 1, x + w, y + h, 0x55808890);
+        Gui.drawRect(x, y + h, x + w, y + h + 1, 0x22000000);
         if (hv > 0.02f) {
             Gui.drawRect(x, y + h - 1, x + Math.round(w * hv), y + h, Draw.mulAlpha(Draw.ACCENT, hv));
             Gui.drawRect(x, y, x + 2, y + h, Draw.mulAlpha(Draw.ACCENT, hv));
         }
+    }
+
+    /** Vòng tròn phẳng có màu + glyph trắng (icon của từng hàng, giống nút Lock / Shutdown / Restart của SAO). */
+    public static void saoDisc(float cx, float cy, float r, String icon, int base) {
+        Draw.disc(cx + 0.5f, cy + 1.2f, r + 1f, 0x28000000, 0x00000000);
+        Draw.disc(cx, cy, r, Draw.lerp(base, 0xFFFFFFFF, 0.18f), Draw.lerp(base, 0xFF000000, 0.08f));
+        Draw.disc(cx, cy - r * 0.45f, r * 0.45f, 0x30FFFFFF, 0x00FFFFFF);
+        SaoIcons.draw(icon, Math.round(cx) - 8, Math.round(cy) - 8, 0xFFFFFFFF);
     }
 
     /** Ô lõm sáng chứa giá trị (chế độ, số). */

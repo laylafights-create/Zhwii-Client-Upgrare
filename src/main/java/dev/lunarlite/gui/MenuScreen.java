@@ -105,6 +105,8 @@ public class MenuScreen extends GuiScreen {
         boolean fixed;
         /** Vị trí y trong vùng nội dung (nút cuộn được); -1 nếu là nút cố định. */
         int baseY = -1;
+        /** Độ trượt ngang (px) khi hàng đang vào / ra ở mép vùng cuộn. */
+        float edgeDx;
 
         Btn(int kind, int w, String text) {
             super(0, 0, 0, w, BH, text);
@@ -133,18 +135,19 @@ public class MenuScreen extends GuiScreen {
 
             int x = xPosition, y = yPosition, w = width, h = height;
             int ty = y + (h - 8) / 2;
-            int col = enabled ? Skin.TEXT : 0xFF808890;
+            int col = enabled ? Skin.INK : 0xFF8A9096;
             int acc = Draw.ACCENT;
 
             GlStateManager.pushMatrix();
-            GlStateManager.translate(fixed ? 0f : (1f - st) * 22f, 0f, 0f);
+            GlStateManager.translate(fixed ? 0f : (1f - st) * 22f + edgeDx, 0f, 0f);
 
             switch (kind) {
                 case K_ENABLE:
                 case K_BOOL: {
                     Skin.saoRow(x, y, w, h, hov);
                     String lb = kind == K_ENABLE ? "Bật tính năng" : Lang.vi(s.label);
-                    fr.drawStringWithShadow(fr.trimStringToWidth(lb, w - 50), x + 9, ty, col);
+                    Skin.saoDisc(x + 15, y + h / 2f, 8.5f, "check", sw > 0.5f ? 0xFF3FB86F : 0xFF9AA0A6);
+                    fr.drawString(fr.trimStringToWidth(lb, w - 76), x + 30, ty, col, false);
                     Skin.saoSwitch(x + w - 32, y + (h - 12) / 2, sw);
                     break;
                 }
@@ -156,7 +159,8 @@ public class MenuScreen extends GuiScreen {
                     Skin.saoField(bx, by, bw2, h - 6, hov);
                     String vt = fr.trimStringToWidth(val, bw2 - 8);
                     fr.drawString(vt, bx + (bw2 - fr.getStringWidth(vt)) / 2f, ty, Skin.INK, false);
-                    fr.drawStringWithShadow(fr.trimStringToWidth(Lang.vi(s.label), w - bw2 - 20), x + 9, ty, col);
+                    Skin.saoDisc(x + 15, y + h / 2f, 8.5f, "chevron", 0xFF3F8EF0);
+                    fr.drawString(fr.trimStringToWidth(Lang.vi(s.label), w - bw2 - 40), x + 30, ty, col, false);
                     break;
                 }
                 case K_COLOR: {
@@ -164,7 +168,8 @@ public class MenuScreen extends GuiScreen {
                     int sx = x + w - 46, sy = y + 3;
                     Draw.rrect(sx, sy, sx + 40, sy + h - 6, 3, Draw.lerp(0xFF8E949B, 0xFFFFFFFF, hov));
                     Draw.rrect(sx + 1, sy + 1, sx + 39, sy + h - 7, 2, 0xFF000000 | ((ColorSetting) s).value);
-                    fr.drawStringWithShadow(fr.trimStringToWidth(Lang.vi(s.label), w - 66), x + 9, ty, col);
+                    Skin.saoDisc(x + 15, y + h / 2f, 8.5f, "sparkle", 0xFFE0609E);
+                    fr.drawString(fr.trimStringToWidth(Lang.vi(s.label), w - 86), x + 30, ty, col, false);
                     break;
                 }
                 case K_SLIDER: {
@@ -176,7 +181,8 @@ public class MenuScreen extends GuiScreen {
                     Skin.saoField(vx0, y + 3, 38, h - 6, 0f);
                     String vt = fr.trimStringToWidth(val, 34);
                     fr.drawString(vt, vx0 + (38 - fr.getStringWidth(vt)) / 2f, ty, Skin.INK, false);
-                    fr.drawStringWithShadow(fr.trimStringToWidth(Lang.vi(s.label), Math.max(10, vx0 - x - 14)), x + 9, ty, col);
+                    Skin.saoDisc(x + 15, y + h / 2f, 8.5f, "sliders", 0xFFF0A30A);
+                    fr.drawString(fr.trimStringToWidth(Lang.vi(s.label), Math.max(10, vx0 - x - 36)), x + 30, ty, col, false);
                     int ly = y + h / 2;
                     int hx = tx + Math.round((float) ss.ratio() * (TRACK_W - 8));
                     Draw.rrect(tx, ly - 2, tx + TRACK_W, ly + 2, 2, 0xFF8E949B);
@@ -320,6 +326,8 @@ public class MenuScreen extends GuiScreen {
     private float rowScroll, rowTarget;          // cuộn ngang của hàng thẻ (px)
     private final Map<Object, Float> hovAnim = new HashMap<Object, Float>();
     private float setScroll, setTarget;
+    private long lastFrameNs;
+    private float scrollK = 1f; // hệ số làm mượt cuộn của khung hình hiện tại
     private int contentH, bw;
     private String[] descLines = new String[0];
     private final List<Row> rows = new ArrayList<Row>();
@@ -973,7 +981,11 @@ public class MenuScreen extends GuiScreen {
 
         drawBackdrop(op);
 
-        float k = AnimationsModule.menu() ? 0.35f : 1f;
+        long nowNs = System.nanoTime();
+        float dt = lastFrameNs == 0L ? 0.016f : Math.min(0.1f, (nowNs - lastFrameNs) / 1e9f);
+        lastFrameNs = nowNs;
+        scrollK = AnimationsModule.menu() ? 1f - (float) Math.exp(-dt * 14f) : 1f;
+        float k = scrollK;
         setScroll += (setTarget - setScroll) * k;
         if (Math.abs(setTarget - setScroll) < 0.4f) setScroll = setTarget;
 
@@ -1036,23 +1048,25 @@ public class MenuScreen extends GuiScreen {
         long tn = System.currentTimeMillis();
         // cửa sổ SAO phủ toàn bộ trang chi tiết
         Skin.saoWindow(4, 2, VW - 8, VH - 4, 40, tn);
+        Skin.saoRow(PAD, 4, VW - 2 * PAD, 36, 0f);
+        if (descLines.length > 0) Skin.saoRow(PAD, 46, VW - 2 * PAD, descLines.length * 10 + 6, 0f);
         {
             boolean onM = module.enabled;
-            Skin.saoOrb(PAD + 16, 21, 15f, SaoIcons.forModule(module), onM ? 0xFF2E6B4A : 0xFF39404C);
+            Skin.saoDisc(PAD + 22, 22, 14f, SaoIcons.forModule(module), onM ? 0xFF3FB86F : 0xFF9AA0A6);
             String nm = Lang.vi(module.name);
             int avail = VW - 2 * PAD - 40 - 80;
             float sc = fr.getStringWidth(nm) * 1.5f > avail ? 1.15f : 1.5f;
             GlStateManager.pushMatrix();
-            GlStateManager.translate(PAD + 38, 6f, 0f);
+            GlStateManager.translate(PAD + 44, 7f, 0f);
             GlStateManager.scale(sc, sc, 1f);
-            fr.drawStringWithShadow(nm, 0, 0, Skin.TEXT);
+            fr.drawString(nm, 0, 0, Skin.INK, false);
             GlStateManager.popMatrix();
-            fr.drawStringWithShadow(module.category.label, PAD + 38, 25, Draw.ACCENT_LIGHT);
+            fr.drawString(module.category.label, PAD + 44, 26, Skin.INK_DIM, false);
 
-            int bw = 54, bx = VW - PAD - bw;
-            Skin.saoPill(fr, bx, 11, bw, 20, onM, tn);
+            int bw = 54, bx = VW - PAD - bw - 8;
+            Skin.saoPill(fr, bx, 12, bw, 20, onM, tn);
             for (int i = 0; i < descLines.length; i++) {
-                fr.drawStringWithShadow(descLines[i], PAD, 50 + i * 10, Skin.SOFT);
+                fr.drawString(descLines[i], PAD + 8, 49 + i * 10, Skin.INK_SOFT, false);
             }
         }
         Gui.drawRect(PAD, 71, VW - PAD, 72, 0x30FFFFFF);
@@ -1234,7 +1248,7 @@ public class MenuScreen extends GuiScreen {
         int yt = listYTarget();
         listYCur = listYCur < 0f ? yt : listYCur + (yt - listYCur) * k;
         if (Math.abs(yt - listYCur) < 0.4f) listYCur = yt;
-        listScroll += (listTarget - listScroll) * k;
+        listScroll += (listTarget - listScroll) * scrollK;
         if (Math.abs(listTarget - listScroll) < 0.4f) listScroll = listTarget;
         clampList();
         float sk = AnimationsModule.menu() ? 0.22f : 1f;
@@ -1425,6 +1439,10 @@ public class MenuScreen extends GuiScreen {
                 sp = AnimationsModule.easeOutBack(t);
             }
             if (!expanded) sp = Math.min(sp, shift);
+            if (AnimationsModule.menu()) { // hàng co lại khi trượt tới mép trên / dưới danh sách
+                float ed = Math.min(y - ly, ly + lh - (y + LRH));
+                sp = Math.min(sp, 0.55f + 0.45f * Math.max(0f, Math.min(1f, ed / 26f)));
+            }
             Object hkeyObj = actionsOpen ? (Object) ("act" + i) : (Object) shown.get(i);
             float hv = hover(hkeyObj, i == hr && sp > 0.9f, k);
             if (sp <= 0.02f) continue;
@@ -1679,6 +1697,9 @@ public class MenuScreen extends GuiScreen {
             if (b.baseY < 0) continue;
             b.yPosition = top + b.baseY - sc;
             b.visible = b.yPosition + BH > top && b.yPosition < bottom;
+            float ed = Math.min(b.yPosition - top, bottom - (b.yPosition + BH));
+            float et = Math.max(0f, Math.min(1f, ed / 24f));
+            b.edgeDx = AnimationsModule.menu() ? (1f - et) * (1f - et) * 16f : 0f;
         }
         clip(px, top, pw, setViewH());
         for (Row r : rows) {
@@ -1690,10 +1711,10 @@ public class MenuScreen extends GuiScreen {
                 continue;
             }
             int hy = ry + (BH - 8) / 2;
-            Skin.diamond(px + 13, hy + 4, 4, Skin.ORANGE);
+            Skin.saoRow(px + 8, ry, pw - 30, BH, 0f);
+            Skin.diamond(px + 20, hy + 4, 4, Skin.ORANGE);
             String head = r.header.toUpperCase();
-            fr.drawStringWithShadow(head, px + 22, hy, Draw.ACCENT_LIGHT);
-            Gui.drawRect(px + 22 + fr.getStringWidth(head) + 6, hy + 4, px + pw - 14, hy + 5, 0x33FFFFFF);
+            fr.drawString(head, px + 30, hy, Skin.INK_SOFT, false);
         }
         for (Object o : buttonList) {
             Btn b = (Btn) o;
@@ -1736,7 +1757,7 @@ public class MenuScreen extends GuiScreen {
         int bh = thumbH(viewH, totalH);
         int by = thumbY(y, viewH, totalH, scroll);
         boolean hover = curMx >= x - 3 && curMx < x + BAR_W + 2 && curMy >= y && curMy < y + viewH;
-        float target = dragBar || hover ? 1f : 0f;
+        float target = dragBar || hover || Math.abs(setTarget - setScroll) > 0.8f ? 1f : 0f;
         barAnim += (target - barAnim) * (AnimationsModule.menu() ? 0.3f : 1f);
         if (Math.abs(target - barAnim) < 0.02f) barAnim = target;
 
