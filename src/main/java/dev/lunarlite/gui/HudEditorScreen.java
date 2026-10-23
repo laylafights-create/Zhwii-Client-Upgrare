@@ -37,6 +37,10 @@ import org.lwjgl.input.Mouse;
  */
 public class HudEditorScreen extends GuiScreen {
     private static final int SNAP = 5;
+    /** Màu cam đặc trưng của menu SAO. */
+    private static final int ORANGE = 0xFFF0A30A;
+    private static final int INK = 0xFF22262B;      // chữ tối trên hàng xám
+    private static final int INK_SOFT = 0xFF2D5F7A; // giá trị / nhãn phụ
     private static final int PW = 196, RH = 20, GAP = 4, HEAD = 26, XS = 11, BAR_W = 6;
     private static final int BH = 20, WIDE = 200;
     /** Khoảng hở phía dưới dành cho dòng gợi ý + nút quay lại. */
@@ -163,12 +167,31 @@ public class HudEditorScreen extends GuiScreen {
 
     // ------------------------------------------------------------------ thành phần vẽ chung với menu
 
+    /** Gradient dọc, tự bật lại blend và đặt lại màu GL (tránh nhuộm màu các thứ vẽ sau). */
+    private void vgrad(int x1, int y1, int x2, int y2, int c1, int c2) {
+        drawGradientRect(x1, y1, x2, y2, c1, c2);
+        GlStateManager.enableBlend();
+        GlStateManager.color(1f, 1f, 1f, 1f);
+    }
+
+    /** Hàng xám kiểu SAO: chuyển màu dọc, vệt sáng mép trên, gờ tối mép dưới. */
+    private void saoRow(int x, int y, int w, int h, float hov) {
+        vgrad(x, y, x + w, y + h, Draw.lerp(0xF0D2D6DB, 0xF0F6F8FA, hov), Draw.lerp(0xF0B0B5BB, 0xF0DADFE3, hov));
+        Gui.drawRect(x, y, x + w, y + 1, 0x99FFFFFF);
+        Gui.drawRect(x, y + h - 1, x + w, y + h, 0xFF7C838A);
+        Gui.drawRect(x, y + h, x + w, y + h + 1, 0x33000000);
+    }
+
+    private void ink(String t, float x, float y, int c) {
+        fontRendererObj.drawString(t, x, y, c, false);
+    }
+
     /** Công tắc nhỏ BẬT/TẮT (giống MenuScreen); a = 0..1 để trượt mượt. */
     private static void drawSwitch(int tx, int ty, float a) {
-        Gui.drawRect(tx - 1, ty - 1, tx + 19, ty + 9, 0xFF000000);
-        Gui.drawRect(tx, ty, tx + 18, ty + 8, Draw.lerp(0xFF7A2A2A, 0xFF2E9B2E, a));
+        pill(tx - 2, ty - 2, tx + 20, ty + 10, Draw.lerp(0xFF8E949B, 0xFF3FBF7F, a));
+        Gui.drawRect(tx, ty - 1, tx + 18, ty, Draw.lerp(0x44FFFFFF, 0x66FFFFFF, a));
         int kx = tx + 1 + Math.round(10 * a);
-        Gui.drawRect(kx, ty + 1, kx + 6, ty + 7, 0xFFEEEEEE);
+        Gui.drawRect(kx, ty, kx + 7, ty + 8, 0xFFFFFFFF);
     }
 
     /** Hình viên thuốc (bo tròn 1px hai đầu), không chồng alpha. */
@@ -187,11 +210,10 @@ public class HudEditorScreen extends GuiScreen {
         if (b != null) { b[0] = x; b[1] = y; b[2] = w; b[3] = h; }
         hov += ((over ? 1f : 0f) - hov) * smooth();
         if (Math.abs((over ? 1f : 0f) - hov) < 0.01f) hov = over ? 1f : 0f;
-        Gui.drawRect(x, y, x + w, y + h, Draw.lerp(0x22FFFFFF, 0x3CFFFFFF, hov));
-        Gui.drawRect(x, y + h - 1, x + w, y + h, 0x18000000);
-        if (hov > 0.02f) Gui.drawRect(x, y, x + Math.round(2 * hov), y + h, Draw.ACCENT);
-        String t = fontRendererObj.trimStringToWidth(label, w - 8);
-        fontRendererObj.drawStringWithShadow(t, x + (w - fontRendererObj.getStringWidth(t)) / 2f, y + (h - 8) / 2f, 0xFFFFFF);
+        saoRow(x, y, w, h, hov);
+        Gui.drawRect(x, y, x + 3, y + h, Draw.lerp(0xFFB9770E, ORANGE, hov));
+        String t = fontRendererObj.trimStringToWidth(label, w - 14);
+        ink(t, x + (w - fontRendererObj.getStringWidth(t)) / 2f + 1, y + (h - 8) / 2f, INK);
         return hov;
     }
 
@@ -304,34 +326,33 @@ public class HudEditorScreen extends GuiScreen {
         GlStateManager.translate((1f - st) * 22f, 0f, 0f);
 
         // nền
-        Gui.drawRect(x, y, x + w, y + h, Draw.lerp(0x22FFFFFF, 0x3CFFFFFF, hov));
-        Gui.drawRect(x, y + h - 1, x + w, y + h, 0x18000000);
+        saoRow(x, y, w, h, hov);
         if (r.kind == K_SLIDER) {
             int fw = (int) Math.round(((SliderSetting) r.s).ratio() * w);
-            Gui.drawRect(x, y, x + fw, y + h - 1, Draw.withAlpha(Draw.ACCENT, 0x55));
-            Gui.drawRect(Math.max(x, x + fw - 2), y, x + Math.max(2, fw), y + h - 1, Draw.ACCENT);
+            Gui.drawRect(x, y, x + fw, y + h - 1, 0x66F0A30A);
+            Gui.drawRect(Math.max(x, x + fw - 2), y, x + Math.max(2, fw), y + h - 1, ORANGE);
         }
-        if (hov > 0.02f) Gui.drawRect(x, y, x + Math.round(2 * hov), y + h, Draw.ACCENT);
+        if (hov > 0.02f) Gui.drawRect(x, y, x + Math.round(3 * hov), y + h, ORANGE);
 
         // chữ
         switch (r.kind) {
             case K_SCALE: {
-                fr.drawStringWithShadow("Kích cỡ", x + 7, ty, 0xFFFFFF);
+                ink("Kích cỡ", x + 8, ty, INK);
                 int mxn = x + w - 2 * RH, pxn = x + w - RH;
                 String val = valueText(r);
-                fr.drawStringWithShadow(val, mxn - 6 - fr.getStringWidth(val), ty, Draw.ACCENT_LIGHT);
+                ink(val, mxn - 6 - fr.getStringWidth(val), ty, INK_SOFT);
                 boolean hm = st > 0.7f && inView && Draw.in(mx, my, mxn, y, RH - 1, RH);
                 boolean hp = st > 0.7f && inView && Draw.in(mx, my, pxn, y, RH, RH);
-                Gui.drawRect(mxn, y, mxn + RH - 1, y + h - 1, hm ? Draw.ACCENT_DIM : 0x33000000);
-                Gui.drawRect(pxn, y, pxn + RH, y + h - 1, hp ? Draw.ACCENT_DIM : 0x33000000);
-                fr.drawStringWithShadow("-", mxn + (RH - 1 - fr.getStringWidth("-")) / 2f, ty, 0xFFFFFF);
-                fr.drawStringWithShadow("+", pxn + (RH - fr.getStringWidth("+")) / 2f, ty, 0xFFFFFF);
+                Gui.drawRect(mxn, y + 1, mxn + RH - 1, y + h - 1, hm ? 0xAAF0A30A : 0x44000000);
+                Gui.drawRect(pxn, y + 1, pxn + RH, y + h - 1, hp ? 0xAAF0A30A : 0x44000000);
+                ink("-", mxn + (RH - 1 - fr.getStringWidth("-")) / 2f, ty, hm ? 0xFFFFFFFF : INK);
+                ink("+", pxn + (RH - fr.getStringWidth("+")) / 2f, ty, hp ? 0xFFFFFFFF : INK);
                 break;
             }
             case K_BOOL: {
                 float swT = ((BoolSetting) r.s).value ? 1f : 0f;
                 float sw = approach(swAnim, key, swT, swT, k);
-                fr.drawStringWithShadow(fr.trimStringToWidth(Lang.vi(r.s.label), w - 40), x + 7, ty, 0xFFFFFF);
+                ink(fr.trimStringToWidth(Lang.vi(r.s.label), w - 40), x + 8, ty, INK);
                 drawSwitch(x + w - 26, ty, sw);
                 break;
             }
@@ -343,8 +364,8 @@ public class HudEditorScreen extends GuiScreen {
                 int rr = x + w - 7 - extra;
                 int rw = fr.getStringWidth(right);
                 String left = fr.trimStringToWidth(Lang.vi(r.s.label), Math.max(10, w - 14 - rw - 10 - extra));
-                fr.drawStringWithShadow(left, x + 7, ty, 0xFFFFFF);
-                fr.drawStringWithShadow(right, rr - rw, ty, Draw.ACCENT_LIGHT);
+                ink(left, x + 8, ty, INK);
+                ink(right, rr - rw, ty, INK_SOFT);
                 if (r.kind == K_COLOR) {
                     int sx = x + w - 17, sy = y + (h - 10) / 2;
                     Gui.drawRect(sx - 1, sy - 1, sx + 11, sy + 11, 0xFF000000);
@@ -355,7 +376,7 @@ public class HudEditorScreen extends GuiScreen {
             default: {
                 String label = r.kind == K_ACTION ? r.a.label : "Đặt lại tuỳ chỉnh";
                 String t = fr.trimStringToWidth(label, w - 8);
-                fr.drawStringWithShadow(t, x + (w - fr.getStringWidth(t)) / 2f, ty, 0xFFFFFF);
+                ink(t, x + (w - fr.getStringWidth(t)) / 2f, ty, INK);
                 break;
             }
         }
@@ -387,9 +408,9 @@ public class HudEditorScreen extends GuiScreen {
 
         int tw = 3 + Math.round(2 * barAnim);
         int tx1 = x + 1 + Math.round((5 - tw) / 2f);
-        pill(x + 1, y + 2, x + 6, y + viewH - 2, 0x55000000); // rãnh
+        pill(x + 1, y + 2, x + 6, y + viewH - 2, 0x33000000); // rãnh
         int alpha = dragBar ? 0xFF : 0x99 + Math.round(0x33 * barAnim);
-        pill(tx1, by + 2, tx1 + tw, Math.min(y + viewH - 2, by + bh - 2), (alpha << 24) | 0xFFFFFF);
+        pill(tx1, by + 2, tx1 + tw, Math.min(y + viewH - 2, by + bh - 2), (alpha << 24) | 0xF0A30A);
     }
 
     /** Bấm chuột trái vào thanh cuộn: bắt đầu kéo (bấm ngoài tay nắm thì nhảy tới đó). */
@@ -417,23 +438,28 @@ public class HudEditorScreen extends GuiScreen {
         float e = AnimationsModule.menu()
                 ? AnimationsModule.ease((System.currentTimeMillis() - selAt) * AnimationsModule.speed() / 200f) : 1f;
 
-        // nền + hai đường kẻ trên / dưới (như khung của menu), hiện dần khi chọn HUD
+        // thẻ trắng kiểu SAO: bóng, nền chuyển màu, thanh tiêu đề xám nhạt, gạch chân cam nở ra
+        Gui.drawRect(px - 1, py - 1, px + PW + 1, py + ph + 2, Draw.mulAlpha(0x55000000, e));
+        vgrad(px, py, px + PW, py + ph, Draw.mulAlpha(0xFFFCFCFD, e), Draw.mulAlpha(0xFFEBECEE, e));
+        vgrad(px, py, px + PW, py + HEAD - 1, Draw.mulAlpha(0xFFF3F4F5, e), Draw.mulAlpha(0xFFE0E2E4, e));
+        Gui.drawRect(px, py + HEAD - 1, px + PW, py + HEAD, Draw.mulAlpha(0xFFD2D4D6, e));
+        int uw = Math.round((PW - 12) * e);
+        Gui.drawRect(px + 6, py + HEAD - 1, px + 6 + uw, py + HEAD, ORANGE);
+        Skin.brackets(px - 3, py - 3, PW + 6, ph + 6, 7, (Math.round(150 * e) << 24) | (Draw.ACCENT & 0xFFFFFF));
 
         // tiêu đề
         GlStateManager.pushMatrix();
         GlStateManager.translate(px + 8, py + 7, 0f);
         GlStateManager.scale(1.2f, 1.2f, 1f);
-        fr.drawStringWithShadow(fr.trimStringToWidth(Lang.vi(selected.name), 100), 0, 0, 0xFFFFFF);
+        fr.drawString(fr.trimStringToWidth(Lang.vi(selected.name), 100), 0, 0, 0xFF3A3F45, false);
         GlStateManager.popMatrix();
         String cat = selected.category.label;
-        fr.drawStringWithShadow(cat, px + PW - 8 - fr.getStringWidth(cat), py + 9, 0x909090);
-        int uw = Math.round((PW - 12) * e);
-        Gui.drawRect(px + 6, py + HEAD - 2, px + 6 + uw, py + HEAD - 1, Draw.ACCENT_DIM);
+        fr.drawString(cat, px + PW - 8 - fr.getStringWidth(cat), py + 9, 0xFF7A8087, false);
 
         // thanh kéo: giữ chuột trái vào tiêu đề để kéo bảng tới bất kỳ đâu, chuột phải = về vị trí tự động
         int gx = px + PW - 8 - fr.getStringWidth(cat) - 12 - 34, gy = py + 10;
         boolean gh = dragPanel || Draw.in(mx, my, px, py, PW, HEAD);
-        pill(gx, gy, gx + 34, gy + 5, gh ? 0xFFFFFFFF : 0x80FFFFFF);
+        pill(gx, gy, gx + 34, gy + 5, gh ? ORANGE : 0xFFA0A5AA);
 
         // các hàng (cắt theo vùng cuộn)
         Draw.scissor(mc, px, viewTop, PW, viewH);
@@ -478,14 +504,18 @@ public class HudEditorScreen extends GuiScreen {
             h.render(sr, true);
             int rx = h.renderX(sr, true), ry = h.renderY(sr, true);
             int w = h.boxW(true), hh = h.boxH(true);
-            int col = h == dragging ? Draw.ACCENT_LIGHT : (h == selected ? Draw.ACCENT : (h == hover ? 0xAAFFFFFF : 0x40FFFFFF));
+            int col = h == dragging ? 0xFFFFD27A : (h == selected ? ORANGE : (h == hover ? 0xCCFFFFFF : 0x55FFFFFF));
             Draw.outline(rx - 2, ry - 2, rx + w + 2, ry + hh + 2, col);
+            if (h == selected || h == dragging) { // dấu ngoặc ở góc khung HUD đang chọn, nhấp nháy nhẹ
+                int ba = 170 + Math.round(70f * (float) Math.sin(System.currentTimeMillis() / 300.0));
+                Skin.brackets(rx - 5, ry - 5, w + 10, hh + 10, 6, (Math.min(255, ba) << 24) | 0xF0A30A);
+            }
             if (h == selected) {
                 String tag = Lang.vi(h.name) + "  " + String.format(Locale.ROOT, "%.2fx", h.getScale());
                 int tw = fontRendererObj.getStringWidth(tag) + 10;
                 int ty = ry - 15 < 2 ? ry + hh + 4 : ry - 15;
-                Gui.drawRect(rx - 2, ty, rx - 2 + tw, ty + 12, 0xCC000000);
-                Gui.drawRect(rx - 2, ty, rx, ty + 12, Draw.ACCENT);
+                vgrad(rx - 2, ty, rx - 2 + tw, ty + 12, 0xFFFFB02E, 0xFFE08F00);
+                Gui.drawRect(rx - 2, ty, rx - 2 + tw, ty + 1, 0x88FFFFFF);
                 fontRendererObj.drawStringWithShadow(tag, rx + 4, ty + 2, 0xFFFFFF);
             }
         }
@@ -494,8 +524,10 @@ public class HudEditorScreen extends GuiScreen {
         if (panelOn) {
             boolean ox = hit(bX, mx, my);
             int x = bX[0], y = bX[1];
-            Gui.drawRect(x - 1, y - 1, x + XS + 1, y + XS + 1, 0xFF000000);
-            Gui.drawRect(x, y, x + XS, y + XS, ox ? 0xFFFF5555 : 0xFFCC3333);
+            int ccx = x + XS / 2, ccy = y + XS / 2, rr = XS / 2 + 4;
+            int xb = ox ? 0xFFD94A3D : 0xFF39404C;
+            Draw.disc(ccx + 0.5f, ccy + 0.5f, rr + 1.2f, 0xFFFFFFFF);
+            Draw.disc(ccx + 0.5f, ccy + 0.5f, rr, Draw.lerp(xb, 0xFFFFFFFF, 0.22f), Draw.lerp(xb, 0xFF000000, 0.2f));
             for (int i = 2; i < XS - 2; i++) {
                 Gui.drawRect(x + i, y + i, x + i + 1, y + i + 1, 0xFFFFFFFF);
                 Gui.drawRect(x + XS - 1 - i, y + i, x + XS - i, y + i + 1, 0xFFFFFFFF);
@@ -507,9 +539,12 @@ public class HudEditorScreen extends GuiScreen {
         String title = "Zhwii Client  -  Sửa vị trí HUD";
         GlStateManager.pushMatrix();
         GlStateManager.translate(0f, (1f - op) * 10f, 0f);
-        drawCenteredString(fontRendererObj, title, cx, 10, 0xFFFFFF);
-        int uw = Math.round((fontRendererObj.getStringWidth(title) / 2f + 8) * op);
-        Gui.drawRect(cx - uw, 19, cx + uw, 20, Draw.ACCENT);
+        int tpw = fontRendererObj.getStringWidth(title) / 2 + 14;
+        vgrad(cx - tpw, 5, cx + tpw, 24, Draw.mulAlpha(0xF0F6F7F8, op), Draw.mulAlpha(0xF0D9DCDF, op));
+        Draw.ring(cx - tpw, 5, cx + tpw, 24, Draw.mulAlpha(0xFFB8BEC4, op));
+        fontRendererObj.drawString(title, cx - fontRendererObj.getStringWidth(title) / 2f, 11, 0xFF3A3F45, false);
+        int uw = Math.round((tpw - 4) * op);
+        Gui.drawRect(cx - uw, 23, cx + uw, 24, ORANGE);
         GlStateManager.popMatrix();
 
         // dòng gợi ý ngay trên nút quay lại (cùng vị trí với dòng mô tả của menu)

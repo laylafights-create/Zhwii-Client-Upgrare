@@ -1210,15 +1210,6 @@ public class MenuScreen extends GuiScreen {
         int n = circleCount();
         float lineP = AnimationsModule.menu()
                 ? AnimationsModule.ease((now - openStart) * AnimationsModule.speed() / (260f + n * 90f)) : 1f;
-        Gui.drawRect(CX - 1, circleY(0), CX + 1,
-                circleY(0) + Math.round((circleY(n - 1) - circleY(0)) * lineP), 0x99B8EFFF);
-        if (lineP >= 0.99f && n > 1) { // đốm sáng chạy dọc đường nối
-            float t = (float) ((now % 2200L) / 2200.0);
-            int yy = circleY(0) + Math.round((circleY(n - 1) - circleY(0)) * t);
-            Gui.drawRect(CX - 2, yy - 6, CX + 2, yy + 6, 0x18B8EFFF);
-            Gui.drawRect(CX - 1, yy - 4, CX + 1, yy + 4, 0x66FFFFFF);
-            Gui.drawRect(CX - 1, yy - 1, CX + 1, yy + 1, 0xCCFFFFFF);
-        }
         int selTab = selCircle();
         for (int i = 0; i < n; i++) {
             boolean act = i == tabCount();
@@ -1247,31 +1238,29 @@ public class MenuScreen extends GuiScreen {
             // gợn sáng lan ra khi bấm
             if (i == pressCircle && pp >= 0f && pp < 1.7f) {
                 float rp = Math.min(1f, pp / 1.7f);
-                int rr = CR + 3 + Math.round(rp * 16f);
-                int ra = Math.round((1f - rp) * (1f - rp) * 90f);
-                if (ra > 4) Draw.rrect(CX - rr, cy - rr, CX + rr, cy + rr, rr, (ra << 24) | 0xFFD27A);
+                float rr = CR + 3 + rp * 16f;
+                int ra = Math.round((1f - rp) * (1f - rp) * 200f);
+                if (ra > 4) Draw.circleRing(CX, cy, rr - 1.4f, rr, (ra << 24) | 0xFFD27A);
             }
-            // quầng sáng cam đập nhẹ quanh nút đang chọn
+            // quầng sáng toả mềm quanh nút (cam đập nhẹ khi chọn, xanh mờ khi rê chuột)
             if (sv > 0.02f) {
-                for (int g = 3; g >= 1; g--) {
-                    int gr = CR + 3 + g * 2 + Math.round(pulse * 2f);
-                    int ga = Math.round(sv * (22f - g * 5f + pulse * 12f));
-                    if (ga > 3) Draw.rrect(CX - gr, cy - gr, CX + gr, cy + gr, gr, (ga << 24) | 0xF0A30A);
-                }
-            } else if (hv > 0.02f) { // quầng xanh mờ khi rê chuột
-                int gr = CR + 5;
-                int ga = Math.round(hv * 34f);
-                if (ga > 3) Draw.rrect(CX - gr, cy - gr, CX + gr, cy + gr, gr, (ga << 24) | 0xB8EFFF);
+                int ga = Math.round(sv * (60f + pulse * 40f));
+                if (ga > 3) Draw.disc(CX, cy, CR + 11f + pulse * 2f, (ga << 24) | 0xF0A30A, 0x00F0A30A);
+            } else if (hv > 0.02f) {
+                int ga = Math.round(hv * 70f);
+                if (ga > 3) Draw.disc(CX, cy, CR + 9f, (ga << 24) | 0xB8EFFF, 0x00B8EFFF);
             }
 
-            Draw.rrect(CX - CR - 2, cy - CR, CX + CR + 4, cy + CR + 6, CR + 3, 0x30000000); // bóng đổ dưới nút
-            Draw.rrect(CX - CR - 3, cy - CR - 3, CX + CR + 3, cy + CR + 3, CR + 3,
-                    Draw.lerp(Draw.lerp(0x99B8EFFF, 0xFFFFFFFF, hv), 0xDDF0A30A, sv));
-            Draw.rrect(CX - CR - 1, cy - CR - 1, CX + CR + 1, cy + CR + 1, CR + 1, 0xFF0B1420);
-            Draw.rrect(CX - CR + 1, cy - CR + 1, CX + CR - 1, cy + CR - 1, CR - 1,
-                    Draw.lerp(Draw.lerp(0xFFF2F4F6, 0xFFFFE2A8, hv * 0.6f), SAO_ORANGE, sv));
-            Gui.drawRect(CX - 8, cy - CR + 3, CX + 8, cy - CR + 4, 0x66FFFFFF);
-            Gui.drawRect(CX - 7, cy + CR - 5, CX + 7, cy + CR - 4, 0x18000000); // viền tối mảnh phía dưới
+            Draw.disc(CX + 0.5f, cy + 3f, CR + 5f, 0x40000000, 0x00000000); // bóng đổ mềm dưới nút
+            // viền ngoài: bạc ánh xanh -> trắng khi rê -> cam khi chọn, tròn mịn
+            int rim = Draw.lerp(Draw.lerp(0xCCB8EFFF, 0xFFFFFFFF, hv), 0xFFF0A30A, sv);
+            Draw.disc(CX, cy, CR + 3f, Draw.lerp(rim, 0xFFFFFFFF, 0.25f), rim);
+            Draw.disc(CX, cy, CR + 1f, 0xFF0B1420);
+            int body = Draw.lerp(Draw.lerp(0xFFF2F4F6, 0xFFFFE2A8, hv * 0.6f), SAO_ORANGE, sv);
+            // thân nút: sáng ở giữa, đậm dần ra mép như mặt kính cong
+            Draw.disc(CX, cy, CR - 1f, Draw.lerp(body, 0xFFFFFFFF, 0.38f), Draw.lerp(body, 0xFF000000, 0.16f));
+            Draw.circleRing(CX, cy, CR - 4.6f, CR - 3.8f, 0x1E000000);           // đường chỉ nổi bên trong
+            Draw.disc(CX, cy - CR * 0.5f, CR * 0.5f, 0x60FFFFFF, 0x00FFFFFF);    // vệt phản chiếu phía trên
             // vệt sáng quét ngang qua nút đang chọn
             if (sv > 0.5f) {
                 float sw = (float) ((now % 1800L) / 1800.0);
@@ -1283,16 +1272,15 @@ public class MenuScreen extends GuiScreen {
             int ic = Draw.lerp(Draw.lerp(0xFFC4C8CD, 0xFF8A9096, hv), 0xFFFFFFFF, sv);
             SaoIcons.draw(act ? "gear" : SaoIcons.cat(i == 0 ? null : tabCats.get(i - 1)), CX - 8, cy - 8, ic);
 
-            if (sv > 0.3f) { // đốm sáng nhỏ quay quanh nút đang chọn
+            if (sv > 0.3f) { // đốm sáng nhỏ có đuôi quay quanh nút đang chọn
                 double ang = now / 700.0;
-                int ox = CX + Math.round((float) Math.cos(ang) * (CR + 7));
-                int oy = cy + Math.round((float) Math.sin(ang) * (CR + 7));
-                int oa = Math.round(200f * sv);
-                Gui.drawRect(ox - 1, oy - 1, ox + 1, oy + 1, (oa << 24) | 0xFFD27A);
-                double a2 = ang - 0.35;
-                Gui.drawRect(CX + Math.round((float) Math.cos(a2) * (CR + 7)), cy + Math.round((float) Math.sin(a2) * (CR + 7)),
-                        CX + Math.round((float) Math.cos(a2) * (CR + 7)) + 1, cy + Math.round((float) Math.sin(a2) * (CR + 7)) + 1,
-                        (Math.round(110f * sv) << 24) | 0xFFD27A);
+                for (int tr = 0; tr < 5; tr++) {
+                    double aa = ang - tr * 0.16;
+                    float ox = CX + (float) Math.cos(aa) * (CR + 7f);
+                    float oy = cy + (float) Math.sin(aa) * (CR + 7f);
+                    int oa = Math.round((200f - tr * 38f) * sv);
+                    Draw.disc(ox, oy, 1.7f - tr * 0.22f, (oa << 24) | 0xFFD27A);
+                }
             }
             // tam giác chỉ sang bảng bên phải: chỉ hiện (mờ dần + trượt ra) ở nút ĐANG CHỌN
             if (sv > 0.05f) {
@@ -1384,8 +1372,12 @@ public class MenuScreen extends GuiScreen {
         if (i == 2) Gui.drawRect(x, y, x + 3, y + h, SAO_ORANGE);
         else if (hv > 0.02f) Gui.drawRect(x, y, x + 2, y + h, Draw.mulAlpha(Draw.ACCENT, hv));
         int cx = x + 18, cy = y + h / 2;
-        Draw.rrect(cx - 12, cy - 12, cx + 12, cy + 12, 12, 0xFFFFFFFF);
-        Draw.rrect(cx - 11, cy - 11, cx + 11, cy + 11, 11, i == 2 ? 0xFFB9770E : 0xFF39404C);
+        Draw.disc(cx, cy, 12.5f, 0xFFFFFFFF);
+        {
+            int cb = i == 2 ? 0xFFB9770E : 0xFF39404C;
+            Draw.disc(cx, cy, 11.3f, Draw.lerp(cb, 0xFFFFFFFF, 0.22f), Draw.lerp(cb, 0xFF000000, 0.2f));
+            Draw.disc(cx, cy - 5.5f, 5.5f, 0x40FFFFFF, 0x00FFFFFF);
+        }
         SaoIcons.draw(i == 0 ? "arrows" : i == 1 ? "monitor" : "check", cx - 8, cy - 8, 0xFFFFFFFF);
         GlStateManager.pushMatrix();
         GlStateManager.translate(x + 36, y + (h - 10) / 2f + 1f, 0f);
@@ -1416,12 +1408,16 @@ public class MenuScreen extends GuiScreen {
         } else if (hv > 0.02f) Gui.drawRect(x, y, x + 2, y + h, Draw.mulAlpha(Draw.ACCENT, hv));
 
         int cx = x + 18, cy = y + h / 2;
-        Draw.rrect(cx - 12, cy - 12, cx + 12, cy + 12, 12, 0xFFFFFFFF);
-        Draw.rrect(cx - 11, cy - 11, cx + 11, cy + 11, 11, on ? 0xFF2E6B4A : 0xFF39404C);
+        Draw.disc(cx, cy, 12.5f, 0xFFFFFFFF);
+        {
+            int cb = on ? 0xFF2E6B4A : 0xFF39404C;
+            Draw.disc(cx, cy, 11.3f, Draw.lerp(cb, 0xFFFFFFFF, 0.22f), Draw.lerp(cb, 0xFF000000, 0.2f));
+            Draw.disc(cx, cy - 5.5f, 5.5f, 0x40FFFFFF, 0x00FFFFFF);
+        }
         SaoIcons.draw(SaoIcons.forModule(m), cx - 8, cy - 8, 0xFFFFFFFF);
         if (on) { // chấm xanh báo đang bật ở góc nút tròn
-            Draw.rrect(cx + 5, cy + 5, cx + 12, cy + 12, 4, 0xFFFFFFFF);
-            Draw.rrect(cx + 6, cy + 6, cx + 11, cy + 11, 3, 0xFF3FBF7F);
+            Draw.disc(cx + 8.5f, cy + 8.5f, 4f, 0xFFFFFFFF);
+            Draw.disc(cx + 8.5f, cy + 8.5f, 2.8f, 0xFF6FE3A6, 0xFF2FA866);
         }
 
         String nm = fit(Lang.vi(m.name), Math.round((w - 112) / 1.2f));

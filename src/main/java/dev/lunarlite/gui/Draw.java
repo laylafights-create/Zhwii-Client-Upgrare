@@ -3,6 +3,10 @@ package dev.lunarlite.gui;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.ScaledResolution;
+import net.minecraft.client.renderer.GlStateManager;
+import net.minecraft.client.renderer.Tessellator;
+import net.minecraft.client.renderer.WorldRenderer;
+import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
 import org.lwjgl.opengl.GL11;
 
 /** Các hàm vẽ dùng chung: bo góc, viền, scissor, màu. */
@@ -127,5 +131,66 @@ public final class Draw {
 
     public static void endScissor() {
         GL11.glDisable(GL11.GL_SCISSOR_TEST);
+    }
+
+    // ---- hình tròn mịn (vẽ bằng tam giác, không bị răng cưa như rrect)
+
+    private static void vtx(WorldRenderer wr, float x, float y, int c) {
+        wr.pos(x, y, 0.0).color((c >> 16) & 255, (c >> 8) & 255, c & 255, (c >>> 24) & 255).endVertex();
+    }
+
+    /** Hình tròn đầy, màu chuyển từ tâm (cIn) ra mép (cOut); mép được làm mờ 1px nên không răng cưa. */
+    public static void disc(float cx, float cy, float r, int cIn, int cOut) {
+        if (r <= 0f) return;
+        int seg = Math.max(32, Math.round(r * 6f));
+        GlStateManager.enableBlend();
+        GlStateManager.disableTexture2D();
+        GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0);
+        Tessellator t = Tessellator.getInstance();
+        WorldRenderer wr = t.getWorldRenderer();
+        wr.begin(6, DefaultVertexFormats.POSITION_COLOR);
+        vtx(wr, cx, cy, cIn);
+        for (int i = 0; i <= seg; i++) {
+            double a = Math.PI * 2.0 * i / seg;
+            vtx(wr, cx + (float) Math.cos(a) * r, cy + (float) Math.sin(a) * r, cOut);
+        }
+        t.draw();
+        if ((cOut >>> 24) > 8) { // viền mờ ra ngoài 0.9px
+            wr.begin(5, DefaultVertexFormats.POSITION_COLOR);
+            for (int i = 0; i <= seg; i++) {
+                double a = Math.PI * 2.0 * i / seg;
+                float cs = (float) Math.cos(a), sn = (float) Math.sin(a);
+                vtx(wr, cx + cs * r, cy + sn * r, cOut);
+                vtx(wr, cx + cs * (r + 0.9f), cy + sn * (r + 0.9f), cOut & 0xFFFFFF);
+            }
+            t.draw();
+        }
+        GlStateManager.enableTexture2D();
+        GlStateManager.color(1f, 1f, 1f, 1f);
+    }
+
+    public static void disc(float cx, float cy, float r, int c) {
+        disc(cx, cy, r, c, c);
+    }
+
+    /** Vòng tròn mảnh giữa hai bán kính r1 < r2, hai mép mờ nhẹ. */
+    public static void circleRing(float cx, float cy, float r1, float r2, int c) {
+        if (r2 <= r1) return;
+        int seg = Math.max(32, Math.round(r2 * 6f));
+        GlStateManager.enableBlend();
+        GlStateManager.disableTexture2D();
+        GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0);
+        Tessellator t = Tessellator.getInstance();
+        WorldRenderer wr = t.getWorldRenderer();
+        wr.begin(5, DefaultVertexFormats.POSITION_COLOR);
+        for (int i = 0; i <= seg; i++) {
+            double a = Math.PI * 2.0 * i / seg;
+            float cs = (float) Math.cos(a), sn = (float) Math.sin(a);
+            vtx(wr, cx + cs * r1, cy + sn * r1, c);
+            vtx(wr, cx + cs * r2, cy + sn * r2, c);
+        }
+        t.draw();
+        GlStateManager.enableTexture2D();
+        GlStateManager.color(1f, 1f, 1f, 1f);
     }
 }
