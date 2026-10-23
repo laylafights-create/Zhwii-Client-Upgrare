@@ -1166,7 +1166,7 @@ public class MenuScreen extends GuiScreen {
         return Math.round(LPW0 + (DET_LPW - LPW0) * dshift);
     }
     private static final int CPX = 16, CPY = 14, CPW = 160, CPH = 226; // thẻ nhân vật bên trái
-    private static final int ARM_FEET = CPY + CPH - 16; // y chân nhân vật (đáy thẻ không còn dải ô giáp)
+    private static final int ARM_FEET = CPY + CPH - 46; // y chân nhân vật: thân cao ~137 nên đầu sát dưới thanh tiêu đề (đồ trang trí Essential có thể đè lên tiêu đề)
     private static final float DET_CENTER_OFF = (VW - ((CPX - HOME_OFF) + (VW - PAD - 10))) / 2f;
     private float listYCur = -1f;
     /** false = mới mở: chỉ thẻ nhân vật + nút tròn, đứng giữa; true = đã chọn nhóm, cụm dịch sang trái nhường chỗ cho danh sách. */
@@ -1356,19 +1356,27 @@ public class MenuScreen extends GuiScreen {
         Draw.fadeLine(CPX + 10, CPY + 23, CPW - 20, Draw.ACCENT & 0xFFFFFF, 0x90); // vạch màu nhấn dưới tiêu đề
         Gui.drawRect(CPX, CPY + 24, CPX + CPW, CPY + 40, 0x0AFFFFFF);              // ánh sáng nhẹ đầu thẻ
         String pname = mc.thePlayer != null ? mc.thePlayer.getName() : "Zhwii";
-        fr.drawString(pname, CPX + (CPW - fr.getStringWidth(pname)) / 2f, CPY + 4, 0xFF3A3F45, false);
-        float hpT = total > 0 ? en / (float) total : 0f;
-        hpAnim += (hpT - hpAnim) * (AnimationsModule.menu() ? 0.07f : 1f);
-        if (Math.abs(hpT - hpAnim) < 0.002f) hpAnim = hpT;
-        Draw.hbar(CPX + 14, CPY + 15, CPW - 28, 3, hpAnim, 0xFF3FBF7F, 0xFFCFD2D5);
+        { // tên người chơi: phóng to, canh giữa tiêu đề, màu xám than + bóng nhấn nhẹ (đã bỏ thanh xanh)
+            int nw = Math.max(1, fr.getStringWidth(pname));
+            float ns = Math.min(1.7f, (CPW - 20f) / nw);
+            float nx = CPX + (CPW - nw * ns) / 2f;
+            float ny = CPY + (22f - 8f * ns) / 2f + 0.5f;
+            GlStateManager.pushMatrix();
+            GlStateManager.translate(nx, ny, 0f);
+            GlStateManager.scale(ns, ns, 1f);
+            fr.drawString(pname, 1, 1, Draw.withAlpha(Draw.ACCENT & 0xFFFFFF, 0x55), false);
+            fr.drawString(pname, 0, 0, 0xFF26303B, false);
+            GlStateManager.popMatrix();
+            GlStateManager.color(1f, 1f, 1f, 1f);
+        }
         // dấu ngoặc ở góc thẻ nhân vật, nhấp nháy nhẹ như cửa sổ hologram
         int brA = 120 + Math.round(70f * (float) Math.sin(now / 520.0));
         Skin.brackets(CPX - 3, CPY - 3, CPW + 6, CPH + 8, 7, (brA << 24) | (Draw.ACCENT & 0xFFFFFF));
         // 4 ô giáp đặt quanh nhân vật, xen kẽ trái/phải, mỗi ô có đường nối tới đúng bộ phận
         // (mũ -> đầu, giáp -> thân, quần -> chân trên, giày -> bàn chân); không còn dải ô ở đáy thẻ
         int ex0 = CPX + CPW / 2, fy = ARM_FEET;
-        int[] aOff = {-107, -69, -34, -8};   // tâm ô so với chân nhân vật
-        int[] aTgt = {-16, 31, -16, 16};     // điểm nối so với trục nhân vật (âm = bên trái)
+        int[] aOff = {-120, -77, -38, -8};   // tâm ô so với chân nhân vật
+        int[] aTgt = {-17, 34, -17, 17};     // điểm nối so với trục nhân vật (âm = bên trái)
         for (int a2 = 0; a2 < 4; a2++) {
             boolean left = (a2 & 1) == 0;
             int sx = left ? CPX + 9 : CPX + CPW - 9 - 22;
@@ -1553,11 +1561,11 @@ public class MenuScreen extends GuiScreen {
             int ex = CPX + CPW / 2, ey = ARM_FEET;
             GlStateManager.color(1f, 1f, 1f, 1f);
             // bóng mềm dưới chân nhân vật
-            Draw.rrect(ex - 28, ey - 1, ex + 28, ey + 5, 3, 0x14000000);
-            Draw.rrect(ex - 21, ey, ex + 21, ey + 4, 2, 0x1E000000);
-            Draw.rrect(ex - 13, ey + 1, ex + 13, ey + 3, 1, 0x2A000000);
+            Draw.rrect(ex - 32, ey - 1, ex + 32, ey + 5, 3, 0x14000000);
+            Draw.rrect(ex - 24, ey, ex + 24, ey + 4, 2, 0x1E000000);
+            Draw.rrect(ex - 15, ey + 1, ex + 15, ey + 3, 1, 0x2A000000);
             GlStateManager.color(1f, 1f, 1f, 1f);
-            net.minecraft.client.gui.inventory.GuiInventory.drawEntityOnScreen(ex, ey, 64, ex + gdx() - mx, ey - 50 - my, mc.thePlayer);
+            net.minecraft.client.gui.inventory.GuiInventory.drawEntityOnScreen(ex, ey, 72, ex + gdx() - mx, ey - 50 - my, mc.thePlayer);
             GlStateManager.popMatrix();
             GlStateManager.enableAlpha();
             GlStateManager.enableBlend();
