@@ -50,11 +50,11 @@ public class MenuScreen extends GuiScreen {
 
     // ---- khung ảo
     private static final int VW = 520, VH = 300, PAD = 14;
-    private static final int BH = 20, ROW = 24, GAP = 6, BAR_W = 6;
+    private static final int BH = 26, ROW = 30, GAP = 6, BAR_W = 6;
     // ---- các vùng theo trục dọc
     private static final int CARD_Y = 92, CARD_H = 76, CARD_GAP = 8, CARDS_VIS = 6;
     private static final int HINT_Y = 206, BTN_Y = 270;
-    private static final int PANE_TOP = 78, PANE_BOTTOM = 264;
+    private static final int PANE_TOP = 78, PANE_BOTTOM = 284;
 
     // ---- màu
     /** Mỗi tính năng một màu nhấn riêng (theo thứ tự đăng ký). */
@@ -146,8 +146,8 @@ public class MenuScreen extends GuiScreen {
                 case K_BOOL: {
                     Skin.saoRow(x, y, w, h, hov);
                     String lb = kind == K_ENABLE ? "Bật tính năng" : Lang.vi(s.label);
-                    Skin.saoDisc(x + 15, y + h / 2f, 8.5f, "check", sw > 0.5f ? 0xFF3FB86F : 0xFF9AA0A6);
-                    fr.drawString(fr.trimStringToWidth(lb, w - 66), x + 30, ty, col, false);
+                    Skin.saoDisc(x + 19, y + h / 2f, 12f, "check", sw > 0.5f ? 0xFF3FB86F : 0xFF9AA0A6);
+                    rowLabel(fr, lb, x + 38, y + h / 2f, w - 74, col);
                     Skin.saoSwitch(x + w - 32, y + (h - 12) / 2, sw);
                     break;
                 }
@@ -159,8 +159,8 @@ public class MenuScreen extends GuiScreen {
                     Skin.saoField(bx, by, bw2, h - 6, hov);
                     String vt = fr.trimStringToWidth(val, bw2 - 8);
                     fr.drawString(vt, bx + (bw2 - fr.getStringWidth(vt)) / 2f, ty, Skin.INK, false);
-                    Skin.saoDisc(x + 15, y + h / 2f, 8.5f, "chevron", 0xFF3F8EF0);
-                    fr.drawString(fr.trimStringToWidth(Lang.vi(s.label), w - bw2 - 40), x + 30, ty, col, false);
+                    Skin.saoDisc(x + 19, y + h / 2f, 12f, "chevron", 0xFF3F8EF0);
+                    rowLabel(fr, Lang.vi(s.label), x + 38, y + h / 2f, w - bw2 - 52, col);
                     break;
                 }
                 case K_COLOR: {
@@ -168,8 +168,8 @@ public class MenuScreen extends GuiScreen {
                     int sx = x + w - 46, sy = y + 3;
                     Draw.rrect(sx, sy, sx + 40, sy + h - 6, 3, Draw.lerp(0xFF8E949B, 0xFFFFFFFF, hov));
                     Draw.rrect(sx + 1, sy + 1, sx + 39, sy + h - 7, 2, 0xFF000000 | ((ColorSetting) s).value);
-                    Skin.saoDisc(x + 15, y + h / 2f, 8.5f, "sparkle", 0xFFE0609E);
-                    fr.drawString(fr.trimStringToWidth(Lang.vi(s.label), w - 86), x + 30, ty, col, false);
+                    Skin.saoDisc(x + 19, y + h / 2f, 12f, "sparkle", 0xFFE0609E);
+                    rowLabel(fr, Lang.vi(s.label), x + 38, y + h / 2f, w - 98, col);
                     break;
                 }
                 case K_SLIDER: {
@@ -178,14 +178,15 @@ public class MenuScreen extends GuiScreen {
                     int tx = trackX(this);
                     boolean nr = narrow(w);
                     int vx0 = nr ? x + w - 44 : tx - 44;
-                    int vy0 = nr ? y + 3 : y + 3, vh0 = nr ? 14 : h - 6;
-                    int tyy = nr ? y + 7 : ty;
+                    int vy0 = nr ? y + 6 : y + 3, vh0 = nr ? 14 : h - 6;
+                    int tyy = nr ? y + 9 : ty;
+                    float cyL = nr ? y + 13f : y + h / 2f;
                     String val = ss.display();
                     Skin.saoField(vx0, vy0, 38, vh0, 0f);
                     String vt = fr.trimStringToWidth(val, 34);
                     fr.drawString(vt, vx0 + (38 - fr.getStringWidth(vt)) / 2f, tyy, Skin.INK, false);
-                    Skin.saoDisc(x + 15, nr ? y + 10f : y + h / 2f, 8.5f, "sliders", 0xFFF0A30A);
-                    fr.drawString(fr.trimStringToWidth(Lang.vi(s.label), Math.max(10, vx0 - x - 36)), x + 30, tyy, col, false);
+                    Skin.saoDisc(x + 19, cyL, 12f, "sliders", 0xFFF0A30A);
+                    rowLabel(fr, Lang.vi(s.label), x + 38, cyL, Math.max(10, vx0 - x - 44), col);
                     int ly = nr ? y + h - 9 : y + h / 2;
                     int tw2 = trackW(this);
                     int hx = tx + Math.round((float) ss.ratio() * (tw2 - 8));
@@ -207,6 +208,16 @@ public class MenuScreen extends GuiScreen {
             GlStateManager.color(1f, 1f, 1f, 1f);
             mouseDragged(mc, mouseX, mouseY); // thanh trượt cập nhật khi đang kéo
         }
+    }
+
+    /** Nhãn hàng tuỳ chỉnh: chữ 1.2x như hàng ở tab giữa, canh giữa theo cy. */
+    private static void rowLabel(FontRenderer fr, String text, int x, float cy, int maxW, int col) {
+        String t = fr.trimStringToWidth(text, Math.max(8, Math.round(maxW / 1.2f)));
+        GlStateManager.pushMatrix();
+        GlStateManager.translate(x, cy - 4.8f, 0f);
+        GlStateManager.scale(1.2f, 1.2f, 1f);
+        fr.drawString(t, 0, 0, col, false);
+        GlStateManager.popMatrix();
     }
 
     private static final int TRACK_W = 104;
@@ -823,7 +834,7 @@ public class MenuScreen extends GuiScreen {
         Module m = module;
         if (m == null) return;
 
-        int inner = paneW() - 30;
+        int inner = paneW();
         oneCol = true;
         bw = oneCol ? inner : (inner - GAP) / 2;
 
@@ -915,42 +926,22 @@ public class MenuScreen extends GuiScreen {
     private void layout() {
         buttonList.clear();
         if (!detail) return; // trang chủ: 3 nút gom vào nút tròn cuối cột
-        int n = detail ? 4 : 3;
-        int barX0 = CX - HOME_OFF - 8, barW = VW - PAD - barX0; // hàng nút dưới cùng nằm dưới cột nút tròn + 2 cột bên phải
-        int w = detail ? (barW - GAP * (n - 1)) / n : 112;
-        int x = detail ? barX0 : (VW - (w * n + GAP * (n - 1))) / 2;
+        // trang tuỳ chỉnh không còn hàng nút dưới cùng: Nhập / Xuất, Sửa vị trí HUD, Xong nằm ở nút tròn bánh răng;
+        // quay lại = bấm nút tròn / bấm tính năng khác / ESC
         if (detail) {
-            Btn back = make(K_BACK, w, "« Quay lại");
-            back.fixed = true;
-            place(back, x, BTN_Y);
-            x += w + GAP;
-        }
-        Btn imp = make(K_IMPORT, w, "Nhập / Xuất");
-        imp.fixed = true;
-        place(imp, x, BTN_Y);
-        x += w + GAP;
-        Btn edit = make(K_EDIT, w, "Sửa vị trí HUD");
-        edit.fixed = true;
-        place(edit, x, BTN_Y);
-        x += w + GAP;
-        Btn done = make(K_DONE, w, "Xong");
-        done.fixed = true;
-        place(done, x, BTN_Y);
-
-        if (detail) {
-            int px = paneX(), inner = paneW() - 30;
+            int px = paneX(), inner = paneW();
             for (Row row : rows) {
                 if (row.header != null) continue;
                 if (row.full != null) {
                     row.full.baseY = row.y;
-                    place(row.full, px + 8 + (inner - row.full.width) / 2, row.y);
+                    place(row.full, px + (inner - row.full.width) / 2, row.y);
                     continue;
                 }
                 row.a.main.baseY = row.y;
-                place(row.a.main, px + 8, row.y);
+                place(row.a.main, px, row.y);
                 if (row.b != null) {
                     row.b.main.baseY = row.y;
-                    place(row.b.main, px + 8 + bw + GAP, row.y);
+                    place(row.b.main, px + bw + GAP, row.y);
                 }
             }
         }
@@ -1111,7 +1102,6 @@ public class MenuScreen extends GuiScreen {
         final int PX = paneX(), PW = paneW();
         long tn = System.currentTimeMillis();
         // cửa sổ SAO phủ toàn bộ trang chi tiết
-        Skin.saoWindow(PX - 10, 2, PW + 20, PANE_BOTTOM + 2, 40, tn);
         Skin.saoRow(PX, 4, PW, 36, 0f);
         if (descLines.length > 0) Skin.saoRow(PX, 46, PW, descLines.length * 10 + 6, 0f);
         {
@@ -1135,13 +1125,6 @@ public class MenuScreen extends GuiScreen {
                 fr.drawString(descLines[i], PX + 8, 49 + i * 10, Skin.INK_SOFT, false);
             }
         }
-        Gui.drawRect(PX, 71, (PX + PW), 72, 0x30FFFFFF);
-        { // vệt sáng chạy dọc đường kẻ dưới phần mô tả
-            int sw = 70, span = PW - sw;
-            int sx = PX + Math.round((tn % 2600L) / 2600f * span);
-            Draw.fadeLine(sx, 71, sw, Draw.ACCENT & 0xFFFFFF, 0xA0);
-        }
-
         { // tam giác trắng chỉ từ tính năng đang chọn (hàng cam) sang cột tuỳ chỉnh
             int si = shown.indexOf(module);
             if (si >= 0) {
@@ -1800,7 +1783,7 @@ public class MenuScreen extends GuiScreen {
                 continue;
             }
             int hy = ry + (BH - 8) / 2;
-            Skin.saoRow(px + 8, ry, pw - 30, BH, 0f);
+            Skin.saoRow(px, ry, pw, BH, 0f);
             Skin.diamond(px + 20, hy + 4, 4, Skin.ORANGE);
             String head = r.header.toUpperCase();
             fr.drawString(head, px + 30, hy, Skin.INK_SOFT, false);
@@ -1818,7 +1801,7 @@ public class MenuScreen extends GuiScreen {
     // ----------------------------------------------------------- thanh cuộn
 
     private int barX() {
-        return paneX() + paneW() - BAR_W - 1;
+        return paneX() + paneW() + 3;
     }
 
     private int thumbH(int viewH, int totalH) {
