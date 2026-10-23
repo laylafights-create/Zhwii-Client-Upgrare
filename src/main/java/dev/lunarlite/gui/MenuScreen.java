@@ -39,7 +39,7 @@ import org.lwjgl.input.Mouse;
  *   TRANG CHỦ : mỗi tính năng là một ô có biểu tượng riêng, số phím tắt 1-9 / 0, trạng thái BẬT / TẮT.
  *               Thanh nhóm ở trên lọc theo nhóm, ô chia thành từng trang (10 ô / trang).
  *   CHI TIẾT  : bấm một ô (hoặc nhấn phím số) để mở bảng tuỳ chỉnh của tính năng đó.
- * Chuột trái vào ô = hộp xác nhận bật/tắt, chuột phải = mở tuỳ chỉnh. ESC = quay lại / đóng menu.
+ * Chuột trái (chạm) vào ô = mở tuỳ chỉnh, chuột phải = hộp xác nhận bật/tắt. ESC = quay lại / đóng menu.
  *
  * Toàn bộ giao diện được vẽ trong một khung ảo VW x VH rồi tự thu nhỏ cho vừa màn hình.
  */
@@ -147,7 +147,7 @@ public class MenuScreen extends GuiScreen {
                     Skin.saoRow(x, y, w, h, hov);
                     String lb = kind == K_ENABLE ? "Bật tính năng" : Lang.vi(s.label);
                     Skin.saoDisc(x + 15, y + h / 2f, 8.5f, "check", sw > 0.5f ? 0xFF3FB86F : 0xFF9AA0A6);
-                    fr.drawString(fr.trimStringToWidth(lb, w - 76), x + 30, ty, col, false);
+                    fr.drawString(fr.trimStringToWidth(lb, w - 66), x + 30, ty, col, false);
                     Skin.saoSwitch(x + w - 32, y + (h - 12) / 2, sw);
                     break;
                 }
@@ -176,17 +176,21 @@ public class MenuScreen extends GuiScreen {
                     Skin.saoRow(x, y, w, h, hov);
                     SliderSetting ss = (SliderSetting) s;
                     int tx = trackX(this);
-                    int vx0 = tx - 44;
+                    boolean nr = narrow(w);
+                    int vx0 = nr ? x + w - 44 : tx - 44;
+                    int vy0 = nr ? y + 3 : y + 3, vh0 = nr ? 14 : h - 6;
+                    int tyy = nr ? y + 7 : ty;
                     String val = ss.display();
-                    Skin.saoField(vx0, y + 3, 38, h - 6, 0f);
+                    Skin.saoField(vx0, vy0, 38, vh0, 0f);
                     String vt = fr.trimStringToWidth(val, 34);
-                    fr.drawString(vt, vx0 + (38 - fr.getStringWidth(vt)) / 2f, ty, Skin.INK, false);
-                    Skin.saoDisc(x + 15, y + h / 2f, 8.5f, "sliders", 0xFFF0A30A);
-                    fr.drawString(fr.trimStringToWidth(Lang.vi(s.label), Math.max(10, vx0 - x - 36)), x + 30, ty, col, false);
-                    int ly = y + h / 2;
-                    int hx = tx + Math.round((float) ss.ratio() * (TRACK_W - 8));
-                    Draw.rrect(tx, ly - 2, tx + TRACK_W, ly + 2, 2, 0xFF8E949B);
-                    Gui.drawRect(tx + 1, ly - 2, tx + TRACK_W - 1, ly - 1, 0x55000000);
+                    fr.drawString(vt, vx0 + (38 - fr.getStringWidth(vt)) / 2f, tyy, Skin.INK, false);
+                    Skin.saoDisc(x + 15, nr ? y + 10f : y + h / 2f, 8.5f, "sliders", 0xFFF0A30A);
+                    fr.drawString(fr.trimStringToWidth(Lang.vi(s.label), Math.max(10, vx0 - x - 36)), x + 30, tyy, col, false);
+                    int ly = nr ? y + h - 9 : y + h / 2;
+                    int tw2 = trackW(this);
+                    int hx = tx + Math.round((float) ss.ratio() * (tw2 - 8));
+                    Draw.rrect(tx, ly - 2, tx + tw2, ly + 2, 2, 0xFF8E949B);
+                    Gui.drawRect(tx + 1, ly - 2, tx + tw2 - 1, ly - 1, 0x55000000);
                     Draw.rrect(tx, ly - 2, hx + 4, ly + 2, 2, acc);
                     Draw.disc(hx + 4f, ly + 0.8f, 6.6f, 0x30000000);
                     Draw.disc(hx + 4f, ly, 6f, Draw.lerp(0xFF9AA0A6, acc, hov));
@@ -207,8 +211,19 @@ public class MenuScreen extends GuiScreen {
 
     private static final int TRACK_W = 104;
 
+    /** Bề rộng thanh trượt: co lại khi hàng hẹp để còn chỗ cho nhãn và ô giá trị. */
+    private static boolean narrow(int w) {
+        return w < 200;
+    }
+
+    private static int trackW(Btn b) {
+        if (narrow(b.width)) return b.width - 20;
+        return Math.max(40, Math.min(TRACK_W, b.width - 160));
+    }
+
     private static int trackX(Btn b) {
-        return b.xPosition + b.width - 110;
+        if (narrow(b.width)) return b.xPosition + 10;
+        return b.xPosition + b.width - trackW(b) - 6;
     }
 
     /** Công tắc dạng viên thuốc: núm trượt, nền màu nhấn khi bật; a = 0..1 để trượt mượt. */
@@ -224,12 +239,13 @@ public class MenuScreen extends GuiScreen {
 
         SliderBtn(int w, SliderSetting s) {
             super(K_SLIDER, w, "");
+            if (narrow(w)) height = BH + 14; // cột hẹp: thanh kéo nằm dòng dưới
             this.s = s;
             refresh(this);
         }
 
         private void setFromMouse(int mx) {
-            float r = (mx - trackX(this) - 4) / (float) (TRACK_W - 8);
+            float r = (mx - trackX(this) - 4) / (float) (trackW(this) - 8);
             ((SliderSetting) s).setRatio(Math.max(0f, Math.min(1f, r)));
             refresh(this);
         }
@@ -247,7 +263,8 @@ public class MenuScreen extends GuiScreen {
 
         @Override
         public boolean mousePressed(Minecraft mc, int mouseX, int mouseY) {
-            if (super.mousePressed(mc, mouseX, mouseY) && mouseX >= trackX(this) - 6) {
+            boolean inTrack = narrow(width) ? mouseY >= yPosition + height - 18 : mouseX >= trackX(this) - 6;
+            if (super.mousePressed(mc, mouseX, mouseY) && inTrack) {
                 setFromMouse(mouseX);
                 dragging = true;
                 return true;
@@ -267,6 +284,7 @@ public class MenuScreen extends GuiScreen {
 
     /** Một hàng trong bảng tuỳ chỉnh: tiêu đề mục, một nút rộng, hoặc tối đa hai ô. */
     private static class Row {
+        int h = ROW;
         String header;
         Btn full;
         Cell a, b;
@@ -441,8 +459,8 @@ public class MenuScreen extends GuiScreen {
     }
 
     /** Bảng tuỳ chỉnh nằm bên phải; cột nút tròn (tab) dịch sang trái để nhường chỗ. */
-    private static final int DETAIL_X = 66;
-    private static final int HOME_OFF = 200; // quãng cột nút tròn dịch sang trái khi mở tuỳ chỉnh
+    private static final int DETAIL_X = 302; // cột tuỳ chỉnh (cột thứ 3) nằm bên phải danh sách tính năng, kiểu menu SAO nhiều cột
+    private static final int HOME_OFF = 110; // quãng thẻ nhân vật + cột nút tròn dịch sang trái khi mở tuỳ chỉnh
     private float dshift;                  // 0 = trang chủ, 1 = đã mở tuỳ chỉnh
 
     private int paneX() {
@@ -450,7 +468,7 @@ public class MenuScreen extends GuiScreen {
     }
 
     private int paneW() {
-        return VW - DETAIL_X - PAD;
+        return VW - DETAIL_X - PAD - 10;
     }
 
     private int setViewH() {
@@ -601,6 +619,13 @@ public class MenuScreen extends GuiScreen {
         play("menu.select");
         module = m;
         lastModule = m;
+        int mi = shown.indexOf(m);
+        if (mi >= 0) {
+            float rt = mi * LSTEP;
+            if (rt < listTarget) listTarget = rt;
+            else if (rt + LRH > listTarget + listH()) listTarget = rt + LRH - listH();
+            clampList();
+        }
         detail = true;
         setScroll = setTarget = 0f;
         animStart = System.currentTimeMillis();
@@ -781,6 +806,7 @@ public class MenuScreen extends GuiScreen {
         if (oneCol || pend == null) {
             Row r = new Row();
             r.a = c;
+            r.h = Math.max(ROW, b.height + (ROW - BH));
             rows.add(r);
             pend = oneCol ? null : r;
         } else {
@@ -802,10 +828,11 @@ public class MenuScreen extends GuiScreen {
         bw = oneCol ? inner : (inner - GAP) / 2;
 
         if (m.description != null && m.description.length() > 0) {
-            List<?> ls = fontRendererObj.listFormattedStringToWidth(Lang.vi(m.description), paneW() - 100);
+            List<?> ls = fontRendererObj.listFormattedStringToWidth(Lang.vi(m.description), paneW() - 20);
             int n = Math.min(2, ls.size());
             descLines = new String[n];
             for (int i = 0; i < n; i++) descLines[i] = (String) ls.get(i);
+            if (ls.size() > 2) descLines[1] = fit(descLines[1] + "...", paneW() - 20);
         }
 
         Btn en = make(K_ENABLE, inner, "");
@@ -872,7 +899,7 @@ public class MenuScreen extends GuiScreen {
         int y = 4;
         for (Row r : rows) {
             r.y = y;
-            y += ROW;
+            y += r.h;
         }
         contentH = y + 4;
     }
@@ -889,8 +916,9 @@ public class MenuScreen extends GuiScreen {
         buttonList.clear();
         if (!detail) return; // trang chủ: 3 nút gom vào nút tròn cuối cột
         int n = detail ? 4 : 3;
-        int w = detail ? (paneW() - GAP * (n - 1)) / n : 112;
-        int x = detail ? paneX() : (VW - (w * n + GAP * (n - 1))) / 2;
+        int barX0 = CX - HOME_OFF - 8, barW = VW - PAD - barX0; // hàng nút dưới cùng nằm dưới cột nút tròn + 2 cột bên phải
+        int w = detail ? (barW - GAP * (n - 1)) / n : 112;
+        int x = detail ? barX0 : (VW - (w * n + GAP * (n - 1))) / 2;
         if (detail) {
             Btn back = make(K_BACK, w, "« Quay lại");
             back.fixed = true;
@@ -1083,15 +1111,17 @@ public class MenuScreen extends GuiScreen {
         final int PX = paneX(), PW = paneW();
         long tn = System.currentTimeMillis();
         // cửa sổ SAO phủ toàn bộ trang chi tiết
-        Skin.saoWindow(PX - 10, 2, PW + 20, VH - 4, 40, tn);
+        Skin.saoWindow(PX - 10, 2, PW + 20, PANE_BOTTOM + 2, 40, tn);
         Skin.saoRow(PX, 4, PW, 36, 0f);
         if (descLines.length > 0) Skin.saoRow(PX, 46, PW, descLines.length * 10 + 6, 0f);
         {
             boolean onM = module.enabled;
             Skin.saoDisc(PX + 22, 22, 14f, SaoIcons.forModule(module), onM ? 0xFF3FB86F : 0xFF9AA0A6);
             String nm = Lang.vi(module.name);
-            int avail = PW - 40 - 80;
-            float sc = fr.getStringWidth(nm) * 1.5f > avail ? 1.15f : 1.5f;
+            int avail = PW - 44 - 58;
+            int nw = Math.max(1, fr.getStringWidth(nm));
+            float sc = nw * 1.5f > avail ? 1.15f : 1.5f;
+            if (nw * sc > avail) sc = Math.max(0.8f, avail / (float) nw);
             GlStateManager.pushMatrix();
             GlStateManager.translate(PX + 44, 7f, 0f);
             GlStateManager.scale(sc, sc, 1f);
@@ -1099,7 +1129,7 @@ public class MenuScreen extends GuiScreen {
             GlStateManager.popMatrix();
             fr.drawString(module.category.label, PX + 44, 26, Skin.INK_DIM, false);
 
-            int bw = 54, bx = (PX + PW) - bw - 8;
+            int bw = 46, bx = (PX + PW) - bw - 8;
             Skin.saoPill(fr, bx, 12, bw, 20, onM, tn);
             for (int i = 0; i < descLines.length; i++) {
                 fr.drawString(descLines[i], PX + 8, 49 + i * 10, Skin.INK_SOFT, false);
@@ -1110,6 +1140,17 @@ public class MenuScreen extends GuiScreen {
             int sw = 70, span = PW - sw;
             int sx = PX + Math.round((tn % 2600L) / 2600f * span);
             Draw.fadeLine(sx, 71, sw, Draw.ACCENT & 0xFFFFFF, 0xA0);
+        }
+
+        { // tam giác trắng chỉ từ tính năng đang chọn (hàng cam) sang cột tuỳ chỉnh
+            int si = shown.indexOf(module);
+            if (si >= 0) {
+                int sy = listY() + si * LSTEP - Math.round(listScroll) + LRH / 2;
+                if (sy > LPY && sy < LPY + LPH + 8) {
+                    int tx = PX - 10 - 10;
+                    for (int c = 0; c < 9; c++) Gui.drawRect(tx + c, sy - c, tx + c + 1, sy + c + 1, 0xFFE6E8EA);
+                }
+            }
         }
 
         drawDetail(mx, my);
@@ -1131,7 +1172,16 @@ public class MenuScreen extends GuiScreen {
 
     // ---- bố cục kiểu menu SAO: cột nút tròn (nhóm) bên trái, bảng danh sách tính năng bên phải
     private static final int CX = 232, CR = 14;
-    private static final int LPX = 268, LPW = 238, LPY = 14, LPH = 226, LRH = 26, LSTEP = 30;
+    private static final int LPX0 = 268, LPW0 = 238, LPY = 14, LPH = 226, LRH = 26, LSTEP = 30;
+    private static final int DET_LPX = 156, DET_LPW = 120; // danh sách thu hẹp khi cột tuỳ chỉnh mở ra
+
+    private int lpx() {
+        return Math.round(LPX0 + (DET_LPX - LPX0) * dshift);
+    }
+
+    private int lpw() {
+        return Math.round(LPW0 + (DET_LPW - LPW0) * dshift);
+    }
     private static final int CPX = 16, CPY = 14, CPW = 160, CPH = 226; // thẻ nhân vật bên trái
     private float listYCur = -1f;
     /** false = mới mở: chỉ thẻ nhân vật + nút tròn, đứng giữa; true = đã chọn nhóm, cụm dịch sang trái nhường chỗ cho danh sách. */
@@ -1244,7 +1294,7 @@ public class MenuScreen extends GuiScreen {
     }
 
     private int rowAt(int mx, int my) {
-        if (!Draw.in(mx, my, LPX, listY(), LPW, listH())) return -1;
+        if (!Draw.in(mx, my, lpx(), listY(), lpw(), listH())) return -1;
         int rel = my - listY() + Math.round(listScroll);
         int i = rel / LSTEP;
         if (rel % LSTEP >= LRH || i < 0 || i >= listCount()) return -1;
@@ -1294,7 +1344,7 @@ public class MenuScreen extends GuiScreen {
         if (Math.abs(shT - shift) < 0.005f) shift = shT;
 
         int hc = circleAt(mx, my);
-        int hr = hc >= 0 || !expanded || dshift > 0.02f ? -1 : rowAt(mx, my);
+        int hr = hc >= 0 || !expanded ? -1 : rowAt(mx, my);
         Module hoverMod = hr >= 0 && !actionsOpen ? shown.get(hr) : null;
         int hkey = hc >= 0 ? hc : hr >= 0 ? 1000 + hr : -1;
         if (hkey != lastHoverSfx) {
@@ -1302,7 +1352,7 @@ public class MenuScreen extends GuiScreen {
             if (hkey >= 0 && !closing) play("menu.hover");
         }
 
-        final float cs = Math.max(0f, 1f - dshift * 1.6f); // độ lớn của thẻ nhân vật / danh sách (0 khi đã mở tuỳ chỉnh)
+        final float cs = 1f; // thẻ nhân vật luôn giữ nguyên kích thước
         GlStateManager.pushMatrix();
         GlStateManager.translate(gdx(), 0f, 0f);
         // ---- thẻ nhân vật bên trái (tên, thanh HP = số tính năng bật, 4 ô giáp); mô hình vẽ ở cuối hàm
@@ -1468,7 +1518,7 @@ public class MenuScreen extends GuiScreen {
 
         // ---- bảng danh sách tính năng
         int ly = listY(), lh = listH();
-        clip(LPX - 12, ly, LPW + 22, lh);
+        clip(lpx() - 12, ly, lpw() + 22, lh);
         int sc = Math.round(listScroll);
         int fv = Math.max(0, sc / LSTEP);
         boolean showList = expanded || shift > 0.03f;
@@ -1482,14 +1532,14 @@ public class MenuScreen extends GuiScreen {
                 sp = AnimationsModule.easeOutBack(t);
             }
             if (!expanded) sp = Math.min(sp, shift);
-            sp = Math.min(sp, cs);
+            if (detail) sp = 1f; // đổi tính năng trong lúc đang mở tuỳ chỉnh: danh sách đứng yên
             Object hkeyObj = actionsOpen ? (Object) ("act" + i) : (Object) shown.get(i);
             float hv = hover(hkeyObj, i == hr && sp > 0.9f, k);
             if (sp <= 0.02f) continue;
             GlStateManager.pushMatrix();
-            GlStateManager.translate(LPX, 0f, 0f);
+            GlStateManager.translate(lpx(), 0f, 0f);
             GlStateManager.scale(sp, 1f, 1f);
-            GlStateManager.translate(-LPX, 0f, 0f);
+            GlStateManager.translate(-lpx(), 0f, 0f);
             if (actionsOpen) drawActionRow(i, y, hv);
             else drawRow(shown.get(i), y, hv, shown.get(i) == module);
             GlStateManager.popMatrix();
@@ -1524,7 +1574,7 @@ public class MenuScreen extends GuiScreen {
     /** Hàng thao tác (nút tròn cuối cột): cùng kiểu hàng xám với danh sách tính năng. */
     private void drawActionRow(int i, int y, float hv) {
         FontRenderer fr = fontRendererObj;
-        int x = LPX, w = LPW, h = LRH;
+        int x = lpx(), w = lpw(), h = LRH;
         rowBg(x, y, w, h, hv);
         Gui.drawRect(x, y, x + w, y + 1, 0x99FFFFFF);
         Gui.drawRect(x, y + h - 1, x + w, y + h, 0xFF7C838A);
@@ -1549,7 +1599,7 @@ public class MenuScreen extends GuiScreen {
     /** Một hàng tính năng: xám phẳng như menu SAO, nút tròn có biểu tượng bên trái, viên BẬT/TẮT bên phải. */
     private void drawRow(Module m, int y, float hv, boolean sel) {
         FontRenderer fr = fontRendererObj;
-        int x = LPX, w = LPW, h = LRH;
+        int x = lpx(), w = lpw(), h = LRH;
         boolean on = m.enabled;
         // nền trắng mờ như menu SAO mẫu: sáng hơn khi rê chuột, cam khi đang chọn
         if (sel) {
@@ -1571,15 +1621,16 @@ public class MenuScreen extends GuiScreen {
         Draw.disc(cx, cy - 5.5f, 5.5f, 0x30FFFFFF, 0x00FFFFFF);
         SaoIcons.draw(SaoIcons.forModule(m), cx - 8, cy - 8, 0xFFFFFFFF);
 
-        String nm = fit(Lang.vi(m.name), Math.round((w - 70) / 1.3f));
+        float ns = 1.3f - 0.3f * dshift; // cột hẹp (đang mở tuỳ chỉnh): chữ nhỏ lại, nhường chỗ cho tên
+        String nm = fit(Lang.vi(m.name), Math.round((w - 44 - 26 * (1f - dshift)) / ns));
         GlStateManager.pushMatrix();
-        GlStateManager.translate(x + 40, y + (h - 10) / 2f + 1f, 0f);
-        GlStateManager.scale(1.3f, 1.3f, 1f);
+        GlStateManager.translate(x + 38, y + (h - 10 * ns) / 2f + 1f, 0f);
+        GlStateManager.scale(ns, ns, 1f);
         fr.drawString(nm, 0, 0, sel ? 0xFFFFFFFF : (on ? 0xFF2B3036 : 0xFF6A7178), sel);
         GlStateManager.popMatrix();
 
         boolean fav = FAVS.contains(m.id);
-        if (fav || hv > 0.3f) Icons.draw("heart", x + w - 18, y + (h - 8) / 2, 1, fav ? 0xFFFF5577 : 0x66000000);
+        if (dshift < 0.3f && (fav || hv > 0.3f)) Icons.draw("heart", x + w - 18, y + (h - 8) / 2, 1, fav ? 0xFFFF5577 : 0x66000000);
     }
 
     /** Vật phẩm / khối Minecraft đại diện cho từng nhóm (null = dùng biểu tượng vẽ tay). */
@@ -1736,7 +1787,7 @@ public class MenuScreen extends GuiScreen {
             Btn b = (Btn) o;
             if (b.baseY < 0) continue;
             b.yPosition = top + b.baseY - sc;
-            b.visible = b.yPosition + BH > top && b.yPosition < bottom;
+            b.visible = b.yPosition + b.height > top && b.yPosition < bottom;
             b.edgeDx = 0f;
         }
         clip(px, top, pw, setViewH());
@@ -1899,14 +1950,16 @@ public class MenuScreen extends GuiScreen {
                 Module hit = shown.get(ri);
                 module = hit;
                 lastModule = hit;
-                if (btn == 0 && mx >= LPX + LPW - 22) { // tim yêu thích
+                if (btn == 0 && mx >= lpx() + lpw() - 22) { // tim yêu thích
                     click();
                     if (!FAVS.remove(hit.id)) FAVS.add(hit.id);
                     buildShown();
                     return;
                 }
-                if (btn == 1) openModule(hit);
-                else askToggle(hit);
+                // chạm / chuột trái: mở trang tuỳ chỉnh (điện thoại không có chuột phải)
+                // chuột phải: bật / tắt nhanh; trong trang tuỳ chỉnh vẫn có công tắc "Bật tính năng"
+                if (btn == 1) askToggle(hit);
+                else openModule(hit);
                 return;
             }
         } else {
@@ -1925,6 +1978,14 @@ public class MenuScreen extends GuiScreen {
                 animStart = System.currentTimeMillis();
                 return;
             }
+            int dri = actionsOpen || confirmMod != null ? -1 : rowAt(mx, my);
+            if (dri >= 0) { // bấm một tính năng ở cột giữa: cột tuỳ chỉnh đổi theo
+                Module hit = shown.get(dri);
+                if (btn == 1) askToggle(hit);
+                else if (hit != module) openModule(hit);
+                else click();
+                return;
+            }
             if (btn == 0 && startBarDrag(mx, my)) return;
         }
 
@@ -1933,7 +1994,7 @@ public class MenuScreen extends GuiScreen {
             if (b.baseY >= 0 && !inPane(mx, my)) continue; // phần nút bị cuộn khuất thì không bấm được
             if (btn == 1) {
                 if (b.kind == K_SLIDER || !b.visible || !b.enabled) continue;
-                if (mx >= b.xPosition && my >= b.yPosition && mx < b.xPosition + b.width && my < b.yPosition + BH) {
+                if (mx >= b.xPosition && my >= b.yPosition && mx < b.xPosition + b.width && my < b.yPosition + b.height) {
                     b.playPressSound(mc.getSoundHandler());
                     handle(b, true);
                     return;
