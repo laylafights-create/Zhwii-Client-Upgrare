@@ -471,7 +471,7 @@ public class MenuScreen extends GuiScreen {
 
     /** Bảng tuỳ chỉnh nằm bên phải; cột nút tròn (tab) dịch sang trái để nhường chỗ. */
     private static final int DETAIL_X = 302; // cột tuỳ chỉnh (cột thứ 3) nằm bên phải danh sách tính năng, kiểu menu SAO nhiều cột
-    private static final int HOME_OFF = 110; // quãng thẻ nhân vật + cột nút tròn dịch sang trái khi mở tuỳ chỉnh
+    private static final int HOME_OFF = 122; // quãng thẻ nhân vật + cột nút tròn dịch sang trái khi mở tuỳ chỉnh
     private float dshift;                  // 0 = trang chủ, 1 = đã mở tuỳ chỉnh
 
     private int paneX() {
@@ -584,7 +584,7 @@ public class MenuScreen extends GuiScreen {
     private void focusModule() {
         listScroll = listTarget = 0f;
         int i = shown.indexOf(module);
-        if (i >= 0) listTarget = listScroll = i * LSTEP - (listH() - LRH) / 2f;
+        if (i >= 0) listTarget = listScroll = Math.round((i * LSTEP - (listH() - LRH) / 2f) / LSTEP) * (float) LSTEP;
         clampList();
     }
 
@@ -1125,15 +1125,9 @@ public class MenuScreen extends GuiScreen {
                 fr.drawString(descLines[i], PX + 8, 49 + i * 10, Skin.INK_SOFT, false);
             }
         }
-        { // tam giác trắng chỉ từ tính năng đang chọn (hàng cam) sang cột tuỳ chỉnh
-            int si = shown.indexOf(module);
-            if (si >= 0) {
-                int sy = listY() + si * LSTEP - Math.round(listScroll) + LRH / 2;
-                if (sy > LPY && sy < LPY + LPH + 8) {
-                    int tx = PX - 10 - 10;
-                    for (int c = 0; c < 9; c++) Gui.drawRect(tx + c, sy - c, tx + c + 1, sy + c + 1, 0xFFE6E8EA);
-                }
-            }
+        { // tam giác trắng ở đầu cột tuỳ chỉnh, chỉ về phía danh sách tính năng
+            int tx = PX - 20, ty0 = 4 + 18;
+            for (int c = 0; c < 9; c++) Gui.drawRect(tx + c, ty0 - c, tx + c + 1, ty0 + c + 1, 0xFFE6E8EA);
         }
 
         drawDetail(mx, my);
@@ -1156,7 +1150,7 @@ public class MenuScreen extends GuiScreen {
     // ---- bố cục kiểu menu SAO: cột nút tròn (nhóm) bên trái, bảng danh sách tính năng bên phải
     private static final int CX = 232, CR = 14;
     private static final int LPX0 = 268, LPW0 = 238, LPY = 14, LPH = 226, LRH = 26, LSTEP = 30;
-    private static final int DET_LPX = 156, DET_LPW = 120; // danh sách thu hẹp khi cột tuỳ chỉnh mở ra
+    private static final int DET_LPX = 158, DET_LPW = 120; // danh sách thu hẹp khi cột tuỳ chỉnh mở ra
 
     private int lpx() {
         return Math.round(LPX0 + (DET_LPX - LPX0) * dshift);
@@ -1253,7 +1247,7 @@ public class MenuScreen extends GuiScreen {
     }
 
     private int listH() {
-        return Math.min(LPH, listContentH());
+        return Math.min(7 * LSTEP - (LSTEP - LRH), listContentH()); // chỉ hiện trọn hàng
     }
 
     /** Bảng danh sách nằm giữa theo nút tròn đang chọn (như menu SAO), không tràn khỏi vùng. */
