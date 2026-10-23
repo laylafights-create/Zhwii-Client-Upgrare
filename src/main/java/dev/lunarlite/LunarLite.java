@@ -222,7 +222,8 @@ public class LunarLite {
         sfxDead = false;
         if (hp < 10f) {
             if (lowSound == null || !mc.getSoundHandler().isSoundPlaying(lowSound)) {
-                lowSound = sfx("sao.critical_health");
+                lowSound = new LoopSound(new net.minecraft.util.ResourceLocation("lunarlite", "sao.critical_health"));
+                mc.getSoundHandler().playSound(lowSound);
             }
         } else {
             stopLow(mc);
@@ -243,6 +244,17 @@ public class LunarLite {
                     new net.minecraft.util.ResourceLocation("lunarlite", "sao.death"),
                     (float) e.posX, (float) e.posY, (float) e.posZ));
             if (++played >= 3) break;
+        }
+    }
+
+    /** Âm lặp gốc của OpenAL (không delay, không suy giảm theo khoảng cách) nên nối liền mạch, không bị hở giữa các lần. */
+    private static class LoopSound extends net.minecraft.client.audio.PositionedSound {
+        LoopSound(net.minecraft.util.ResourceLocation loc) {
+            super(loc);
+            this.repeat = true;
+            this.repeatDelay = 0;
+            this.volume = 1.0F;
+            this.attenuationType = net.minecraft.client.audio.ISound.AttenuationType.NONE;
         }
     }
 
