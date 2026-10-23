@@ -143,6 +143,8 @@ public class LunarLite {
         for (Module m : MODULES) m.load(config);
         blockShake = config.getBoolean("blockShake", "general", true, "Rung block khi đào và tắt hạt vỡ block");
         cleanInv = config.getBoolean("cleanInv", "general", true, "Bỏ nền đen khi mở kho đồ / rương");
+        dev.lunarlite.gui.SaoDeath.enabled = config.getBoolean("deathFx", "general", true, "Hiệu ứng chết kiểu Sword Art Online");
+        dev.lunarlite.gui.SaoShatter.enabled = config.getBoolean("shatterFx", "general", true, "Quái / người chơi khác vỡ thành mảnh khi chết kiểu SAO");
         config.save();
 
         keyMenu = new KeyBinding("Mở menu Zhwii Client", Keyboard.KEY_RSHIFT, "Zhwii Client");
@@ -177,6 +179,8 @@ public class LunarLite {
         for (Module m : MODULES) m.save(c);
         c.get("general", "blockShake", true).set(blockShake);
         c.get("general", "cleanInv", true).set(cleanInv);
+        c.get("general", "deathFx", true).set(dev.lunarlite.gui.SaoDeath.enabled);
+        c.get("general", "shatterFx", true).set(dev.lunarlite.gui.SaoShatter.enabled);
     }
 
     public static void saveConfig() {
@@ -200,6 +204,8 @@ public class LunarLite {
         if (ProfileManager.has(names, "general")) {
             blockShake = c.getBoolean("blockShake", "general", true, "Rung block khi đào và tắt hạt vỡ block");
             cleanInv = c.getBoolean("cleanInv", "general", true, "Bỏ nền đen khi mở kho đồ / rương");
+            dev.lunarlite.gui.SaoDeath.enabled = c.getBoolean("deathFx", "general", true, "Hiệu ứng chết kiểu Sword Art Online");
+            dev.lunarlite.gui.SaoShatter.enabled = c.getBoolean("shatterFx", "general", true, "Quái / người chơi khác vỡ thành mảnh khi chết kiểu SAO");
         }
         saveConfig();
         return n;
@@ -211,6 +217,7 @@ public class LunarLite {
     /** Âm SAO: tiếng chết khi máu về 0; cảnh báo máu lặp liên tục khi dưới 5 tim, tự dừng khi hồi lên từ 5 tim. */
     private static void playHealthSounds(Minecraft mc) {
         float hp = mc.thePlayer.getHealth();
+        dev.lunarlite.gui.SaoDeath.update(hp <= 0f || mc.thePlayer.isDead);
         if (hp <= 0f || mc.thePlayer.isDead) {
             stopLow(mc);
             if (!sfxDead) {
@@ -239,11 +246,15 @@ public class LunarLite {
             if (o instanceof net.minecraft.entity.item.EntityArmorStand) continue;
             net.minecraft.entity.EntityLivingBase e = (net.minecraft.entity.EntityLivingBase) o;
             if (e.deathTime != 1) continue;
-            if (e.getDistanceSqToEntity(mc.thePlayer) > 48.0 * 48.0) continue;
-            mc.getSoundHandler().playSound(net.minecraft.client.audio.PositionedSoundRecord.create(
-                    new net.minecraft.util.ResourceLocation("lunarlite", "sao.death"),
-                    (float) e.posX, (float) e.posY, (float) e.posZ));
-            if (++played >= 3) break;
+            double d2 = e.getDistanceSqToEntity(mc.thePlayer);
+            if (d2 > 64.0 * 64.0) continue;
+            dev.lunarlite.gui.SaoShatter.burst(e); // vỡ thành mảnh đa giác kiểu SAO
+            if (played < 3 && d2 <= 48.0 * 48.0) {
+                mc.getSoundHandler().playSound(net.minecraft.client.audio.PositionedSoundRecord.create(
+                        new net.minecraft.util.ResourceLocation("lunarlite", "sao.death"),
+                        (float) e.posX, (float) e.posY, (float) e.posZ));
+                played++;
+            }
         }
     }
 
@@ -282,6 +293,8 @@ public class LunarLite {
         if (mc.thePlayer == null) {
             sfxDead = false;
             lowSound = null;
+            dev.lunarlite.gui.SaoDeath.update(false);
+            dev.lunarlite.gui.SaoShatter.clear();
             return;
         }
         playHealthSounds(mc);
@@ -348,11 +361,16 @@ public class LunarLite {
     @SubscribeEvent
     public void onGuiDrawPre(GuiScreenEvent.DrawScreenEvent.Pre e) {
         AnimationsModule.guiPre(e.gui);
+        if (dev.lunarlite.gui.SaoDeath.active() && e.gui instanceof net.minecraft.client.gui.GuiGameOver) e.setCanceled(true);
     }
 
     @SubscribeEvent
     public void onGuiDrawPost(GuiScreenEvent.DrawScreenEvent.Post e) {
         AnimationsModule.guiPost();
+        if (dev.lunarlite.gui.SaoDeath.active() && e.gui instanceof net.minecraft.client.gui.GuiGameOver) {
+            net.minecraft.client.gui.ScaledResolution sr = new net.minecraft.client.gui.ScaledResolution(Minecraft.getMinecraft());
+            dev.lunarlite.gui.SaoDeath.render(sr.getScaledWidth(), sr.getScaledHeight(), e.mouseX, e.mouseY, true);
+        }
     }
 
     @SubscribeEvent
@@ -373,6 +391,13 @@ public class LunarLite {
         if (BOW_TRAJECTORY != null) BOW_TRAJECTORY.render(e.partialTicks);
         if (ENEMY_DETECTOR != null) ENEMY_DETECTOR.renderMarkers(e.partialTicks);
         renderShake(e.partialTicks);
+        dev.lunarlite.gui.SaoShatter.render(e.partialTicks);
+    }
+
+    /** Ẩn thân xác sinh vật / người chơi khác đang chết: đã được thay bằng mảnh vỡ SAO. */
+    @SubscribeEvent
+    public void onLivingPre(net.minecraftforge.client.event.RenderLivingEvent.Pre e) {
+        if (e.entity != null && dev.lunarlite.gui.SaoShatter.hides(e.entity)) e.setCanceled(true);
     }
 
     /** Vẽ bản sao của block đang đào, rung ngẫu nhiên quanh vị trí gốc. */
@@ -461,6 +486,9 @@ public class LunarLite {
         if (mc.gameSettings.hideGUI || mc.gameSettings.showDebugInfo || mc.currentScreen instanceof HudEditorScreen) return;
         for (Module m : MODULES) {
             if (m.enabled && m instanceof HudModule) ((HudModule) m).render(e.resolution, false);
+        }
+        if (dev.lunarlite.gui.SaoDeath.active() && !(mc.currentScreen instanceof net.minecraft.client.gui.GuiGameOver)) {
+            dev.lunarlite.gui.SaoDeath.render(e.resolution.getScaledWidth(), e.resolution.getScaledHeight(), 0, 0, false);
         }
     }
 }
