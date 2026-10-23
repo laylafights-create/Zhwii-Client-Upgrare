@@ -440,12 +440,17 @@ public class MenuScreen extends GuiScreen {
         Draw.scissor(mc, rx, ry, Math.round(w * u), Math.round(h * u));
     }
 
+    /** Bảng tuỳ chỉnh nằm bên phải; cột nút tròn (tab) dịch sang trái để nhường chỗ. */
+    private static final int DETAIL_X = 66;
+    private static final int HOME_OFF = 200; // quãng cột nút tròn dịch sang trái khi mở tuỳ chỉnh
+    private float dshift;                  // 0 = trang chủ, 1 = đã mở tuỳ chỉnh
+
     private int paneX() {
-        return PAD;
+        return DETAIL_X;
     }
 
     private int paneW() {
-        return VW - 2 * PAD;
+        return VW - DETAIL_X - PAD;
     }
 
     private int setViewH() {
@@ -885,7 +890,7 @@ public class MenuScreen extends GuiScreen {
         if (!detail) return; // trang chủ: 3 nút gom vào nút tròn cuối cột
         int n = detail ? 4 : 3;
         int w = detail ? (paneW() - GAP * (n - 1)) / n : 112;
-        int x = detail ? PAD : (VW - (w * n + GAP * (n - 1))) / 2;
+        int x = detail ? paneX() : (VW - (w * n + GAP * (n - 1))) / 2;
         if (detail) {
             Btn back = make(K_BACK, w, "« Quay lại");
             back.fixed = true;
@@ -1065,44 +1070,50 @@ public class MenuScreen extends GuiScreen {
         FontRenderer fr = fontRendererObj;
         int acc = Draw.ACCENT;
 
-        // trang chủ: không có khung, chỉ tiêu đề + một hàng thẻ trên nền blur
-        if (!detail || module == null) {
-            drawHome(mx, my);
-            return;
-        }
+        float ts = detail && module != null ? 1f : 0f;
+        dshift += (ts - dshift) * scrollK;
+        if (Math.abs(ts - dshift) < 0.004f) dshift = ts;
 
+        // lớp trang chủ: khi mở tuỳ chỉnh thì thẻ nhân vật + danh sách thu lại, cột nút tròn trượt sang trái
+        drawHome(mx, my);
+        if (!detail || module == null) return;
+
+        GlStateManager.pushMatrix();
+        GlStateManager.translate((1f - dshift) * 90f, 0f, 0f);
+        final int PX = paneX(), PW = paneW();
         long tn = System.currentTimeMillis();
         // cửa sổ SAO phủ toàn bộ trang chi tiết
-        Skin.saoWindow(4, 2, VW - 8, VH - 4, 40, tn);
-        Skin.saoRow(PAD, 4, VW - 2 * PAD, 36, 0f);
-        if (descLines.length > 0) Skin.saoRow(PAD, 46, VW - 2 * PAD, descLines.length * 10 + 6, 0f);
+        Skin.saoWindow(PX - 10, 2, PW + 20, VH - 4, 40, tn);
+        Skin.saoRow(PX, 4, PW, 36, 0f);
+        if (descLines.length > 0) Skin.saoRow(PX, 46, PW, descLines.length * 10 + 6, 0f);
         {
             boolean onM = module.enabled;
-            Skin.saoDisc(PAD + 22, 22, 14f, SaoIcons.forModule(module), onM ? 0xFF3FB86F : 0xFF9AA0A6);
+            Skin.saoDisc(PX + 22, 22, 14f, SaoIcons.forModule(module), onM ? 0xFF3FB86F : 0xFF9AA0A6);
             String nm = Lang.vi(module.name);
-            int avail = VW - 2 * PAD - 40 - 80;
+            int avail = PW - 40 - 80;
             float sc = fr.getStringWidth(nm) * 1.5f > avail ? 1.15f : 1.5f;
             GlStateManager.pushMatrix();
-            GlStateManager.translate(PAD + 44, 7f, 0f);
+            GlStateManager.translate(PX + 44, 7f, 0f);
             GlStateManager.scale(sc, sc, 1f);
             fr.drawString(nm, 0, 0, Skin.INK, false);
             GlStateManager.popMatrix();
-            fr.drawString(module.category.label, PAD + 44, 26, Skin.INK_DIM, false);
+            fr.drawString(module.category.label, PX + 44, 26, Skin.INK_DIM, false);
 
-            int bw = 54, bx = VW - PAD - bw - 8;
+            int bw = 54, bx = (PX + PW) - bw - 8;
             Skin.saoPill(fr, bx, 12, bw, 20, onM, tn);
             for (int i = 0; i < descLines.length; i++) {
-                fr.drawString(descLines[i], PAD + 8, 49 + i * 10, Skin.INK_SOFT, false);
+                fr.drawString(descLines[i], PX + 8, 49 + i * 10, Skin.INK_SOFT, false);
             }
         }
-        Gui.drawRect(PAD, 71, VW - PAD, 72, 0x30FFFFFF);
+        Gui.drawRect(PX, 71, (PX + PW), 72, 0x30FFFFFF);
         { // vệt sáng chạy dọc đường kẻ dưới phần mô tả
-            int sw = 70, span = VW - 2 * PAD - sw;
-            int sx = PAD + Math.round((tn % 2600L) / 2600f * span);
+            int sw = 70, span = PW - sw;
+            int sx = PX + Math.round((tn % 2600L) / 2600f * span);
             Draw.fadeLine(sx, 71, sw, Draw.ACCENT & 0xFFFFFF, 0xA0);
         }
 
         drawDetail(mx, my);
+        GlStateManager.popMatrix();
     }
 
     // ----------------------------------------------------------- trang chủ
@@ -1129,7 +1140,7 @@ public class MenuScreen extends GuiScreen {
     private static final int GROUP_DX = 126;
 
     private int gdx() {
-        return Math.round(GROUP_DX * (1f - shift));
+        return Math.round(GROUP_DX * (1f - shift) - dshift * HOME_OFF);
     }
     private static final int SAO_ORANGE = 0xFFF0A30A;
     private float listScroll, listTarget;
@@ -1283,7 +1294,7 @@ public class MenuScreen extends GuiScreen {
         if (Math.abs(shT - shift) < 0.005f) shift = shT;
 
         int hc = circleAt(mx, my);
-        int hr = hc >= 0 || !expanded ? -1 : rowAt(mx, my);
+        int hr = hc >= 0 || !expanded || dshift > 0.02f ? -1 : rowAt(mx, my);
         Module hoverMod = hr >= 0 && !actionsOpen ? shown.get(hr) : null;
         int hkey = hc >= 0 ? hc : hr >= 0 ? 1000 + hr : -1;
         if (hkey != lastHoverSfx) {
@@ -1291,13 +1302,18 @@ public class MenuScreen extends GuiScreen {
             if (hkey >= 0 && !closing) play("menu.hover");
         }
 
+        final float cs = Math.max(0f, 1f - dshift * 1.6f); // độ lớn của thẻ nhân vật / danh sách (0 khi đã mở tuỳ chỉnh)
         GlStateManager.pushMatrix();
         GlStateManager.translate(gdx(), 0f, 0f);
         // ---- thẻ nhân vật bên trái (tên, thanh HP = số tính năng bật, 4 ô giáp); mô hình vẽ ở cuối hàm
         float pa = AnimationsModule.menu()
                 ? AnimationsModule.ease((now - openStart) * AnimationsModule.speed() / 340f) : 1f;
+        if (cs > 0.02f) {
         GlStateManager.pushMatrix();
         GlStateManager.translate(-(1f - pa) * 36f, 0f, 0f);
+        GlStateManager.translate(CPX + CPW / 2f, CPY + CPH / 2f, 0f);
+        GlStateManager.scale(cs, cs, 1f);
+        GlStateManager.translate(-(CPX + CPW / 2f), -(CPY + CPH / 2f), 0f);
         Gui.drawRect(CPX - 1, CPY - 1, CPX + CPW + 1, CPY + CPH + 2, 0x55000000);
         vgrad(CPX, CPY, CPX + CPW, CPY + CPH, 0xFFFCFCFD, 0xFFEBECEE);
         vgrad(CPX, CPY, CPX + CPW, CPY + 22, 0xFFF3F4F5, 0xFFE0E2E4);
@@ -1327,11 +1343,12 @@ public class MenuScreen extends GuiScreen {
             if (ar != null) drawItemSmall(ar, sx + 3, sy + 3);
         }
         GlStateManager.popMatrix();
+        }
 
         // mũi tên trắng từ thẻ nhân vật sang cột nút tròn
         int midY = (circleY(0) + circleY(circleCount() - 1)) / 2;
         int wax = CPX + CPW + 8 + Math.round((float) Math.sin(now / 380.0) * 2f);
-        for (int c = 0; c < 14; c++) Gui.drawRect(wax + c, midY - (13 - c), wax + c + 1, midY + (13 - c) + 1, 0xFFE6E8EA);
+        if (cs > 0.02f) for (int c = 0; c < 14; c++) Gui.drawRect(wax + c, midY - (13 - c), wax + c + 1, midY + (13 - c) + 1, 0xFFE6E8EA);
 
         GlStateManager.popMatrix();
 
@@ -1345,7 +1362,7 @@ public class MenuScreen extends GuiScreen {
             foot = "";
             fcol = Skin.DIM;
         }
-        drawCentered(fr.trimStringToWidth(foot, VW - 2 * PAD), VW / 2f, 248, fcol);
+        // (đã bỏ dòng mô tả phía dưới danh sách)
         // ---- cột nút tròn
         GlStateManager.pushMatrix();
         GlStateManager.translate(gdx(), 0f, 0f);
@@ -1465,6 +1482,7 @@ public class MenuScreen extends GuiScreen {
                 sp = AnimationsModule.easeOutBack(t);
             }
             if (!expanded) sp = Math.min(sp, shift);
+            sp = Math.min(sp, cs);
             Object hkeyObj = actionsOpen ? (Object) ("act" + i) : (Object) shown.get(i);
             float hv = hover(hkeyObj, i == hr && sp > 0.9f, k);
             if (sp <= 0.02f) continue;
@@ -1479,11 +1497,11 @@ public class MenuScreen extends GuiScreen {
         Draw.endScissor();
         GlStateManager.color(1f, 1f, 1f, 1f);
         GlStateManager.color(1f, 1f, 1f, 1f);
-        drawFixedButtons(mx, my);
+        if (!detail) drawFixedButtons(mx, my);
         GlStateManager.color(1f, 1f, 1f, 1f);
 
         // mô hình người chơi vẽ sau cùng để không bị đè (trượt vào cùng thẻ)
-        if (mc.thePlayer != null) {
+        if (mc.thePlayer != null && cs > 0.5f) {
             GlStateManager.pushMatrix();
             GlStateManager.translate(-(1f - pa) * 36f + gdx(), 0f, 0f);
             int ex = CPX + CPW / 2, ey = CPY + CPH - 36 - 10;
@@ -1891,8 +1909,23 @@ public class MenuScreen extends GuiScreen {
                 else askToggle(hit);
                 return;
             }
-        } else if (btn == 0 && startBarDrag(mx, my)) {
-            return;
+        } else {
+            int ci = btn == 0 ? circleAt(mx, my) : -1;
+            if (ci >= 0) { // bấm một tab bên trái: thu tuỳ chỉnh lại và mở danh sách của tab đó
+                play("menu.select");
+                goBack();
+                if (ci == tabCount()) {
+                    actionsOpen = true;
+                    listScroll = listTarget = 0f;
+                } else {
+                    actionsOpen = false;
+                    if (ci != tabIndex()) setTab(ci);
+                }
+                expanded = true;
+                animStart = System.currentTimeMillis();
+                return;
+            }
+            if (btn == 0 && startBarDrag(mx, my)) return;
         }
 
         for (Object o : buttonList) {
