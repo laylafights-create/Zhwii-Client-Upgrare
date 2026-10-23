@@ -5,8 +5,8 @@ import net.minecraft.client.gui.Gui;
 
 /**
  * Giao diện chung kiểu Sword Art Online (menu + HUD editor + màn nhập/xuất):
- * xám than đặc, viền trắng bạc mảnh, vệt sáng mép trên, góc khung có "dấu ngoặc",
- * một màu nhấn (mặc định cam SAO) lấy từ {@link Draw#ACCENT}, xanh lá như thanh HP.
+ * xanh đen trong suốt kiểu hologram, viền bạc ánh xanh mảnh, vệt sáng mép trên, góc khung có "dấu ngoặc",
+ * một màu nhấn (mặc định xanh SAO) lấy từ {@link Draw#ACCENT}, xanh lá như thanh HP.
  * Mọi hàm chỉ dùng {@link Draw#rrect} / {@link Gui#drawRect}.
  */
 public final class Skin {
@@ -62,8 +62,8 @@ public final class Skin {
 
     /** Hàng tuỳ chỉnh: nền xám, vạch màu nhấn bên trái và viền mờ khi rê chuột. */
     public static void row(int x, int y, int w, int h, float hov) {
-        Draw.rrect(x, y, x + w, y + h, 4, Draw.lerp(0xFF23272C, 0xFF30353C, hov));
-        Gui.drawRect(x + 1, y + h - 1, x + w - 1, y + h, Draw.lerp(0x14FFFFFF, 0x30FFFFFF, hov));
+        Draw.rrect(x, y, x + w, y + h, 4, Draw.lerp(0xFF101D2B, 0xFF1D3548, hov));
+        Gui.drawRect(x + 1, y + h - 1, x + w - 1, y + h, Draw.lerp(0x22B8EFFF, 0x55B8EFFF, hov));
         Gui.drawRect(x, y + 3, x + 2, y + h - 3, Draw.lerp(0x00000000 | (Draw.ACCENT & 0xFFFFFF), Draw.ACCENT, hov));
     }
 
