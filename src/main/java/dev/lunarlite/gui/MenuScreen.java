@@ -1125,10 +1125,6 @@ public class MenuScreen extends GuiScreen {
                 fr.drawString(descLines[i], PX + 8, 49 + i * 10, Skin.INK_SOFT, false);
             }
         }
-        { // tam giác trắng ở đầu cột tuỳ chỉnh, chỉ về phía danh sách tính năng
-            int tx = PX - 20, ty0 = 4 + 18;
-            for (int c = 0; c < 9; c++) Gui.drawRect(tx + c, ty0 - c, tx + c + 1, ty0 + c + 1, 0xFFE6E8EA);
-        }
 
         drawDetail(mx, my);
         GlStateManager.popMatrix();
@@ -1160,6 +1156,7 @@ public class MenuScreen extends GuiScreen {
         return Math.round(LPW0 + (DET_LPW - LPW0) * dshift);
     }
     private static final int CPX = 16, CPY = 14, CPW = 160, CPH = 226; // thẻ nhân vật bên trái
+    private static final int ARM_FEET = CPY + CPH - 24; // y chân nhân vật (đáy thẻ không còn dải ô giáp)
     private float listYCur = -1f;
     /** false = mới mở: chỉ thẻ nhân vật + nút tròn, đứng giữa; true = đã chọn nhóm, cụm dịch sang trái nhường chỗ cho danh sách. */
     private boolean expanded;
@@ -1356,11 +1353,21 @@ public class MenuScreen extends GuiScreen {
         // dấu ngoặc ở góc thẻ nhân vật, nhấp nháy nhẹ như cửa sổ hologram
         int brA = 120 + Math.round(70f * (float) Math.sin(now / 520.0));
         Skin.brackets(CPX - 3, CPY - 3, CPW + 6, CPH + 8, 7, (brA << 24) | (Draw.ACCENT & 0xFFFFFF));
-        int sy0 = CPY + CPH - 36;
-        Gui.drawRect(CPX, sy0, CPX + CPW, CPY + CPH, 0xFFC9CBCD);
-        int sx0 = CPX + (CPW - 118) / 2;
+        // 4 ô giáp đặt quanh nhân vật, xen kẽ trái/phải, mỗi ô có đường nối tới đúng bộ phận
+        // (mũ -> đầu, giáp -> thân, quần -> chân trên, giày -> bàn chân); không còn dải ô ở đáy thẻ
+        int ex0 = CPX + CPW / 2, fy = ARM_FEET;
+        int[] aOff = {-88, -56, -30, -8};   // tâm ô so với chân nhân vật
+        int[] aTgt = {-13, 20, -9, 9};      // điểm nối so với trục nhân vật (âm = bên trái)
         for (int a2 = 0; a2 < 4; a2++) {
-            int sx = sx0 + a2 * 32, sy = sy0 + 7;
+            boolean left = (a2 & 1) == 0;
+            int sx = left ? CPX + 9 : CPX + CPW - 9 - 22;
+            int cyS = fy + aOff[a2], sy = cyS - 11;
+            int tx = ex0 + aTgt[a2];
+            // đường nối + chấm đầu mút
+            int lx1 = left ? sx + 22 : tx, lx2 = left ? tx : sx;
+            Gui.drawRect(lx1, cyS, lx2, cyS + 1, 0xFFB4B9BE);
+            Draw.disc(tx + 0.5f, cyS + 0.5f, 2.2f, 0xFFF0A30A);
+            // ô lõm
             Gui.drawRect(sx, sy, sx + 22, sy + 22, 0xFFEDEEEF);
             Gui.drawRect(sx + 1, sy + 1, sx + 21, sy + 21, 0xFF7C848B);
             Gui.drawRect(sx + 1, sy + 1, sx + 21, sy + 3, 0x55000000);   // bóng lõm phía trên ô
@@ -1375,7 +1382,7 @@ public class MenuScreen extends GuiScreen {
         // mũi tên trắng từ thẻ nhân vật sang cột nút tròn
         int midY = (circleY(0) + circleY(circleCount() - 1)) / 2;
         int wax = CPX + CPW + 8 + Math.round((float) Math.sin(now / 380.0) * 2f);
-        if (cs > 0.02f) for (int c = 0; c < 14; c++) Gui.drawRect(wax + c, midY - (13 - c), wax + c + 1, midY + (13 - c) + 1, 0xFFE6E8EA);
+        if (cs > 0.02f) Draw.arrow(wax, midY + 0.5f, 14f, 13.5f, false, Draw.mulAlpha(0xFFE6E8EA, Math.min(1f, cs)));
 
         GlStateManager.popMatrix();
 
@@ -1472,9 +1479,10 @@ public class MenuScreen extends GuiScreen {
             if (sv > 0.05f) {
                 int ta = Math.round(255f * Math.min(1f, sv));
                 int tc = (ta << 24) | 0xF0A30A;
-                int ax = CX + CR + 4 + Math.round((1f - sv) * 8f + (float) Math.sin(now / 260.0) * 1.2f * sv);
-                int len = Math.max(1, Math.round(9 * sv));
-                for (int c = 0; c < len; c++) Gui.drawRect(ax + c, cy - c, ax + c + 1, cy + c + 1, tc);
+                // đáy dính vào viền nút, đỉnh chỉ sang danh sách; nhấp nhô nhẹ sang phải
+                float len = 8f * sv;
+                float ax = CX + CR + 5f + (float) Math.sin(now / 260.0) * 1.1f * sv;
+                Draw.arrow(ax, cy, len, len, false, tc);
             }
             GlStateManager.popMatrix();
 
@@ -1495,7 +1503,7 @@ public class MenuScreen extends GuiScreen {
 
         // ---- bảng danh sách tính năng
         int ly = listY(), lh = listH();
-        clip(lpx() - 12, ly, lpw() + 22, lh);
+        clip(lpx() - 12, ly, lpw() + 30, lh);
         int sc = Math.round(listScroll);
         int fv = Math.max(0, sc / LSTEP);
         boolean showList = expanded || shift > 0.03f;
@@ -1531,7 +1539,7 @@ public class MenuScreen extends GuiScreen {
         if (mc.thePlayer != null && cs > 0.5f) {
             GlStateManager.pushMatrix();
             GlStateManager.translate(-(1f - pa) * 36f + gdx(), 0f, 0f);
-            int ex = CPX + CPW / 2, ey = CPY + CPH - 36 - 10;
+            int ex = CPX + CPW / 2, ey = ARM_FEET;
             GlStateManager.color(1f, 1f, 1f, 1f);
             // bóng mềm dưới chân nhân vật
             Draw.rrect(ex - 24, ey - 1, ex + 24, ey + 5, 3, 0x14000000);
@@ -1581,7 +1589,7 @@ public class MenuScreen extends GuiScreen {
         // nền trắng mờ như menu SAO mẫu: sáng hơn khi rê chuột, cam khi đang chọn
         if (sel) {
             vgrad(x, y, x + w, y + h, 0xF5F2A53A, 0xF5E0881C);
-            for (int c = 0; c < 9; c++) Gui.drawRect(x - 9 + c, y + h / 2 - c, x - 8 + c, y + h / 2 + c + 1, 0xFFE6E8EA);
+            if (dshift > 0.02f) Draw.arrow(x + w + 2, y + h / 2f, 9f, 9f, false, Draw.mulAlpha(SAO_ORANGE, dshift));
         } else {
             rowBg(x, y, w, h, hv);
             if (hv > 0.02f) Gui.drawRect(x, y, x + 2, y + h, Draw.mulAlpha(Draw.ACCENT, hv));

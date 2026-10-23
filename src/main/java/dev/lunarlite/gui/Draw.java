@@ -293,4 +293,31 @@ public final class Draw {
         t.draw();
         glEnd();
     }
+
+    /**
+     * Tam giác mũi tên đặc, mịn mép, vẽ bằng MỘT lần draw (thay cho vòng lặp drawRect từng cột).
+     * bx = cạnh đáy (đứng yên, sát phần tử mà mũi tên gắn vào), cy = tâm dọc,
+     * w = độ dài từ đáy tới đỉnh, hh = nửa chiều cao đáy. left = true thì đỉnh chỉ sang trái.
+     * Viền ngoài 0,7px mờ nhẹ để khử răng cưa vì GUI không có MSAA.
+     */
+    public static void arrow(float bx, float cy, float w, float hh, boolean left, int c) {
+        if (w <= 0.05f || hh <= 0.05f) return;
+        float d = left ? -1f : 1f;
+        float f = 0.7f;
+        int soft = mulAlpha(c, 0.30f);
+        glBegin();
+        Tessellator t = Tessellator.getInstance();
+        WorldRenderer wr = t.getWorldRenderer();
+        wr.begin(4, DefaultVertexFormats.POSITION_COLOR);
+        // lớp viền mờ (to hơn một chút)
+        vtx(wr, bx - d * f, cy - hh - f, soft);
+        vtx(wr, bx - d * f, cy + hh + f, soft);
+        vtx(wr, bx + d * (w + f * 1.6f), cy, soft);
+        // lớp chính
+        vtx(wr, bx, cy - hh, c);
+        vtx(wr, bx, cy + hh, c);
+        vtx(wr, bx + d * w, cy, c);
+        t.draw();
+        glEnd();
+    }
 }
