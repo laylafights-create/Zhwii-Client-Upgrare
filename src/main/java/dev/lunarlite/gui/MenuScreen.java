@@ -890,6 +890,10 @@ public class MenuScreen extends GuiScreen {
     /** Nền kiểu Aincrad: tối viền, hạt sáng bay chậm lên trên, tia sáng ngang quét ra khi mở menu. */
     private void drawBackdrop(float op) {
         long t = System.currentTimeMillis();
+        // tối dần ở mép trên và mép dưới màn hình cho chiều sâu, giữa vẫn sáng
+        int va = Math.round(0x50 * Math.max(0f, Math.min(1f, op)));
+        vgrad(0, 0, width, height / 3, va << 24, 0);
+        vgrad(0, height * 2 / 3, width, height, 0, (va + 0x10 > 255 ? 255 : va + 0x10) << 24);
         int acc = Draw.ACCENT & 0xFFFFFF;
         for (int i = 0; i < 40; i++) {
             long h = (i + 1) * 2654435761L;
@@ -929,6 +933,7 @@ public class MenuScreen extends GuiScreen {
         // khung ngoài bo góc + bóng + vệt màu nhấn mờ dần ở mép trên
         Skin.shadow(VW, VH);
         Skin.glossBox(0, 0, VW, VH, 7, Skin.SILVER, Skin.BG);
+        vgrad(2, 2, VW - 2, 70, (0x26 << 24) | (Draw.ACCENT & 0xFFFFFF), 0);
         Skin.brackets(4, 4, VW - 8, VH - 8, 10, Draw.withAlpha(Draw.ACCENT, 0xB0));
         Draw.fadeLine(18, 0, VW - 36, acc & 0xFFFFFF, 0xCC);
         Draw.fadeLine(18, 1, VW - 36, acc & 0xFFFFFF, 0x60);
@@ -1011,6 +1016,22 @@ public class MenuScreen extends GuiScreen {
     }
 
     private boolean actionsOpen;
+
+    /** Nền hàng danh sách: chuyển màu dọc (sáng ở trên, đậm dần xuống dưới) thay vì một màu phẳng. */
+    private void rowBg(int x, int y, int w, int h, float hv) {
+        int top = Draw.lerp(0xF0D2D6DB, 0xF0F6F8FA, hv);
+        int bot = Draw.lerp(0xF0B0B5BB, 0xF0DADFE3, hv);
+        drawGradientRect(x, y, x + w, y + h, top, bot);
+        GlStateManager.enableBlend();
+        GlStateManager.color(1f, 1f, 1f, 1f);
+    }
+
+    /** Khung gradient dọc dùng chung (thẻ nhân vật, nền). */
+    private void vgrad(int x1, int y1, int x2, int y2, int c1, int c2) {
+        drawGradientRect(x1, y1, x2, y2, c1, c2);
+        GlStateManager.enableBlend();
+        GlStateManager.color(1f, 1f, 1f, 1f);
+    }
 
     /** Số tính năng của nút tròn i (0 = tất cả). */
     private int countIn(int i) {
@@ -1144,25 +1165,17 @@ public class MenuScreen extends GuiScreen {
         GlStateManager.pushMatrix();
         GlStateManager.translate(-(1f - pa) * 36f, 0f, 0f);
         Gui.drawRect(CPX - 1, CPY - 1, CPX + CPW + 1, CPY + CPH + 2, 0x55000000);
-        Gui.drawRect(CPX, CPY, CPX + CPW, CPY + CPH, 0xFFF6F6F6);
-        Gui.drawRect(CPX, CPY, CPX + CPW, CPY + 22, 0xFFE9EAEB);
+        vgrad(CPX, CPY, CPX + CPW, CPY + CPH, 0xFFFCFCFD, 0xFFEBECEE);
+        vgrad(CPX, CPY, CPX + CPW, CPY + 22, 0xFFF3F4F5, 0xFFE0E2E4);
         Gui.drawRect(CPX, CPY + 22, CPX + CPW, CPY + 23, 0xFFD2D4D6);
+        Draw.fadeLine(CPX + 10, CPY + 23, CPW - 20, Draw.ACCENT & 0xFFFFFF, 0x90); // vạch màu nhấn dưới tiêu đề
+        Gui.drawRect(CPX, CPY + 24, CPX + CPW, CPY + 40, 0x0AFFFFFF);              // ánh sáng nhẹ đầu thẻ
         String pname = mc.thePlayer != null ? mc.thePlayer.getName() : "Zhwii";
         fr.drawString(pname, CPX + (CPW - fr.getStringWidth(pname)) / 2f, CPY + 4, 0xFF3A3F45, false);
         float hpT = total > 0 ? en / (float) total : 0f;
         hpAnim += (hpT - hpAnim) * (AnimationsModule.menu() ? 0.07f : 1f);
         if (Math.abs(hpT - hpAnim) < 0.002f) hpAnim = hpT;
         Draw.hbar(CPX + 14, CPY + 15, CPW - 28, 3, hpAnim, 0xFF3FBF7F, 0xFFCFD2D5);
-        // dòng phụ: nhóm đang rê / đang chọn + số tính năng
-        int subI = hc >= 0 ? hc : selCircle();
-        String sub = subI < 0 ? "Chọn một nhóm bên phải"
-                : subI == tabCount() ? "Thao tác nhanh"
-                : Lang.vi(tabLabel(subI)) + " · " + countIn(subI) + " tính năng";
-        GlStateManager.pushMatrix();
-        GlStateManager.translate(CPX + CPW / 2f - fr.getStringWidth(sub) * 0.375f, CPY + 28f, 0f);
-        GlStateManager.scale(0.75f, 0.75f, 1f);
-        fr.drawString(sub, 0, 0, hc >= 0 ? 0xFF2E6B8A : 0xFF7A8087, false);
-        GlStateManager.popMatrix();
         // dấu ngoặc ở góc thẻ nhân vật, nhấp nháy nhẹ như cửa sổ hologram
         int brA = 120 + Math.round(70f * (float) Math.sin(now / 520.0));
         Skin.brackets(CPX - 3, CPY - 3, CPW + 6, CPH + 8, 7, (brA << 24) | (Draw.ACCENT & 0xFFFFFF));
@@ -1173,6 +1186,9 @@ public class MenuScreen extends GuiScreen {
             int sx = sx0 + a2 * 32, sy = sy0 + 7;
             Gui.drawRect(sx, sy, sx + 22, sy + 22, 0xFFEDEEEF);
             Gui.drawRect(sx + 1, sy + 1, sx + 21, sy + 21, 0xFF7C848B);
+            Gui.drawRect(sx + 1, sy + 1, sx + 21, sy + 3, 0x55000000);   // bóng lõm phía trên ô
+            Gui.drawRect(sx + 1, sy + 1, sx + 3, sy + 21, 0x33000000);
+            Gui.drawRect(sx + 1, sy + 19, sx + 21, sy + 21, 0x22FFFFFF); // ánh sáng mép dưới
             ItemStack ar = mc.thePlayer != null ? mc.thePlayer.inventory.armorItemInSlot(3 - a2) : null;
             if (ar != null) drawItemSmall(ar, sx + 3, sy + 3);
         }
@@ -1196,31 +1212,6 @@ public class MenuScreen extends GuiScreen {
             fcol = Skin.DIM;
         }
         drawCentered(fr.trimStringToWidth(foot, VW - 2 * PAD), VW / 2f, 248, fcol);
-        // thanh trạng thái dưới cùng: tên + phiên bản, phím tắt, số tính năng bật
-        float barA = AnimationsModule.menu() ? Math.min(1f, Math.max(0f, ((now - openStart) * AnimationsModule.speed() - 250f) / 300f)) : 1f;
-        if (barA > 0.05f) {
-            int ba = Math.round(0x70 * barA);
-            Draw.fadeLine(PAD, 262, VW - 2 * PAD, 0xB8EFFF, ba);
-            int dc = (Math.round(255 * barA) << 24) | 0x7C99A8;
-            GlStateManager.pushMatrix();
-            GlStateManager.translate(PAD, 267f, 0f);
-            GlStateManager.scale(0.8f, 0.8f, 1f);
-            fr.drawString("ZHWII CLIENT", 0, 0, dc, false);
-            GlStateManager.popMatrix();
-            String hint = "↑↓ đổi nhóm   ·   Chuột phải: bật/tắt   ·   Esc: đóng";
-            GlStateManager.pushMatrix();
-            GlStateManager.translate(VW / 2f - fr.getStringWidth(hint) * 0.4f, 267f, 0f);
-            GlStateManager.scale(0.8f, 0.8f, 1f);
-            fr.drawString(hint, 0, 0, dc, false);
-            GlStateManager.popMatrix();
-            String cnt = en + "/" + total + " bật";
-            GlStateManager.pushMatrix();
-            GlStateManager.translate(VW - PAD - fr.getStringWidth(cnt) * 0.8f, 267f, 0f);
-            GlStateManager.scale(0.8f, 0.8f, 1f);
-            fr.drawString(cnt, 0, 0, (Math.round(255 * barA) << 24) | 0x8DFFCF, false);
-            GlStateManager.popMatrix();
-        }
-
         // ---- cột nút tròn
         GlStateManager.pushMatrix();
         GlStateManager.translate(gdx(), 0f, 0f);
@@ -1235,6 +1226,15 @@ public class MenuScreen extends GuiScreen {
             Gui.drawRect(CX - 2, yy - 6, CX + 2, yy + 6, 0x18B8EFFF);
             Gui.drawRect(CX - 1, yy - 4, CX + 1, yy + 4, 0x66FFFFFF);
             Gui.drawRect(CX - 1, yy - 1, CX + 1, yy + 1, 0xCCFFFFFF);
+        }
+        {   // nền kính mờ dạng viên thuốc sau cả cột nút, cho nút nổi bật trên mọi nền
+            int ca = Math.round(0x40 * lineP);
+            int cx1 = CX - CR - 9, cx2 = CX + CR + 9;
+            int cy1 = circleY(0) - CR - 9, cy2 = circleY(n - 1) + CR + 9;
+            if (ca > 3) {
+                Draw.rrect(cx1, cy1, cx2, cy2, CR + 9, (ca << 24) | 0x0B1420);
+                Draw.ring(cx1, cy1, cx2, cy2, (Math.round(0x38 * lineP) << 24) | 0xB8EFFF);
+            }
         }
         int selTab = selCircle();
         for (int i = 0; i < n; i++) {
@@ -1281,12 +1281,14 @@ public class MenuScreen extends GuiScreen {
                 if (ga > 3) Draw.rrect(CX - gr, cy - gr, CX + gr, cy + gr, gr, (ga << 24) | 0xB8EFFF);
             }
 
+            Draw.rrect(CX - CR - 2, cy - CR, CX + CR + 4, cy + CR + 6, CR + 3, 0x30000000); // bóng đổ dưới nút
             Draw.rrect(CX - CR - 3, cy - CR - 3, CX + CR + 3, cy + CR + 3, CR + 3,
                     Draw.lerp(Draw.lerp(0x99B8EFFF, 0xFFFFFFFF, hv), 0xDDF0A30A, sv));
             Draw.rrect(CX - CR - 1, cy - CR - 1, CX + CR + 1, cy + CR + 1, CR + 1, 0xFF0B1420);
             Draw.rrect(CX - CR + 1, cy - CR + 1, CX + CR - 1, cy + CR - 1, CR - 1,
                     Draw.lerp(Draw.lerp(0xFFF2F4F6, 0xFFFFE2A8, hv * 0.6f), SAO_ORANGE, sv));
             Gui.drawRect(CX - 8, cy - CR + 3, CX + 8, cy - CR + 4, 0x66FFFFFF);
+            Gui.drawRect(CX - 7, cy + CR - 5, CX + 7, cy + CR - 4, 0x18000000); // viền tối mảnh phía dưới
             // vệt sáng quét ngang qua nút đang chọn
             if (sv > 0.5f) {
                 float sw = (float) ((now % 1800L) / 1800.0);
@@ -1298,6 +1300,17 @@ public class MenuScreen extends GuiScreen {
             int ic = Draw.lerp(Draw.lerp(0xFFC4C8CD, 0xFF8A9096, hv), 0xFFFFFFFF, sv);
             SaoIcons.draw(act ? "gear" : SaoIcons.cat(i == 0 ? null : tabCats.get(i - 1)), CX - 8, cy - 8, ic);
 
+            if (sv > 0.3f) { // đốm sáng nhỏ quay quanh nút đang chọn
+                double ang = now / 700.0;
+                int ox = CX + Math.round((float) Math.cos(ang) * (CR + 7));
+                int oy = cy + Math.round((float) Math.sin(ang) * (CR + 7));
+                int oa = Math.round(200f * sv);
+                Gui.drawRect(ox - 1, oy - 1, ox + 1, oy + 1, (oa << 24) | 0xFFD27A);
+                double a2 = ang - 0.35;
+                Gui.drawRect(CX + Math.round((float) Math.cos(a2) * (CR + 7)), cy + Math.round((float) Math.sin(a2) * (CR + 7)),
+                        CX + Math.round((float) Math.cos(a2) * (CR + 7)) + 1, cy + Math.round((float) Math.sin(a2) * (CR + 7)) + 1,
+                        (Math.round(110f * sv) << 24) | 0xFFD27A);
+            }
             // tam giác chỉ sang bảng bên phải: chỉ hiện (mờ dần + trượt ra) ở nút ĐANG CHỌN
             if (sv > 0.05f) {
                 int ta = Math.round(255f * Math.min(1f, sv));
@@ -1305,18 +1318,6 @@ public class MenuScreen extends GuiScreen {
                 int ax = CX + CR + 4 + Math.round((1f - sv) * 8f + (float) Math.sin(now / 260.0) * 1.2f * sv);
                 int len = Math.max(1, Math.round(9 * sv));
                 for (int c = 0; c < len; c++) Gui.drawRect(ax + c, cy - c, ax + c + 1, cy + c + 1, tc);
-            }
-            if (!act) { // huy hiệu số tính năng ở góc dưới phải nút
-                String bt = String.valueOf(countIn(i));
-                int bwid = Math.max(10, Math.round(fr.getStringWidth(bt) * 0.7f) + 6);
-                int bx = CX + CR - bwid + 6, by = cy + CR - 7;
-                Draw.rrect(bx - 1, by - 1, bx + bwid + 1, by + 10, 5, 0xFF0B1420);
-                Draw.rrect(bx, by, bx + bwid, by + 9, 4, Draw.lerp(0xFF2A3A4C, SAO_ORANGE, sv));
-                GlStateManager.pushMatrix();
-                GlStateManager.translate(bx + (bwid - fr.getStringWidth(bt) * 0.7f) / 2f, by + 1.5f, 0f);
-                GlStateManager.scale(0.7f, 0.7f, 1f);
-                fr.drawString(bt, 0, 0, 0xFFFFFFFF, false);
-                GlStateManager.popMatrix();
             }
             GlStateManager.popMatrix();
 
@@ -1364,24 +1365,21 @@ public class MenuScreen extends GuiScreen {
         }
         Draw.endScissor();
         GlStateManager.color(1f, 1f, 1f, 1f);
-        if (showList && listMax() > 0) { // thanh cuộn mảnh bên phải danh sách
-            int bx = LPX + LPW + 4;
-            int th = Math.max(14, lh * lh / Math.max(1, listContentH()));
-            int ty = ly + Math.round((lh - th) * (listScroll / (float) listMax()));
-            int sa = Math.round(255f * Math.min(1f, shift));
-            if (sa > 8) {
-                Draw.rrect(bx, ly, bx + 2, ly + lh, 1, (Math.round(0x33 * Math.min(1f, shift)) << 24) | 0xFFFFFF);
-                Draw.rrect(bx, ty, bx + 2, ty + th, 1, (sa << 24) | 0xF0A30A);
-            }
-        }
-
+        GlStateManager.color(1f, 1f, 1f, 1f);
         drawFixedButtons(mx, my);
+        GlStateManager.color(1f, 1f, 1f, 1f);
 
         // mô hình người chơi vẽ sau cùng để không bị đè (trượt vào cùng thẻ)
         if (mc.thePlayer != null) {
             GlStateManager.pushMatrix();
             GlStateManager.translate(-(1f - pa) * 36f + gdx(), 0f, 0f);
             int ex = CPX + CPW / 2, ey = CPY + CPH - 36 - 10;
+            GlStateManager.color(1f, 1f, 1f, 1f);
+            // bóng mềm dưới chân nhân vật
+            Draw.rrect(ex - 24, ey - 1, ex + 24, ey + 5, 3, 0x14000000);
+            Draw.rrect(ex - 18, ey, ex + 18, ey + 4, 2, 0x1E000000);
+            Draw.rrect(ex - 11, ey + 1, ex + 11, ey + 3, 1, 0x2A000000);
+            GlStateManager.color(1f, 1f, 1f, 1f);
             net.minecraft.client.gui.inventory.GuiInventory.drawEntityOnScreen(ex, ey, 54, ex + gdx() - mx, ey - 50 - my, mc.thePlayer);
             GlStateManager.popMatrix();
             GlStateManager.enableAlpha();
@@ -1396,7 +1394,7 @@ public class MenuScreen extends GuiScreen {
     private void drawActionRow(int i, int y, float hv) {
         FontRenderer fr = fontRendererObj;
         int x = LPX, w = LPW, h = LRH;
-        Gui.drawRect(x, y, x + w, y + h, Draw.lerp(0xF0BDC1C6, 0xF0E9ECEF, hv));
+        rowBg(x, y, w, h, hv);
         Gui.drawRect(x, y, x + w, y + 1, 0x99FFFFFF);
         Gui.drawRect(x, y + h - 1, x + w, y + h, 0xFF7C838A);
         Gui.drawRect(x, y + h, x + w, y + h + 1, 0x44000000);
@@ -1418,7 +1416,7 @@ public class MenuScreen extends GuiScreen {
         FontRenderer fr = fontRendererObj;
         int x = LPX, w = LPW, h = LRH;
         boolean on = m.enabled;
-        Gui.drawRect(x, y, x + w, y + h, Draw.lerp(0xF0BDC1C6, 0xF0E9ECEF, hv));
+        rowBg(x, y, w, h, hv);
         Gui.drawRect(x, y, x + w, y + 1, 0x99FFFFFF);
         Gui.drawRect(x, y + h - 1, x + w, y + h, 0xFF7C838A);
         Gui.drawRect(x, y + h, x + w, y + h + 1, 0x44000000);
@@ -1457,6 +1455,7 @@ public class MenuScreen extends GuiScreen {
             Draw.rrect(px - 2, y + 4, px + pw + 2, y + h - 4, 9, (ga << 24) | 0x3FBF7F);
         }
         Draw.rrect(px, y + 6, px + pw, y + h - 6, 7, on ? 0xFF3FBF7F : 0xFF8E949B);
+        Gui.drawRect(px + 4, y + 7, px + pw - 4, y + 8, on ? 0x66FFFFFF : 0x44FFFFFF); // vệt bóng trên viên
         Draw.rrect(on ? px + pw - 5 : px + 2, y + 8, on ? px + pw - 2 : px + 5, y + h - 8, 1, 0x88FFFFFF);
         fr.drawStringWithShadow(st, px + (pw - fr.getStringWidth(st)) / 2f, y + (h - 8) / 2, 0xFFFFFFFF);
 
