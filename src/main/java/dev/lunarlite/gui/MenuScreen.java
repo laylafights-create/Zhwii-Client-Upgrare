@@ -449,12 +449,19 @@ public class MenuScreen extends GuiScreen {
     /** Độ phóng to tối đa của menu (1.0 = cỡ gốc). Chỉnh số này để menu to / nhỏ hơn. */
     private static final float MENU_SCALE = 0.95f;
 
+    /**
+     * Khi mở bảng tuỳ chỉnh (thẻ + nút tròn + danh sách + tuỳ chỉnh = 3 cột) cả cụm trải từ
+     * CPX - HOME_OFF đến VW - PAD - 10, lệch hẳn sang trái so với tâm khung. Độ lệch này dời cả cụm
+     * về giữa màn hình; ctrCur chạy mượt theo dshift (và về 0 khi hộp xác nhận hiện).
+     */
+    private float ctrCur;
+
     private float ui() {
         return Math.min(MENU_SCALE, Math.min((width - 8f) / VW, (height - 8f) / VH));
     }
 
     private int vx(int mx) {
-        return Math.round((mx - width / 2f) / ui() + VW / 2f);
+        return Math.round((mx - width / 2f) / ui() + VW / 2f - ctrCur);
     }
 
     private int vy(int my) {
@@ -464,7 +471,7 @@ public class MenuScreen extends GuiScreen {
     /** Cắt vùng vẽ theo toạ độ của khung ảo. */
     private void clip(int x, int y, int w, int h) {
         float u = ui();
-        int rx = Math.round((x - VW / 2f) * u + width / 2f);
+        int rx = Math.round((x + ctrCur - VW / 2f) * u + width / 2f);
         int ry = Math.round((y - VH / 2f) * u + height / 2f);
         Draw.scissor(mc, rx, ry, Math.round(w * u), Math.round(h * u));
     }
@@ -1043,7 +1050,10 @@ public class MenuScreen extends GuiScreen {
         float kk = (0.95f + 0.05f * op) * ui();
         GlStateManager.translate(width / 2f, height / 2f + (1f - op) * 10f, 0f);
         GlStateManager.scale(kk, kk, 1f);
-        GlStateManager.translate(-VW / 2f, -VH / 2f, 0f);
+        float ctrT = confirmMod != null ? 0f : DET_CENTER_OFF * dshift;
+        ctrCur += (ctrT - ctrCur) * k;
+        if (Math.abs(ctrT - ctrCur) < 0.2f) ctrCur = ctrT;
+        GlStateManager.translate(-VW / 2f + ctrCur, -VH / 2f, 0f);
 
         drawPanel(confirmMod != null ? -9999 : curMx, confirmMod != null ? -9999 : curMy);
         if (confirmMod != null) drawConfirm(curMx, curMy);
@@ -1156,7 +1166,8 @@ public class MenuScreen extends GuiScreen {
         return Math.round(LPW0 + (DET_LPW - LPW0) * dshift);
     }
     private static final int CPX = 16, CPY = 14, CPW = 160, CPH = 226; // thẻ nhân vật bên trái
-    private static final int ARM_FEET = CPY + CPH - 24; // y chân nhân vật (đáy thẻ không còn dải ô giáp)
+    private static final int ARM_FEET = CPY + CPH - 16; // y chân nhân vật (đáy thẻ không còn dải ô giáp)
+    private static final float DET_CENTER_OFF = (VW - ((CPX - HOME_OFF) + (VW - PAD - 10))) / 2f;
     private float listYCur = -1f;
     /** false = mới mở: chỉ thẻ nhân vật + nút tròn, đứng giữa; true = đã chọn nhóm, cụm dịch sang trái nhường chỗ cho danh sách. */
     private boolean expanded;
@@ -1356,8 +1367,8 @@ public class MenuScreen extends GuiScreen {
         // 4 ô giáp đặt quanh nhân vật, xen kẽ trái/phải, mỗi ô có đường nối tới đúng bộ phận
         // (mũ -> đầu, giáp -> thân, quần -> chân trên, giày -> bàn chân); không còn dải ô ở đáy thẻ
         int ex0 = CPX + CPW / 2, fy = ARM_FEET;
-        int[] aOff = {-88, -56, -30, -8};   // tâm ô so với chân nhân vật
-        int[] aTgt = {-13, 20, -9, 9};      // điểm nối so với trục nhân vật (âm = bên trái)
+        int[] aOff = {-107, -69, -34, -8};   // tâm ô so với chân nhân vật
+        int[] aTgt = {-16, 31, -16, 16};     // điểm nối so với trục nhân vật (âm = bên trái)
         for (int a2 = 0; a2 < 4; a2++) {
             boolean left = (a2 & 1) == 0;
             int sx = left ? CPX + 9 : CPX + CPW - 9 - 22;
@@ -1542,11 +1553,11 @@ public class MenuScreen extends GuiScreen {
             int ex = CPX + CPW / 2, ey = ARM_FEET;
             GlStateManager.color(1f, 1f, 1f, 1f);
             // bóng mềm dưới chân nhân vật
-            Draw.rrect(ex - 24, ey - 1, ex + 24, ey + 5, 3, 0x14000000);
-            Draw.rrect(ex - 18, ey, ex + 18, ey + 4, 2, 0x1E000000);
-            Draw.rrect(ex - 11, ey + 1, ex + 11, ey + 3, 1, 0x2A000000);
+            Draw.rrect(ex - 28, ey - 1, ex + 28, ey + 5, 3, 0x14000000);
+            Draw.rrect(ex - 21, ey, ex + 21, ey + 4, 2, 0x1E000000);
+            Draw.rrect(ex - 13, ey + 1, ex + 13, ey + 3, 1, 0x2A000000);
             GlStateManager.color(1f, 1f, 1f, 1f);
-            net.minecraft.client.gui.inventory.GuiInventory.drawEntityOnScreen(ex, ey, 54, ex + gdx() - mx, ey - 50 - my, mc.thePlayer);
+            net.minecraft.client.gui.inventory.GuiInventory.drawEntityOnScreen(ex, ey, 64, ex + gdx() - mx, ey - 50 - my, mc.thePlayer);
             GlStateManager.popMatrix();
             GlStateManager.enableAlpha();
             GlStateManager.enableBlend();
