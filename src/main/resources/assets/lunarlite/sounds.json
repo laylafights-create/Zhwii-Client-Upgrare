@@ -1,12 +1,16 @@
 {
   "zoom.use":  { "category": "player", "sounds": [ { "name": "item/zoom_use", "volume": 1.0, "pitch": 1.0 } ] },
   "zoom.stop": { "category": "player", "sounds": [ { "name": "item/zoom_use", "volume": 1.0, "pitch": 0.7 } ] },
-  "menu.open":   { "category": "master", "sounds": [ { "name": "menu/open",   "volume": 0.7 } ] },
-  "menu.close":  { "category": "master", "sounds": [ { "name": "menu/close",  "volume": 0.6 } ] },
-  "menu.hover":  { "category": "master", "sounds": [ { "name": "menu/hover",  "volume": 0.35 } ] },
-  "menu.click":  { "category": "master", "sounds": [ { "name": "menu/click",  "volume": 0.6 } ] },
-  "menu.select": { "category": "master", "sounds": [ { "name": "menu/select", "volume": 0.6 } ] },
-  "menu.back":   { "category": "master", "sounds": [ { "name": "menu/back",   "volume": 0.55 } ] },
-  "menu.on":     { "category": "master", "sounds": [ { "name": "menu/on",     "volume": 0.6 } ] },
-  "menu.off":    { "category": "master", "sounds": [ { "name": "menu/off",    "volume": 0.55 } ] }
+
+  "menu.open":   { "category": "master", "sounds": [ { "name": "sao/sao_menu",     "volume": 0.8 } ] },
+  "menu.close":  { "category": "master", "sounds": [ { "name": "sao/exitmenu",     "volume": 0.7 } ] },
+  "menu.hover":  { "category": "master", "sounds": [ { "name": "sao/backsound",    "volume": 0.18, "pitch": 1.8 } ] },
+  "menu.click":  { "category": "master", "sounds": [ { "name": "sao/confirmsound", "volume": 0.6 } ] },
+  "menu.select": { "category": "master", "sounds": [ { "name": "sao/confirmsound", "volume": 0.6, "pitch": 1.15 } ] },
+  "menu.back":   { "category": "master", "sounds": [ { "name": "sao/backsound",    "volume": 0.6 } ] },
+  "menu.on":     { "category": "master", "sounds": [ { "name": "sao/confirmsound", "volume": 0.6, "pitch": 1.3 } ] },
+  "menu.off":    { "category": "master", "sounds": [ { "name": "sao/backsound",    "volume": 0.55, "pitch": 0.85 } ] },
+
+  "sao.death":           { "category": "master", "sounds": [ { "name": "sao/sao_death",       "volume": 0.9 } ] },
+  "sao.critical_health": { "category": "master", "sounds": [ { "name": "sao/critical_health", "volume": 0.8 } ] }
 }
