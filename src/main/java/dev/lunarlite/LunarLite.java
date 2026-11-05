@@ -82,6 +82,7 @@ public class LunarLite {
     public static ChatBarModule CHAT_BAR;
     public static HideArmorModule HIDE_ARMOR;
     public static LodModule LOD;
+    public static MusicPlayerModule MUSIC;
 
     private static Configuration config;
     private static File configFile;
@@ -107,6 +108,7 @@ public class LunarLite {
         CHAT_BAR = new ChatBarModule();
         HIDE_ARMOR = new HideArmorModule();
         LOD = new LodModule();
+        MUSIC = new MusicPlayerModule();
 
         // PvP / HUD
         MODULES.add(new FpsModule());
@@ -125,6 +127,7 @@ public class LunarLite {
         MODULES.add(new ItemPickupModule());
         MODULES.add(new PingModule());
         MODULES.add(new ServerIpModule());
+        MODULES.add(MUSIC);
         MODULES.add(SCOREBOARD);
         // Utility / Visual
         MODULES.add(new ToggleSprintModule());
@@ -162,6 +165,7 @@ public class LunarLite {
 
         // Chat bar: chỉ tin người chơi + avatar/giường team + tự dịch tiếng Việt (cài đặt nằm trong menu)
         CHAT_BAR.register();
+        MUSIC.register();
 
         MinecraftForge.EVENT_BUS.register(this);
         MinecraftForge.EVENT_BUS.register(VELOCITY);
