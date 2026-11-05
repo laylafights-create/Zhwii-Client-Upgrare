@@ -15,6 +15,8 @@ Client HUD / PvP tiếng Việt cho **Minecraft 1.8.9 (Forge)**. Giao diện t�
 
 ### Điểm nhấn
 
+- **Music Player (Windows):** hiện bài đang phát (Spotify, YouTube Music...) kèm ảnh bìa, lời bài hát đồng bộ (lrclib.net), thanh tiến trình. Mở chat để bấm nút trước / phát-dừng / sau, chỉnh âm lượng, bật/tắt lời.
+
 - **Thông tin mục tiêu:** thẻ gọn gồm avatar, tên, % máu và thanh máu. Hiện được cả người chơi lẫn mob.
 - **Phát hiện kẻ địch:** hiện người chơi trong bán kính bạn chọn, kèm khoảng cách, máu và viền kẻ địch.
 - **Bảng kill:** số kill của bản thân và trạng thái giường từng đội trong Bedwars.
