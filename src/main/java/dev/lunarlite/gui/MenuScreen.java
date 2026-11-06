@@ -117,7 +117,7 @@ public class MenuScreen extends GuiScreen {
         ic("hide_armor", new ItemStack(Items.leather_chestplate));
         ic("hotbar_animation", new ItemStack(Blocks.chest));
         ic("itemphysics", new ItemStack(Blocks.anvil));
-        ic("itempickup", new ItemStack(Items.hopper));
+        ic("itempickup", new ItemStack(Blocks.hopper));
         ic("keystrokes", new ItemStack(Blocks.lever));
         ic("killboard", new ItemStack(Items.bed));
         ic("music", new ItemStack(Blocks.jukebox));
