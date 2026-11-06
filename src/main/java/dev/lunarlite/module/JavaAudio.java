@@ -22,6 +22,8 @@ import javazoom.jl.decoder.Decoder;
 import javazoom.jl.decoder.Header;
 import javazoom.jl.decoder.JavaLayerException;
 import javazoom.jl.decoder.SampleBuffer;
+import paulscode.sound.SoundBuffer;
+import paulscode.sound.codecs.CodecJOrbis;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.openal.AL;
 import org.lwjgl.openal.AL10;
@@ -140,7 +142,8 @@ final class JavaAudio {
                     while (n < 4) { int r = in.read(head, n, 4 - n); if (r < 0) break; n += r; }
                     in.reset();
                     boolean wav = n == 4 && head[0] == 'R' && head[1] == 'I' && head[2] == 'F' && head[3] == 'F';
-                    if (wav) playWav(in); else playMp3(in);
+                    boolean ogg = n == 4 && head[0] == 'O' && head[1] == 'g' && head[2] == 'g' && head[3] == 'S';
+                    if (ogg) playOgg(); else if (wav) playWav(in); else playMp3(in);
                     while (!cancelled && sink != null && !sink.finished()) sleepTick();
                     if (!cancelled) status("ended");
                 } finally {
@@ -209,6 +212,25 @@ final class JavaAudio {
                 } finally { in.close(); }
             } catch (Exception e) {
                 return 0L;
+            }
+        }
+
+        /** Ogg Vorbis: dùng bộ giải mã JOrbis có sẵn trong Minecraft (paulscode CodecJOrbis), không cần thư viện thêm. */
+        private void playOgg() throws Exception {
+            URL url = target.startsWith("http") ? new URL(target) : new File(target).toURI().toURL();
+            CodecJOrbis codec = new CodecJOrbis();
+            try {
+                if (!codec.initialize(url)) throw new IOException("ogg");
+                AudioFormat af = codec.getAudioFormat();
+                int ch = af.getChannels(), rate = (int) af.getSampleRate();
+                SoundBuffer sb;
+                while (!cancelled && (sb = codec.read()) != null) {
+                    byte[] d = sb.audioData;
+                    if (d != null && d.length > 0) emit(d, d.length - d.length % (ch * 2), ch, rate);
+                }
+                if (sink == null && !cancelled) throw new IOException("no audio");
+            } finally {
+                codec.cleanup();
             }
         }
 

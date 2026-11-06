@@ -25,7 +25,7 @@ import java.util.concurrent.ThreadFactory;
  * Phát nhạc ngay trong game: danh sách phát từ nhạc miễn phí (Openverse, giấy phép Creative Commons,
  * không cần API key) hoặc file nhạc trong thư mục zhwii-music.
  *  - Windows: MediaPlayer có sẵn của Windows qua music_play.ps1 (mp3, wav, wma, m4a, aac, flac).
- *  - Android / Linux / macOS: {@link JavaAudio} (JLayer + OpenAL), hỗ trợ mp3 và wav.
+ *  - Android / Linux / macOS: {@link JavaAudio} (JLayer + OpenAL), hỗ trợ mp3, wav và ogg.
  */
 final class GamePlayer {
     /** Một bài trong danh sách phát. */
@@ -40,9 +40,9 @@ final class GamePlayer {
 
     private static final boolean WIN = OsMedia.isWindows();
     private static final String[] LOCAL_EXT = WIN ? new String[] {".mp3", ".wav", ".wma", ".m4a", ".aac", ".flac"}
-            : new String[] {".mp3", ".wav"};
+            : new String[] {".mp3", ".wav", ".ogg"};
     private static final List<String> ONLINE_TYPES = WIN ? Arrays.asList("mp3", "wav", "wma", "m4a", "aac", "flac", "mpeg", "mpga")
-            : Arrays.asList("mp3", "wav", "mpeg", "mpga");
+            : Arrays.asList("mp3", "wav", "mpeg", "mpga", "ogg", "oga");
 
     private final List<Track> queue = new ArrayList<Track>();
     private int idx = -1, gen;
