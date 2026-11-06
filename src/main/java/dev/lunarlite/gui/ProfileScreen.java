@@ -233,7 +233,7 @@ public class ProfileScreen extends GuiScreen {
     @Override
     public void drawScreen(int rawX, int rawY, float partialTicks) {
         ThemeModule.apply();
-        Gui.drawRect(0, 0, width, height, 0x46FFFFFF);
+        Gui.drawRect(0, 0, width, height, 0x40000000);
         int mx = vx(rawX), my = vy(rawY);
 
         GlStateManager.pushMatrix();
@@ -258,18 +258,18 @@ public class ProfileScreen extends GuiScreen {
     private void drawPanel(int mx, int my) {
         FontRenderer fr = fontRendererObj;
 
-        Glass.glass(0, 0, VW, VH, 6, Glass.PANEL, Glass.EDGE);
+        Glass.panel(0, 0, VW, VH);
 
         // ---- tiêu đề
-        Glass.glass(PAD, 10, 30, 30, 4, Glass.CARD, Glass.EDGE);
+        Glass.pbox(PAD, 10, 30, 30, Glass.tint(Glass.BLUE, 0.2f), Glass.BLUE, 0x38);
         Glass.item(mc, new ItemStack(Items.writable_book), PAD + 7, 17, 1f);
-        drawScaled("Nhập / Xuất cài đặt", PAD + 38, 13, 1.3f, Glass.INK);
+        drawScaled("NHẬP / XUẤT CÀI ĐẶT", PAD + 38, 13, 1.3f, Glass.BLUE_HI);
         fr.drawString("config/zhwii-profiles", PAD + 38, 28, Glass.INK3, false);
         String hint = "Chọn hồ sơ rồi bấm Nhập. Cài đặt hiện tại được tự sao lưu vào " + ProfileManager.BACKUP + ".";
         fr.drawString(fr.trimStringToWidth(hint, LIST_W), PAD, 48, Glass.INK2, false);
 
         // ---- danh sách
-        Glass.glass(PAD, LIST_Y, LIST_W, LIST_H, 4, 0x40FFFFFF, Glass.EDGE);
+        Glass.pbox(PAD, LIST_Y, LIST_W, LIST_H, 0x70101820, Glass.EDGE, 0);
         if (files.isEmpty()) {
             drawCentered("Chưa có hồ sơ nào.", VW / 2f, LIST_Y + 30, Glass.INK2);
             drawCentered(fr.trimStringToWidth("Bấm 'Xuất file mới' hoặc chép file .cfg vào thư mục.", LIST_W - 16),
@@ -284,26 +284,26 @@ public class ProfileScreen extends GuiScreen {
             int rx = PAD + 3, ry = LIST_Y + 2 + k * ROW_H, rw = LIST_W - 14, rh = ROW_H - 4;
             boolean on = i == sel;
             if (on) {
-                Draw.rrect(rx, ry, rx + rw, ry + rh, 3, Glass.BLUE);
-                Draw.ring(rx, ry, rx + rw, ry + rh, Glass.BLUE_RING);
+                Glass.pbox(rx, ry, rw, rh, Glass.ON_FILL, Glass.BLUE, 0x30);
+                Glass.dashes(rx + 3, ry + rh / 2, Glass.BLUE_HI);
             } else {
-                Glass.glass(rx, ry, rw, rh, 3, i == hover ? Glass.HOV : Glass.CARD, Glass.EDGE);
+                Glass.pbox(rx, ry, rw, rh, i == hover ? Glass.HOV : Glass.CARD, i == hover ? Glass.EDGE_HI : Glass.EDGE, 0);
             }
 
             String right = ((f.length() + 512) / 1024) + " KB · " + df.format(new Date(f.lastModified()));
             int rwid = fr.getStringWidth(right);
-            fr.drawString(right, rx + rw - 8 - rwid, ry + (rh - 8) / 2, on ? 0xFFDCEBFF : Glass.INK3, false);
+            fr.drawString(right, rx + rw - 8 - rwid, ry + (rh - 8) / 2, on ? Glass.BLUE_HI : Glass.INK3, false);
             String name = shortName(f);
             if (ProfileManager.BACKUP.equals(f.getName())) name = name + " (sao lưu)";
             fr.drawString(fr.trimStringToWidth(name, rw - rwid - 24), rx + 8, ry + (rh - 8) / 2,
-                    on ? 0xFFFFFFFF : Glass.INK, false);
+                    on ? Glass.BLUE_HI : Glass.INK, false);
         }
         if (files.size() > VISIBLE) { // thanh cuộn
             int tx = PAD + LIST_W - 8, ty0 = LIST_Y + 3, th = LIST_H - 6;
-            Draw.rrect(tx, ty0, tx + 3, ty0 + th, 1, 0x33000000);
+            Gui.drawRect(tx, ty0, tx + 2, ty0 + th, 0x22FFFFFF);
             int bh = Math.max(12, th * VISIBLE / files.size());
             int by = ty0 + Math.round((th - bh) * (first / (float) (files.size() - VISIBLE)));
-            Draw.rrect(tx, by, tx + 3, by + bh, 1, Glass.BLUE);
+            Gui.drawRect(tx, by, tx + 2, by + bh, Glass.BLUE);
         }
 
         // ---- trạng thái

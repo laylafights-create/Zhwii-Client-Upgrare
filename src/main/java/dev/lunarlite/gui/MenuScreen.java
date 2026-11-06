@@ -36,11 +36,12 @@ import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
 
 /**
- * Menu kiểu "lưới thẻ pixel" trên nền kính trắng mờ:
- *   TRANG CHỦ : thanh nhóm (tab cam) ở trên, bên dưới là lưới thẻ. Mỗi thẻ có tên (góc trái), tim yêu thích (góc phải),
- *               biểu tượng là vật phẩm / block của Minecraft, nút ENABLED / DISABLED và nút bánh răng.
- *               Chạm vào thẻ (hoặc bánh răng) = mở tuỳ chỉnh. Kéo lên / xuống để cuộn (dùng được trên điện thoại).
- *   CHI TIẾT  : nhãn bên trái, điều khiển bên phải, thanh trượt mảnh có ô giá trị, nút chế độ màu cam.
+ * Menu kiểu "pixel tối": nền tối trong suốt, góc cam, mỗi nhóm một màu viền.
+ *   TRANG CHỦ : hàng tab (ô biểu tượng + ô nhãn) ở trên, bên dưới là lưới 3 cột. Mỗi tính năng gồm ô biểu tượng
+ *               (vật phẩm Minecraft) và ô tên có chấm trạng thái. Bật = viền + chữ sáng màu nhóm, tắt = xám.
+ *               Bấm ô tên = bật / tắt. Bấm ô biểu tượng hoặc chuột phải = mở tuỳ chỉnh. Chuột giữa = ghim lên đầu.
+ *               Kéo lên / xuống để cuộn (dùng được trên điện thoại).
+ *   CHI TIẾT  : nhãn bên trái, điều khiển bên phải, cùng bộ khung pixel.
  * Toàn bộ giao diện vẽ trong khung ảo VW x VH rồi tự thu nhỏ cho vừa màn hình.
  */
 public class MenuScreen extends GuiScreen {
@@ -49,30 +50,56 @@ public class MenuScreen extends GuiScreen {
     };
 
     // ---- khung ảo
-    private static final int VW = 520, VH = 272, PAD = 14;
-    private static final int TAB_Y = 14, TAB_H = 20;
-    private static final int GRID_Y = 46, GRID_B = VH - 14;
-    private static final int COLS = 4, GAP = 8, CARD_H = 88;
+    private static final int VW = 560, VH = 272, PAD = 14;
+    private static final int TAB_Y = 14, TAB_H = 26;
+    private static final int GRID_Y = 54, GRID_B = VH - 24;
+    private static final int COLS = 3, GAP = 10, ROW_GAP = 6, CARD_H = 32, ICON_W = 32, ICON_GAP = 4;
+    private static final int PITCH = CARD_H + ROW_GAP;
     private static final float MENU_SCALE = 1.0f;
+
+    // ---- tab
+    private static final int TAB_ICON = TAB_H, TAB_GAP = 3, TAB_SP = 6;
+    private static final Category[] TAB_ORDER = { Category.PVP, Category.HUD, Category.VISUAL, Category.EFFECT, Category.UTILITY };
 
     // ---- chi tiết
     private static final int COL_X = 60, COL_W = VW - 120;
     private static final int ROW_H = 26;
     private static final int TRACK_W = 140;
 
-    // ---- màu (nền kính trắng, chữ tối, nhấn cam)
-    private static final int INK = 0xFF13233A;
-    private static final int INK2 = 0xFF44546A;
-    private static final int INK3 = 0xFF7A8798;
-    private static final int ORANGE = 0xFF2F7DF6;
-    private static final int ORANGE_HI = 0xFF5A9BFF;
-    private static final int ORANGE_DK = 0xFF1F5FC4;
-    private static final int RED = 0xFFD9404B;
-    private static final int GLASS_PANEL = 0x66FFFFFF;
-    private static final int GLASS_CARD = 0xB8FFFFFF;
-    private static final int GLASS_HOV = 0xDCFFFFFF;
-    private static final int GLASS_EDGE = 0xF2FFFFFF;
-    private static final int SHADE = 0x22000000;
+    // ---- màu (nền tối kiểu pixel, mỗi nhóm một màu viền)
+    private static final int INK = 0xFFE8EDF5;
+    private static final int INK2 = 0xFFA3AFC0;
+    private static final int INK3 = 0xFF6B7788;
+    private static final int ORANGE = 0xFFFFA21F;
+    private static final int ORANGE_HI = 0xFFFFC266;
+    private static final int ORANGE_DK = 0xFFE0850A;
+    private static final int RED = 0xFFFF5A64;
+    private static final int PANEL = 0xE2121A22;
+    private static final int PANEL_EDGE = 0xFF3C4552;
+    private static final int GLASS_EDGE = PANEL_EDGE;
+    private static final int OFF_EDGE = 0xFF3A4452;
+    private static final int OFF_EDGE_HI = 0xFF6B7A8E;
+    private static final int OFF_FILL = 0xB0182029;
+    private static final int OFF_FILL_HI = 0xD02A3442;
+    private static final int OFF_TEXT = 0xFF8794A6;
+
+    /** Màu viền theo nhóm: null = "Tất cả" (cam), PvP hồng, HUD xanh dương, Hình ảnh tím, Hiệu ứng ngọc, Tiện ích xanh lá. */
+    private static int catRgb(Category c) {
+        if (c == null) return 0xFFA21F;
+        switch (c) {
+            case PVP: return 0xFF4F9A;
+            case HUD: return 0x3D8BFF;
+            case VISUAL: return 0x9B63FF;
+            case EFFECT: return 0x22D3E6;
+            case UTILITY: return 0x2FD487;
+            default: return 0xFFA21F;
+        }
+    }
+
+    /** Nền tối pha màu nhóm (k = 0..1). */
+    private static int tintFill(int col, float k) {
+        return Draw.lerp(0xE0101820, 0xFF000000 | col, k);
+    }
 
     private static final java.util.Set<String> FAVS = new HashSet<String>();
     private static Module lastModule;
@@ -92,6 +119,8 @@ public class MenuScreen extends GuiScreen {
 
     private static final Map<String, ItemStack> ICONS = new HashMap<String, ItemStack>();
     private static ItemStack iconDefault;
+    private static ItemStack iconProf, iconHudEd;
+    private static final Map<Category, ItemStack> TAB_ICONS = new HashMap<Category, ItemStack>();
 
     private static void ic(String id, ItemStack s) {
         ICONS.put(id, s);
@@ -100,6 +129,14 @@ public class MenuScreen extends GuiScreen {
     private static void initIcons() {
         if (iconDefault != null) return;
         iconDefault = new ItemStack(Blocks.crafting_table);
+        iconProf = new ItemStack(Items.skull, 1, 3);
+        iconHudEd = new ItemStack(Items.painting);
+        TAB_ICONS.put(null, new ItemStack(Blocks.chest));
+        TAB_ICONS.put(Category.PVP, new ItemStack(Items.diamond_sword));
+        TAB_ICONS.put(Category.HUD, new ItemStack(Items.clock));
+        TAB_ICONS.put(Category.VISUAL, new ItemStack(Items.emerald));
+        TAB_ICONS.put(Category.EFFECT, new ItemStack(Items.blaze_powder));
+        TAB_ICONS.put(Category.UTILITY, new ItemStack(Items.iron_pickaxe));
         ic("aimassist", new ItemStack(Items.ender_eye));
         ic("animations", new ItemStack(Items.painting));
         ic("armor", new ItemStack(Items.diamond_chestplate));
@@ -129,6 +166,12 @@ public class MenuScreen extends GuiScreen {
         ic("togglesprint", new ItemStack(Items.iron_boots));
         ic("velocity", new ItemStack(Items.slime_ball));
         ic("zoom", new ItemStack(Items.glass_bottle));
+    }
+
+    private static ItemStack tabIconOf(Category c) {
+        initIcons();
+        ItemStack st = TAB_ICONS.get(c);
+        return st == null ? iconDefault : st;
     }
 
     private static ItemStack iconOf(Module m) {
@@ -286,7 +329,7 @@ public class MenuScreen extends GuiScreen {
     private void buildShown() {
         shown.clear();
         tabCats.clear();
-        for (Category c : Category.values()) {
+        for (Category c : TAB_ORDER) {
             List<Module> inCat = new ArrayList<Module>();
             for (Module m : LunarLite.MODULES) {
                 if (m.category == c) inCat.add(m);
@@ -312,7 +355,7 @@ public class MenuScreen extends GuiScreen {
     }
 
     private String tabLabel(int i) {
-        return i == 0 ? "Tất cả" : tabCats.get(i - 1).label;
+        return i == 0 ? "TẤT CẢ" : tabCats.get(i - 1).label.toUpperCase();
     }
 
     private void setTab(int i) {
@@ -329,27 +372,40 @@ public class MenuScreen extends GuiScreen {
         setTab((tabIndex() + d + n) % n);
     }
 
+    // ---- tab: cụm = ô biểu tượng + ô nhãn. Hết chỗ thì các tab không chọn chỉ còn ô biểu tượng.
+    private boolean tabsCompact;
+
+    private int tabFullW(int i) {
+        return TAB_ICON + TAB_GAP + fontRendererObj.getStringWidth(tabLabel(i)) + 16;
+    }
+
+    private void layoutTabs() {
+        int avail = profX() - 10 - PAD, total = -TAB_SP;
+        for (int i = 0; i < tabCount(); i++) total += tabFullW(i) + TAB_SP;
+        tabsCompact = total > avail;
+    }
+
     private int tabW(int i) {
-        return fontRendererObj.getStringWidth(tabLabel(i)) + 20;
+        return tabsCompact && i != tabIndex() ? TAB_ICON : tabFullW(i);
     }
 
     private int tabX(int i) {
         int x = PAD;
-        for (int k = 0; k < i; k++) x += tabW(k) + 5;
+        for (int k = 0; k < i; k++) x += tabW(k) + TAB_SP;
         return x;
     }
 
-    // ---- nút góc phải trên cùng
+    // ---- nút góc phải trên cùng (hồ sơ, sửa HUD, đóng): ba ô biểu tượng vuông
     private int closeX() {
-        return VW - PAD - 20;
+        return VW - PAD - TAB_H;
     }
 
     private int hudX() {
-        return closeX() - 6 - 54;
+        return closeX() - 4 - TAB_H;
     }
 
     private int profX() {
-        return hudX() - 6 - 46;
+        return hudX() - 4 - TAB_H;
     }
 
     // ---- lưới thẻ
@@ -362,12 +418,12 @@ public class MenuScreen extends GuiScreen {
     }
 
     private int cardY(int i) {
-        return GRID_Y + (i / COLS) * (CARD_H + GAP) - Math.round(gridScroll);
+        return GRID_Y + 2 + (i / COLS) * PITCH - Math.round(gridScroll);
     }
 
     private int gridContentH() {
         int r = (shown.size() + COLS - 1) / COLS;
-        return r == 0 ? 0 : r * (CARD_H + GAP) - GAP;
+        return r == 0 ? 0 : r * PITCH - ROW_GAP + 4;
     }
 
     private float gridMax() {
@@ -578,26 +634,45 @@ public class MenuScreen extends GuiScreen {
         return v;
     }
 
-    /** Ô kính trắng mờ: nền trắng trong suốt, viền sáng 1px, vệt sáng mảnh ở mép trên, bóng nhẹ ở mép dưới. */
-    private static void glass(int x, int y, int w, int h, int r, int fill, int edge) {
-        Draw.rrect(x, y, x + w, y + h, r, fill);
+    /** Hộp pixel: nền, viền ngoài 1px cắt góc, viền trong mờ (kiểu khung ornament), quầng sáng ngoài nếu glowA > 0. */
+    private static void pbox(int x, int y, int w, int h, int fill, int edge, int glowA) {
+        if (w < 4 || h < 4) return;
+        if (glowA > 0) {
+            int rgb = edge & 0xFFFFFF;
+            Draw.outline(x - 1, y - 1, x + w + 1, y + h + 1, (glowA << 24) | rgb);
+            Draw.outline(x - 2, y - 2, x + w + 2, y + h + 2, ((glowA / 2) << 24) | rgb);
+        }
+        Gui.drawRect(x + 1, y, x + w - 1, y + h, fill);
+        Gui.drawRect(x, y + 1, x + 1, y + h - 1, fill);
+        Gui.drawRect(x + w - 1, y + 1, x + w, y + h - 1, fill);
         Draw.ring(x, y, x + w, y + h, edge);
-        if (w > 12 && h > 8) Gui.drawRect(x + 4, y + 1, x + w - 4, y + 2, 0x55FFFFFF);
-        if (w > 12) Gui.drawRect(x + 3, y + h, x + w - 3, y + h + 1, SHADE);
+        if (w > 8 && h > 8) Draw.ring(x + 1, y + 1, x + w - 1, y + h - 1, Draw.mulAlpha(edge, 0.35f));
+    }
+
+    /** Giữ tên cũ cho phần "chi tiết": khung tối pixel. {@code r} bị bỏ qua (pixel không bo góc). */
+    private static void glass(int x, int y, int w, int h, int r, int fill, int edge) {
+        pbox(x, y, w, h, fill, edge, 0);
+    }
+
+    /** Ba vạch chấm dọc trang trí ở hai đầu ô tên. */
+    private static void dashes(int x, int cy, int color) {
+        for (int k = -1; k <= 1; k++) Gui.drawRect(x, cy + k * 4 - 1, x + 1, cy + k * 4 + 1, color);
     }
 
     private void button(int x, int y, int w, int h, String label, float hov, boolean orange, int textColor) {
         if (orange) {
-            Draw.rrect(x, y, x + w, y + h, 3, Draw.lerp(ORANGE, ORANGE_HI, hov));
-            Draw.ring(x, y, x + w, y + h, 0xFFA9CCFF);
-            Gui.drawRect(x + 3, y + 1, x + w - 3, y + 2, 0x66FFFFFF);
+            pbox(x, y, w, h, Draw.lerp(0xE0382400, 0xE0583800, hov), Draw.lerp(ORANGE_DK, ORANGE_HI, hov), 0x30);
         } else {
-            glass(x, y, w, h, 3, Draw.lerp(0x1A0B2A5A, 0x340B2A5A, hov), GLASS_EDGE);
+            pbox(x, y, w, h, Draw.lerp(OFF_FILL, OFF_FILL_HI, hov), Draw.lerp(OFF_EDGE, OFF_EDGE_HI, hov), 0);
         }
         if (label != null) {
             String t = fit(label, w - 6);
             txtC(t, x + w / 2f, y + (h - 8) / 2f, textColor);
         }
+    }
+
+    private void txtS(String s, float x, float y, int color) {
+        fontRendererObj.drawString(s, x, y, color, true);
     }
 
     private static boolean in(int mx, int my, int x, int y, int w, int h) {
@@ -641,10 +716,9 @@ public class MenuScreen extends GuiScreen {
         setScroll += (setTarget - setScroll) * scrollK;
         if (Math.abs(setTarget - setScroll) < 0.4f) setScroll = setTarget;
 
-        // lớp trắng phủ lên thế giới đã bị làm mờ -> cảm giác kính mờ trắng
-        int va = Math.round(0x46 * Math.max(0f, Math.min(1f, op)));
-        Gui.drawRect(0, 0, width, height, (va << 24) | 0xFFFFFF);
-        Draw.fadeLine(width / 4, height / 2, width / 2, 0xFFFFFF, Math.round(0x60 * Math.max(0f, 1f - op)));
+        // lớp tối nhẹ phủ lên thế giới đã bị làm mờ
+        int va = Math.round(0x40 * Math.max(0f, Math.min(1f, op)));
+        Gui.drawRect(0, 0, width, height, va << 24);
 
         GlStateManager.pushMatrix();
         float pop = 0.90f + 0.10f * op;
@@ -656,8 +730,12 @@ public class MenuScreen extends GuiScreen {
         GlStateManager.scale(kk, kk, 1f);
         GlStateManager.translate(-VW / 2f, -VH / 2f, 0f);
 
-        // khung kính lớn phía sau
-        glass(6, 6, VW - 12, VH - 12, 6, GLASS_PANEL, GLASS_EDGE);
+        // khung tối lớn phía sau + bốn ô vuông cam ở góc
+        pbox(6, 6, VW - 12, VH - 12, PANEL, PANEL_EDGE, 0);
+        Gui.drawRect(3, 3, 9, 9, ORANGE);
+        Gui.drawRect(VW - 9, 3, VW - 3, 9, ORANGE);
+        Gui.drawRect(3, VH - 9, 9, VH - 3, ORANGE);
+        Gui.drawRect(VW - 9, VH - 9, VW - 3, VH - 3, ORANGE);
 
         if (detail && module != null) drawDetail(curMx, curMy);
         else drawHome(curMx, curMy);
@@ -668,23 +746,56 @@ public class MenuScreen extends GuiScreen {
 
     // ----------------------------------------------------------- trang chủ
 
-    private void drawHome(int mx, int my) {
-        FontRenderer fr = fontRendererObj;
-
-        // tab nhóm (cam khi đang chọn)
-        for (int i = 0; i < tabCount(); i++) {
-            int x = tabX(i), w = tabW(i);
-            boolean sel = i == tabIndex();
-            float h = hv("tab" + i, in(mx, my, x, TAB_Y, w, TAB_H));
-            button(x, TAB_Y, w, TAB_H, tabLabel(i), sel ? 1f : h, sel, sel ? 0xFFFFFFFF : INK);
+    private void drawIconButton(int x, ItemStack st, boolean cross, String key, int mx, int my) {
+        float h = hv(key, in(mx, my, x, TAB_Y, TAB_H, TAB_H));
+        pbox(x, TAB_Y, TAB_H, TAB_H, Draw.lerp(OFF_FILL, OFF_FILL_HI, h), Draw.lerp(OFF_EDGE, OFF_EDGE_HI, h), 0);
+        if (cross) {
+            int c = Draw.lerp(0xFF8794A6, RED, h), ox = x + 8, oy = TAB_Y + 8;
+            for (int k = 0; k < 10; k++) {
+                Gui.drawRect(ox + k, oy + k, ox + k + 2, oy + k + 2, c);
+                Gui.drawRect(ox + 9 - k, oy + k, ox + 11 - k, oy + k + 2, c);
+            }
+        } else {
+            drawItem(st, x + (TAB_H - 16) / 2f, TAB_Y + (TAB_H - 16) / 2f, 1f);
+            if (h < 0.99f) Gui.drawRect(x + 1, TAB_Y + 1, x + TAB_H - 1, TAB_Y + TAB_H - 1, Draw.mulAlpha(0x66141A22, 1f - h));
         }
-        // nút góc phải: hồ sơ, sửa HUD, đóng
-        button(profX(), TAB_Y, 46, TAB_H, "Hồ sơ", hv("prof", in(mx, my, profX(), TAB_Y, 46, TAB_H)), false, INK);
-        button(hudX(), TAB_Y, 54, TAB_H, "Sửa HUD", hv("hud", in(mx, my, hudX(), TAB_Y, 54, TAB_H)), false, INK);
-        button(closeX(), TAB_Y, 20, TAB_H, "x", hv("x", in(mx, my, closeX(), TAB_Y, 20, TAB_H)), false, RED);
+    }
+
+    private void drawTab(int i, int mx, int my) {
+        int x = tabX(i), w = tabW(i);
+        boolean sel = i == tabIndex();
+        int rgb = catRgb(i == 0 ? null : tabCats.get(i - 1));
+        int col = 0xFF000000 | rgb;
+        float h = hv("tab" + i, in(mx, my, x, TAB_Y, w, TAB_H));
+        float k = sel ? 0.30f : 0.18f + 0.10f * h;
+        Category cat = i == 0 ? null : tabCats.get(i - 1);
+
+        pbox(x, TAB_Y, TAB_ICON, TAB_H, tintFill(col, k), Draw.lerp(col, 0xFFFFFFFF, h * 0.3f), sel ? 0x30 : 0);
+        drawItem(tabIconOf(cat), x + (TAB_ICON - 16) / 2f, TAB_Y + (TAB_H - 16) / 2f, 1f);
+        if (w > TAB_ICON) {
+            int lx = x + TAB_ICON + TAB_GAP, lw = w - TAB_ICON - TAB_GAP;
+            pbox(lx, TAB_Y, lw, TAB_H, tintFill(col, k), Draw.lerp(col, 0xFFFFFFFF, h * 0.3f), sel ? 0x30 : 0);
+            int dc = Draw.lerp(col, 0xFFFFFFFF, 0.2f);
+            dashes(lx + 4, TAB_Y + TAB_H / 2, dc);
+            dashes(lx + lw - 5, TAB_Y + TAB_H / 2, dc);
+            txtS(tabLabel(i), lx + (lw - fontRendererObj.getStringWidth(tabLabel(i))) / 2f, TAB_Y + (TAB_H - 8) / 2f,
+                    Draw.lerp(col, 0xFFFFFFFF, 0.55f));
+        }
+        if (sel) Gui.drawRect(x, TAB_Y + TAB_H + 4, x + w, TAB_Y + TAB_H + 6, col);
+    }
+
+    private void drawHome(int mx, int my) {
+        layoutTabs();
+
+        // đường kẻ dưới hàng tab, rồi tab (gạch chân cam của tab đang chọn nằm đè lên)
+        Gui.drawRect(PAD, TAB_Y + TAB_H + 5, VW - PAD, TAB_Y + TAB_H + 6, 0x2AFFFFFF);
+        for (int i = 0; i < tabCount(); i++) drawTab(i, mx, my);
+        drawIconButton(profX(), iconProf, false, "prof", mx, my);
+        drawIconButton(hudX(), iconHudEd, false, "hud", mx, my);
+        drawIconButton(closeX(), null, true, "x", mx, my);
 
         // lưới thẻ
-        clip(PAD - 2, GRID_Y - 2, VW - 2 * PAD + 4, GRID_B - GRID_Y + 3);
+        clip(PAD - 3, GRID_Y - 1, VW - 2 * PAD + 6, GRID_B - GRID_Y + 2);
         int cw = cardW();
         for (int i = 0; i < shown.size(); i++) {
             int x = cardX(i), y = cardY(i);
@@ -706,41 +817,68 @@ public class MenuScreen extends GuiScreen {
             int trackH = GRID_B - GRID_Y;
             int th = Math.max(20, Math.round(trackH * trackH / (float) gridContentH()));
             int ty = GRID_Y + Math.round((trackH - th) * (gridScroll / max));
-            Draw.rrect(VW - 11, GRID_Y, VW - 8, GRID_B, 1, 0x33000000);
-            Draw.rrect(VW - 11, ty, VW - 8, ty + th, 1, ORANGE);
+            Gui.drawRect(VW - 11, GRID_Y, VW - 9, GRID_B, 0x22FFFFFF);
+            Gui.drawRect(VW - 11, ty, VW - 9, ty + th, ORANGE);
+        }
+
+        // gợi ý thao tác
+        txt("Bấm tên: bật / tắt  \u00B7  Bấm biểu tượng hoặc chuột phải: tuỳ chỉnh  \u00B7  Chuột giữa: ghim lên đầu",
+                PAD, VH - 19, INK3);
+
+        // nhãn khi rê chuột vào ba nút góc phải
+        String tip = null;
+        int tipRight = VW - PAD;
+        if (in(mx, my, profX(), TAB_Y, TAB_H, TAB_H)) tip = "Hồ sơ";
+        else if (in(mx, my, hudX(), TAB_Y, TAB_H, TAB_H)) tip = "Sửa HUD";
+        else if (in(mx, my, closeX(), TAB_Y, TAB_H, TAB_H)) tip = "Đóng";
+        if (tip != null) {
+            int tw = fontRendererObj.getStringWidth(tip) + 10;
+            pbox(tipRight - tw, TAB_Y + TAB_H + 9, tw, 14, 0xF0121A22, OFF_EDGE_HI, 0);
+            txt(tip, tipRight - tw + 5, TAB_Y + TAB_H + 12, INK);
         }
     }
 
     private void drawCard(Module m, int i, int x, int y, int w, int mx, int my) {
         boolean inGrid = my >= GRID_Y && my < GRID_B;
-        boolean over = inGrid && in(mx, my, x, y, w, CARD_H);
-        float h = hv("card" + i, over);
+        boolean overIco = inGrid && in(mx, my, x, y, ICON_W, CARD_H);
+        int nx = x + ICON_W + ICON_GAP, nw = w - ICON_W - ICON_GAP;
+        boolean overName = inGrid && in(mx, my, nx, y, nw, CARD_H);
+        float hi = hv("ico" + i, overIco), hn = hv("card" + i, overName);
         boolean on = m.enabled;
+        int col = 0xFF000000 | catRgb(m.category);
+        int light = Draw.lerp(col, 0xFFFFFFFF, 0.55f);
 
-        glass(x, y, w, CARD_H, 3, Draw.lerp(GLASS_CARD, GLASS_HOV, h), over ? 0xFFFFFFFF : GLASS_EDGE);
-        if (over) Draw.ring(x - 1, y - 1, x + w + 1, y + CARD_H + 1, 0x885A9BFF);
+        // ô biểu tượng (bấm = mở tuỳ chỉnh)
+        pbox(x, y, ICON_W, CARD_H,
+                on ? tintFill(col, 0.20f + 0.08f * hi) : Draw.lerp(OFF_FILL, OFF_FILL_HI, hi),
+                on ? Draw.lerp(col, 0xFFFFFFFF, hi * 0.35f) : Draw.lerp(OFF_EDGE, OFF_EDGE_HI, hi),
+                on ? 0x38 : 0);
+        drawItem(iconOf(m), x + 6f, y + 6f, 1.25f);
+        if (!on) Gui.drawRect(x + 1, y + 1, x + ICON_W - 1, y + CARD_H - 1, 0x99141A22);
+        if (hi > 0.05f) Icons.draw("gear", x + ICON_W - 10, y + 3, 1, Draw.mulAlpha(0xFFFFFFFF, hi));
 
-        // tên (góc trái) + tim yêu thích (góc phải)
-        txt(fit(Lang.vi(m.name), w - 26), x + 7, y + 7, on ? INK : INK2);
+        // ô tên (bấm = bật / tắt)
+        pbox(nx, y, nw, CARD_H,
+                on ? tintFill(col, 0.22f + 0.08f * hn) : Draw.lerp(OFF_FILL, OFF_FILL_HI, hn),
+                on ? Draw.lerp(col, 0xFFFFFFFF, hn * 0.35f) : Draw.lerp(OFF_EDGE, OFF_EDGE_HI, hn),
+                on ? 0x38 : 0);
+        int dc = on ? Draw.lerp(col, 0xFFFFFFFF, 0.2f) : 0xFF56626F;
+        dashes(nx + 5, y + CARD_H / 2, dc);
+        dashes(nx + nw - 6, y + CARD_H / 2, dc);
+
         boolean fav = FAVS.contains(m.id);
-        boolean overFav = inGrid && in(mx, my, x + w - 20, y + 3, 16, 16);
-        float fh = hv("fav" + i, overFav);
-        Icons.draw("heart", x + w - 16, y + 7, 1, fav ? 0xFFE0457B : Draw.lerp(0x55000000, 0xAA000000, fh));
+        int nameW = nw - 12 - 20 - (fav ? 10 : 0);
+        txtS(fit(Lang.vi(m.name).toUpperCase(), nameW), nx + 12, y + (CARD_H - 8) / 2f, on ? light : OFF_TEXT);
+        if (fav) Icons.draw("heart", nx + nw - 28, y + (CARD_H - 8) / 2, 1, on ? light : OFF_TEXT);
 
-        // biểu tượng = vật phẩm Minecraft (to, giữa thẻ)
-        float ix = x + (w - 32) / 2f, iy = y + 22;
-        Draw.rrect((int) ix - 4, (int) iy - 3, (int) ix + 36, (int) iy + 35, 3, 0x30FFFFFF);
-        drawItem(iconOf(m), ix, iy, 2f);
-        if (!on) Draw.rrect((int) ix - 4, (int) iy - 3, (int) ix + 36, (int) iy + 35, 3, 0x70FFFFFF);
-
-        // nút ENABLED / DISABLED + bánh răng
-        int by = y + CARD_H - 24;
-        int tw = w - 12 - 22;
-        boolean overTog = inGrid && in(mx, my, x + 6, by, tw, 18);
-        boolean overGear = inGrid && in(mx, my, x + w - 24, by, 18, 18);
-        button(x + 6, by, tw, 18, on ? "ENABLED" : "DISABLED", hv("tog" + i, overTog), on, on ? 0xFFFFFFFF : INK2);
-        button(x + w - 24, by, 18, 18, null, hv("gear" + i, overGear), false, INK);
-        Icons.draw("gear", x + w - 24 + 5, by + 5, 1, Draw.lerp(0xFF44546A, ORANGE_DK, hv("gear" + i, overGear)));
+        // chấm trạng thái
+        int sx = nx + nw - 17, sy = y + CARD_H / 2 - 2;
+        if (on) {
+            Gui.drawRect(sx, sy, sx + 4, sy + 4, light);
+        } else {
+            Gui.drawRect(sx - 1, sy - 1, sx + 5, sy + 5, 0xFF2A3340);
+            Gui.drawRect(sx, sy, sx + 4, sy + 4, 0xFF10161C);
+        }
     }
 
     // ----------------------------------------------------------- bảng tuỳ chỉnh
@@ -750,9 +888,11 @@ public class MenuScreen extends GuiScreen {
         Module m = module;
 
         // thanh trên: quay lại, biểu tượng + tên, bật / tắt
+        Gui.drawRect(PAD, TAB_Y + TAB_H + 5, VW - PAD, TAB_Y + TAB_H + 6, 0x2AFFFFFF);
         button(PAD, TAB_Y, 64, TAB_H, "< Quay lại", hv("back", in(mx, my, PAD, TAB_Y, 64, TAB_H)), false, INK);
-        drawItem(iconOf(m), PAD + 74, TAB_Y + 2, 1f);
-        txt(fit(Lang.vi(m.name), VW - 2 * PAD - 74 - 20 - 100), PAD + 96, TAB_Y + 6, INK);
+        drawItem(iconOf(m), PAD + 74, TAB_Y + 5, 1f);
+        txtS(fit(Lang.vi(m.name).toUpperCase(), VW - 2 * PAD - 74 - 20 - 100), PAD + 96, TAB_Y + 9,
+                Draw.lerp(0xFF000000 | catRgb(m.category), 0xFFFFFFFF, 0.55f));
         int ex = VW - PAD - 84;
         button(ex, TAB_Y, 84, TAB_H, m.enabled ? "ENABLED" : "DISABLED", hv("en", in(mx, my, ex, TAB_Y, 84, TAB_H)), m.enabled,
                 m.enabled ? 0xFFFFFFFF : INK2);
@@ -760,7 +900,7 @@ public class MenuScreen extends GuiScreen {
         for (int i = 0; i < descLines.length; i++) txt(descLines[i], PAD + 2, GRID_Y + i * 10, INK2);
 
         int top = listTop(), vh = listViewH();
-        glass(COL_X - 10, top - 4, COL_W + 20, vh + 8, 4, 0x40FFFFFF, GLASS_EDGE);
+        glass(COL_X - 10, top - 4, COL_W + 20, vh + 8, 4, 0x70101820, GLASS_EDGE);
 
         clip(COL_X - 8, top - 2, COL_W + 16, vh + 4);
         int rx = COL_X + 8, rw = COL_W - 16;
@@ -776,8 +916,8 @@ public class MenuScreen extends GuiScreen {
         if (max > 0) {
             int th = Math.max(20, Math.round(vh * vh / (float) contentH));
             int ty = top + Math.round((vh - th) * (setScroll / max));
-            Draw.rrect(COL_X + COL_W + 2, top, COL_X + COL_W + 5, top + vh, 1, 0x33000000);
-            Draw.rrect(COL_X + COL_W + 2, ty, COL_X + COL_W + 5, ty + th, 1, ORANGE);
+            Gui.drawRect(COL_X + COL_W + 2, top, COL_X + COL_W + 4, top + vh, 0x22FFFFFF);
+            Gui.drawRect(COL_X + COL_W + 2, ty, COL_X + COL_W + 4, ty + th, ORANGE);
         }
     }
 
@@ -793,13 +933,13 @@ public class MenuScreen extends GuiScreen {
 
         switch (r.kind) {
             case R_HEAD: {
-                txt(r.text, rx, y + 8, ORANGE_DK);
-                Gui.drawRect(rx, y + r.h - 3, rx + rw, y + r.h - 2, 0x44000000);
+                txt(r.text, rx, y + 8, ORANGE);
+                Gui.drawRect(rx, y + r.h - 3, rx + rw, y + r.h - 2, 0x33FFFFFF);
                 break;
             }
             case R_BOOL: {
                 BoolSetting b = (BoolSetting) r.s;
-                if (over) Draw.rrect(rx - 4, y + 1, rx + rw + 4, y + r.h - 1, 3, 0x33FFFFFF);
+                if (over) Gui.drawRect(rx - 4, y + 1, rx + rw + 4, y + r.h - 1, 0x14FFFFFF);
                 txt(fit(Lang.vi(r.s.label), rw - 44), rx, ty, INK);
                 drawSwitch(rx + rw - 30, y + (r.h - 14) / 2, b.value ? 1f : 0f, h);
                 break;
@@ -817,8 +957,7 @@ public class MenuScreen extends GuiScreen {
                 int sx = rx + rw - 120, sy = y + (r.h - 18) / 2;
                 txt(colorName(cs.value), sx, ty, INK2);
                 int bx = rx + rw - 46, by = y + (r.h - 16) / 2;
-                Draw.rrect(bx - 1, by - 1, bx + 47, by + 17, 3, Draw.lerp(0xAA000000, 0xFFFFFFFF, h));
-                Draw.rrect(bx, by, bx + 46, by + 16, 2, 0xFF000000 | cs.value);
+                pbox(bx - 1, by - 1, 48, 18, 0xFF000000 | cs.value, Draw.lerp(OFF_EDGE_HI, 0xFFFFFFFF, h), 0);
                 break;
             }
             case R_SLIDER: {
@@ -827,13 +966,11 @@ public class MenuScreen extends GuiScreen {
                 txt(fit(Lang.vi(r.s.label), tx - rx - 10), rx, ty, INK);
                 int cy = y + r.h / 2;
                 int hx = tx + Math.round((float) ss.ratio() * (TRACK_W - 8));
-                Draw.rrect(tx, cy - 1, tx + TRACK_W, cy + 2, 1, 0x55000000);
-                Draw.rrect(tx, cy - 1, hx + 4, cy + 2, 1, ORANGE);
-                Draw.disc(hx + 4f, cy + 0.5f, 6.4f, 0x30000000);
-                Draw.disc(hx + 4f, cy + 0.5f, 5.6f, Draw.lerp(0xFFFFFFFF, ORANGE_HI, h));
-                Draw.disc(hx + 4f, cy + 0.5f, 3.2f, ORANGE);
+                Gui.drawRect(tx, cy - 1, tx + TRACK_W, cy + 2, 0xFF2A3340);
+                Gui.drawRect(tx, cy - 1, hx + 4, cy + 2, ORANGE);
+                pbox(hx - 1, cy - 4, 10, 9, Draw.lerp(0xFF202A36, 0xFF3A2A10, h), Draw.lerp(ORANGE_DK, ORANGE_HI, h), 0);
                 int vx0 = rx + rw - 46;
-                glass(vx0, y + (r.h - 16) / 2, 46, 16, 3, 0x70FFFFFF, GLASS_EDGE);
+                glass(vx0, y + (r.h - 16) / 2, 46, 16, 3, 0xB0182029, GLASS_EDGE);
                 txtC(fit(ss.display(), 42), vx0 + 23, ty, INK);
                 break;
             }
@@ -861,11 +998,12 @@ public class MenuScreen extends GuiScreen {
         }
     }
 
-    /** Công tắc dạng viên thuốc: núm trượt, nền cam khi bật. */
+    /** Công tắc pixel: núm vuông trượt, viền + nền cam khi bật. */
     private static void drawSwitch(int x, int y, float a, float hov) {
-        Draw.rrect(x, y, x + 28, y + 14, 7, Draw.lerp(Draw.lerp(0x66000000, 0x88000000, hov), ORANGE, a));
-        int kx = x + 2 + Math.round(14 * a);
-        Draw.rrect(kx, y + 2, kx + 10, y + 12, 5, 0xFFFFFFFF);
+        int edge = Draw.lerp(Draw.lerp(OFF_EDGE, OFF_EDGE_HI, hov), ORANGE, a);
+        pbox(x, y, 28, 14, Draw.lerp(OFF_FILL, 0xE0382400, a), edge, 0);
+        int kx = x + 3 + Math.round(13 * a);
+        Gui.drawRect(kx, y + 3, kx + 8, y + 11, Draw.lerp(0xFF8794A6, ORANGE_HI, a));
     }
 
     // ----------------------------------------------------------- vị trí các vùng bấm
@@ -905,20 +1043,21 @@ public class MenuScreen extends GuiScreen {
             }
             return null;
         }
+        layoutTabs();
         for (int i = 0; i < tabCount(); i++) {
             if (in(mx, my, tabX(i), TAB_Y, tabW(i), TAB_H)) return "tab" + i;
         }
-        if (in(mx, my, profX(), TAB_Y, 46, TAB_H)) return "prof";
-        if (in(mx, my, hudX(), TAB_Y, 54, TAB_H)) return "hud";
-        if (in(mx, my, closeX(), TAB_Y, 20, TAB_H)) return "x";
+        if (in(mx, my, profX(), TAB_Y, TAB_H, TAB_H)) return "prof";
+        if (in(mx, my, hudX(), TAB_Y, TAB_H, TAB_H)) return "hud";
+        if (in(mx, my, closeX(), TAB_Y, TAB_H, TAB_H)) return "x";
         if (my >= GRID_Y && my < GRID_B) {
             int cw = cardW();
             for (int i = 0; i < shown.size(); i++) {
                 int x = cardX(i), y = cardY(i);
                 if (!in(mx, my, x, y, cw, CARD_H)) continue;
-                if (in(mx, my, x + cw - 20, y + 3, 16, 16)) return "fav" + i;
-                if (in(mx, my, x + 6, y + CARD_H - 24, cw - 12 - 22, 18)) return "tog" + i;
-                return "card" + i; // gồm cả bánh răng: chạm vào đâu khác trong thẻ = mở tuỳ chỉnh
+                if (mx < x + ICON_W) return "card" + i; // ô biểu tượng = mở tuỳ chỉnh
+                if (mx >= x + ICON_W + ICON_GAP) return "tog" + i; // ô tên = bật / tắt
+                return null;
             }
         }
         return null;
@@ -945,18 +1084,15 @@ public class MenuScreen extends GuiScreen {
             mc.displayGuiScreen(new HudEditorScreen());
         } else if (key.equals("x")) {
             requestClose();
-        } else if (key.startsWith("fav")) {
-            int i = idx(key, 3);
-            if (i >= 0 && i < shown.size()) toggleFav(shown.get(i));
         } else if (key.startsWith("tog")) {
             int i = idx(key, 3);
-            if (i >= 0 && i < shown.size()) toggleModule(shown.get(i));
+            if (i >= 0 && i < shown.size()) {
+                if (right) openModule(shown.get(i));
+                else toggleModule(shown.get(i));
+            }
         } else if (key.startsWith("card")) {
             int i = idx(key, 4);
-            if (i >= 0 && i < shown.size()) {
-                if (right) toggleModule(shown.get(i));
-                else openModule(shown.get(i));
-            }
+            if (i >= 0 && i < shown.size()) openModule(shown.get(i));
         } else if (key.equals("back")) {
             goBack();
         } else if (key.equals("en")) {
@@ -1026,6 +1162,13 @@ public class MenuScreen extends GuiScreen {
             if (key != null) perform(key, true);
             return;
         }
+        if (btn == 2) { // chuột giữa: ghim / bỏ ghim tính năng lên đầu nhóm
+            if (!detail && key != null && (key.startsWith("card") || key.startsWith("tog"))) {
+                int i = idx(key, key.startsWith("card") ? 4 : 3);
+                if (i >= 0 && i < shown.size()) toggleFav(shown.get(i));
+            }
+            return;
+        }
         if (btn != 0) return;
         pressKey = key;
         pressX = mx;
@@ -1086,7 +1229,7 @@ public class MenuScreen extends GuiScreen {
             setTarget += (d > 0 ? -1 : 1) * 2f * ROW_H;
             clampSet();
         } else {
-            gridTarget += (d > 0 ? -1 : 1) * (CARD_H + GAP) * 0.75f;
+            gridTarget += (d > 0 ? -1 : 1) * PITCH * 0.75f;
             clampGrid();
         }
     }
@@ -1119,10 +1262,10 @@ public class MenuScreen extends GuiScreen {
         if (key == Keyboard.KEY_LEFT) cycleTab(-1);
         else if (key == Keyboard.KEY_RIGHT || key == Keyboard.KEY_TAB) cycleTab(1);
         else if (key == Keyboard.KEY_UP) {
-            gridTarget -= CARD_H + GAP;
+            gridTarget -= PITCH;
             clampGrid();
         } else if (key == Keyboard.KEY_DOWN) {
-            gridTarget += CARD_H + GAP;
+            gridTarget += PITCH;
             clampGrid();
         }
     }
