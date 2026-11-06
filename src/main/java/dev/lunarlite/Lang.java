@@ -142,7 +142,7 @@ public final class Lang {
         p("Hiện đường bay và điểm rơi của mũi tên khi giương cung.", "Vẽ đường bay và điểm rơi dự đoán của mũi tên khi giương cung; đổi màu khi trúng người.");
         // ---- Music Player
         p("Music Player", "Trình phát nhạc"); p("Show Lyrics", "Hiện lời bài hát"); p("Show Cover", "Hiện ảnh bìa");
-        p("Lyrics Offset", "Lệch lời bài hát"); p("Music", "Nhạc");
+        p("Lyrics Offset", "Lệch lời bài hát"); p("Search Source", "Nguồn tìm kiếm (1 YT Music, 2 YouTube, 3 Spotify, 4 SoundCloud)"); p("Music", "Nhạc");
     }
 
     /** Dịch một chuỗi; không có trong bảng thì trả lại nguyên văn. */
