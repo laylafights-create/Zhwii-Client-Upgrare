@@ -22,9 +22,10 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 
 /**
- * Phát nhạc ngay trong game (Windows): danh sách phát từ nhạc miễn phí (Openverse, giấy phép Creative Commons,
- * không cần API key) hoặc file nhạc trong thư mục zhwii-music. Âm thanh do MediaPlayer của Windows phát qua
- * music_play.ps1, nên không cần thêm thư viện giải mã nào.
+ * Phát nhạc ngay trong game: danh sách phát từ nhạc miễn phí (Openverse, giấy phép Creative Commons,
+ * không cần API key) hoặc file nhạc trong thư mục zhwii-music.
+ *  - Windows: MediaPlayer có sẵn của Windows qua music_play.ps1 (mp3, wav, wma, m4a, aac, flac).
+ *  - Android / Linux / macOS: {@link JavaAudio} (JLayer + OpenAL), hỗ trợ mp3 và wav.
  */
 final class GamePlayer {
     /** Một bài trong danh sách phát. */
@@ -37,8 +38,11 @@ final class GamePlayer {
         }
     }
 
-    private static final String[] LOCAL_EXT = {".mp3", ".wav", ".wma", ".m4a", ".aac", ".flac"};
-    private static final List<String> ONLINE_TYPES = Arrays.asList("mp3", "wav", "wma", "m4a", "aac", "flac", "mpeg", "mpga");
+    private static final boolean WIN = OsMedia.isWindows();
+    private static final String[] LOCAL_EXT = WIN ? new String[] {".mp3", ".wav", ".wma", ".m4a", ".aac", ".flac"}
+            : new String[] {".mp3", ".wav"};
+    private static final List<String> ONLINE_TYPES = WIN ? Arrays.asList("mp3", "wav", "wma", "m4a", "aac", "flac", "mpeg", "mpga")
+            : Arrays.asList("mp3", "wav", "mpeg", "mpga");
 
     private final List<Track> queue = new ArrayList<Track>();
     private int idx = -1, gen;
@@ -46,6 +50,7 @@ final class GamePlayer {
     private File dir;
     private Process proc;
     private Writer out;
+    private JavaAudio ja; // trình phát Java thuần cho hệ điều hành không phải Windows
 
     private volatile boolean active, playing;
     private volatile long pos, posNanos, dur;
@@ -72,6 +77,9 @@ final class GamePlayer {
     String note() { return System.currentTimeMillis() < noteUntil ? note : ""; }
 
     private void setNote(String s, long ms) { note = s; noteUntil = System.currentTimeMillis() + ms; }
+
+    /** Cho module khác hiện thông báo ngắn trên panel. */
+    void showNote(String s, long ms) { setNote(s, ms); }
 
     private long currentPos() {
         return playing ? pos + (System.nanoTime() - posNanos) / 1000000L : pos;
@@ -107,9 +115,10 @@ final class GamePlayer {
         send("stop");
     }
 
-    /** Dừng hẳn và tắt tiến trình PowerShell (khi tắt module / thoát game). */
+    /** Dừng hẳn và tắt tiến trình PowerShell / luồng phát Java (khi tắt module / thoát game). */
     synchronized void shutdown() {
         active = false; playing = false; cur = null;
+        if (ja != null) { ja.shutdown(); ja = null; }
         if (proc != null) { proc.destroy(); proc = null; }
         out = null;
     }
@@ -173,7 +182,7 @@ final class GamePlayer {
     }
 
     private boolean ready() {
-        if (dir == null) { setNote("Chỉ phát được trong game trên Windows", 6000); return false; }
+        if (dir == null) { setNote("Trình phát chưa sẵn sàng, thử bật lại Music Player", 6000); return false; }
         return true;
     }
 
@@ -208,7 +217,7 @@ final class GamePlayer {
             String url = str(o, "url");
             if (url.isEmpty()) continue;
             String ft = str(o, "filetype").toLowerCase();
-            if (!ft.isEmpty() && !ONLINE_TYPES.contains(ft)) continue; // Windows không phát được ogg...
+            if (!ft.isEmpty() && !ONLINE_TYPES.contains(ft)) continue; // định dạng backend hiện tại không phát được (ogg...)
             String title = str(o, "title"), who = str(o, "creator");
             if (title.isEmpty()) title = "Không tên";
             long d = 0;
@@ -249,6 +258,15 @@ final class GamePlayer {
             try { proc.exitValue(); proc = null; out = null; } catch (IllegalThreadStateException alive) { return true; }
         }
         if (dir == null) return false;
+        if (!WIN) {
+            if (ja == null) {
+                ja = new JavaAudio(new JavaAudio.Listener() {
+                    public void onStatus(JsonObject o) { GamePlayer.this.onStatus(o); }
+                });
+                ja.send("vol:" + vol);
+            }
+            return true;
+        }
         try {
             ProcessBuilder pb = new ProcessBuilder("powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
                     "-WindowStyle", "Hidden", "-File", new File(dir, "music_play.ps1").getAbsolutePath(), "-Dir", dir.getAbsolutePath());
@@ -274,6 +292,7 @@ final class GamePlayer {
     }
 
     private synchronized void send(String c) {
+        if (ja != null) { ja.send(c); return; }
         try {
             Writer w = out;
             if (w != null) { w.write(c + "\n"); w.flush(); }

@@ -51,7 +51,8 @@ import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
 
 /**
- * Trình phát nhạc (Windows): lấy bài đang phát từ Windows media session (Spotify, YouTube Music...),
+ * Trình phát nhạc: lấy bài đang phát từ Windows media session (Spotify, YouTube Music...) trên Windows,
+ * playerctl trên Linux, Spotify/Music qua osascript trên macOS (xem {@link OsMedia}); Android chỉ phát nhạc trong game.
  * lời bài hát đồng bộ từ lrclib.net. Nút điều khiển bấm được khi mở chat.
  * Đăng ký: MUSIC.register() trong LunarLite.init.
  */
@@ -95,6 +96,9 @@ public class MusicPlayerModule extends HudModule {
     private boolean gameWas;
     private Process info, cmd;
     private Writer cmdOut;
+    private OsMedia osm;           // Linux / macOS
+    private volatile Thread poller;
+    private boolean started;
     private File dir;
     private boolean startFailed;
     private boolean searching;
@@ -104,7 +108,7 @@ public class MusicPlayerModule extends HudModule {
     });
 
     public MusicPlayerModule() {
-        super("music", "Music Player", "Hiện bài đang phát trên máy (Windows) cùng lời bài hát và nút điều khiển (mở chat để bấm).",
+        super("music", "Music Player", "Hiện bài đang phát trên máy (Windows, Linux, macOS) cùng lời bài hát và nút điều khiển; Android phát nhạc trong game (mở chat để bấm).",
                 Category.HUD, false, 4, 90);
     }
 
@@ -115,12 +119,12 @@ public class MusicPlayerModule extends HudModule {
 
     // ================================================================ tiến trình Windows
 
-    private static boolean isWin() { return System.getProperty("os.name", "").toLowerCase().contains("win"); }
+    private static boolean isWin() { return OsMedia.isWindows(); }
 
     @Override
     public void onTick() {
-        if (enabled) { if (info == null && !startFailed) start(); }
-        else if (info != null) stop();
+        if (enabled) { if (!started && !startFailed) start(); }
+        else if (started) stop();
         if (enabled) syncGame();
         if (searching && !(Minecraft.getMinecraft().currentScreen instanceof GuiChat)) searching = false;
         if (hasSession && System.nanoTime() - lastUpdate > 5000000000L) hasSession = false;
@@ -132,20 +136,22 @@ public class MusicPlayerModule extends HudModule {
     }
 
     private synchronized void start() {
-        if (info != null || !isWin()) return;
+        if (started) return;
         try {
             dir = new File(System.getProperty("java.io.tmpdir"), "zhwii-music");
             dir.mkdirs();
+            gp.setDir(dir);
+            if (!isWin()) { startOs(); started = true; return; }
             for (String r : RES) {
                 InputStream in = MusicPlayerModule.class.getResourceAsStream("/assets/lunarlite/music/" + r);
                 if (in == null) { startFailed = true; return; }
                 Files.copy(in, new File(dir, r).toPath(), StandardCopyOption.REPLACE_EXISTING);
                 in.close();
             }
-            gp.setDir(dir);
             info = ps("music_info.ps1");
             cmd = ps("music_cmd.ps1");
             cmdOut = new OutputStreamWriter(cmd.getOutputStream(), StandardCharsets.UTF_8);
+            started = true;
             final Process p = info;
             Thread t = new Thread(new Runnable() { public void run() { readLoop(p); } }, "zhwii-music-read");
             t.setDaemon(true);
@@ -154,6 +160,28 @@ public class MusicPlayerModule extends HudModule {
             startFailed = true;
             stop();
         }
+    }
+
+    /** Linux / macOS / Android: đọc nhạc đang phát bằng playerctl hoặc osascript nếu có. Nhạc trong game luôn dùng được. */
+    private void startOs() {
+        osm = new OsMedia(dir);
+        if (!osm.supported()) {
+            gp.showNote(OsMedia.isAndroid() ? "Android: chỉ phát được Nhạc miễn phí / Nhạc trong máy (Tab để đổi nguồn)"
+                    : "Cài playerctl để hiện nhạc đang phát, hoặc dùng nguồn Nhạc miễn phí / Nhạc trong máy", 10000);
+            return;
+        }
+        final OsMedia m = osm;
+        Thread t = new Thread(new Runnable() {
+            public void run() {
+                while (poller == Thread.currentThread()) {
+                    try { handle(m.poll()); } catch (Exception ignored) { }
+                    try { Thread.sleep(1000); } catch (InterruptedException e) { return; }
+                }
+            }
+        }, "zhwii-music-poll");
+        t.setDaemon(true);
+        poller = t;
+        t.start();
     }
 
     private Process ps(String script) throws IOException {
@@ -171,6 +199,11 @@ public class MusicPlayerModule extends HudModule {
 
     private synchronized void stop() {
         gp.shutdown();
+        started = false;
+        Thread pt = poller;
+        poller = null;
+        if (pt != null) pt.interrupt();
+        osm = null;
         if (info != null) { info.destroy(); info = null; }
         if (cmd != null) { cmd.destroy(); cmd = null; }
         cmdOut = null;
@@ -178,6 +211,11 @@ public class MusicPlayerModule extends HudModule {
     }
 
     private void send(String c) {
+        OsMedia m = osm;
+        if (m != null) {
+            if (m.supported()) m.command(c);
+            return;
+        }
         try {
             Writer w = cmdOut;
             if (w != null) { w.write(c + "\n"); w.flush(); }
@@ -604,7 +642,6 @@ public class MusicPlayerModule extends HudModule {
     private void openSearch(final String q) {
         final int src = srcIdx();
         if (src >= 4) { // nhạc miễn phí / nhạc trong máy: phát ngay trong game
-            if (!isWin()) { gp.searchOnline(""); return; }
             if (src == 4) gp.searchOnline(q);
             else gp.searchLocal(q, musicFolder());
             return;
@@ -617,10 +654,28 @@ public class MusicPlayerModule extends HudModule {
                         Desktop.getDesktop().browse(new URI(url));
                     } else if (isWin()) {
                         new ProcessBuilder("rundll32", "url.dll,FileProtocolHandler", url).start();
+                    } else if (!OsMedia.isAndroid() && System.getProperty("os.name", "").toLowerCase().contains("mac")) {
+                        new ProcessBuilder("open", url).start();
+                    } else if (!OsMedia.isAndroid()) {
+                        new ProcessBuilder("xdg-open", url).start();
+                    } else {
+                        copyLink(url); // Android không mở được trình duyệt từ trong game: chép link để dán
                     }
-                } catch (Exception ignored) { }
+                } catch (Exception ignored) { if (!isWin()) copyLink(searchUrlSafe(src, q)); }
             }
         });
+    }
+
+    private static String searchUrlSafe(int src, String q) {
+        try { return searchUrl(src, q); } catch (UnsupportedEncodingException e) { return ""; }
+    }
+
+    private void copyLink(final String url) {
+        if (url.isEmpty()) return;
+        Minecraft.getMinecraft().addScheduledTask(new Runnable() {
+            public void run() { GuiScreen.setClipboardString(url); }
+        });
+        gp.showNote("Không mở được trình duyệt: đã chép link vào clipboard", 6000);
     }
 
     // ================================================================ tiện ích vẽ
