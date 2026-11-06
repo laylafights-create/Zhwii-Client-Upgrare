@@ -10,8 +10,13 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import net.minecraft.client.gui.FontRenderer;
+import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.renderer.GlStateManager;
+import net.minecraft.client.renderer.OpenGlHelper;
+import net.minecraft.init.Items;
+import net.minecraft.item.ItemStack;
+import net.minecraft.util.ResourceLocation;
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
 
@@ -42,13 +47,43 @@ public class ProfileScreen extends GuiScreen {
     private int sel = -1;
     private int first;
     private String status = "";
-    private int statusCol = Skin.DIM;
+    private int statusCol = Glass.INK3;
     private long lastClick;
     private int lastClickIdx = -1;
 
+    // ---- nền blur (cùng shader với menu chính)
+    private static final ResourceLocation BLUR_SHADER = new ResourceLocation("lunarlite", "shaders/post/menu_blur.json");
+    private boolean blurOn;
+
+    private void startBlur() {
+        if (blurOn || mc == null || mc.theWorld == null || !OpenGlHelper.shadersSupported) return;
+        if (mc.entityRenderer.isShaderActive()) return;
+        try {
+            mc.entityRenderer.loadShader(BLUR_SHADER);
+            blurOn = mc.entityRenderer.isShaderActive();
+        } catch (Throwable t) {
+            blurOn = false;
+        }
+    }
+
+    private void stopBlur() {
+        if (!blurOn) return;
+        blurOn = false;
+        try {
+            if (mc != null && mc.entityRenderer != null) mc.entityRenderer.stopUseShader();
+        } catch (Throwable ignored) {
+        }
+    }
+
     @Override
     public void initGui() {
+        startBlur();
         refresh(null);
+    }
+
+    @Override
+    public void onGuiClosed() {
+        stopBlur();
     }
 
     // ------------------------------------------------------------------ danh sách
@@ -83,12 +118,12 @@ public class ProfileScreen extends GuiScreen {
 
     private void ok(String s) {
         status = s;
-        statusCol = Skin.GREEN;
+        statusCol = Glass.GREEN;
     }
 
     private void err(String s) {
         status = s == null ? "Có lỗi xảy ra." : s;
-        statusCol = Skin.RED;
+        statusCol = Glass.RED;
     }
 
     private void click() {
@@ -187,18 +222,18 @@ public class ProfileScreen extends GuiScreen {
         GlStateManager.pushMatrix();
         GlStateManager.translate(x, y, 0f);
         GlStateManager.scale(sc, sc, 1f);
-        fontRendererObj.drawStringWithShadow(s, 0, 0, color);
+        fontRendererObj.drawString(s, 0, 0, color, false);
         GlStateManager.popMatrix();
     }
 
     private void drawCentered(String s, float cx, float y, int color) {
-        fontRendererObj.drawStringWithShadow(s, cx - fontRendererObj.getStringWidth(s) / 2f, y, color);
+        fontRendererObj.drawString(s, cx - fontRendererObj.getStringWidth(s) / 2f, y, color, false);
     }
 
     @Override
     public void drawScreen(int rawX, int rawY, float partialTicks) {
         ThemeModule.apply();
-        drawGradientRect(0, 0, width, height, 0xB00A0A12, 0xCC0A0A12);
+        Gui.drawRect(0, 0, width, height, 0x46FFFFFF);
         int mx = vx(rawX), my = vy(rawY);
 
         GlStateManager.pushMatrix();
@@ -222,26 +257,23 @@ public class ProfileScreen extends GuiScreen {
 
     private void drawPanel(int mx, int my) {
         FontRenderer fr = fontRendererObj;
-        int acc = Draw.ACCENT;
 
-        Skin.shadow(VW, VH);
-        Skin.box(0, 0, VW, VH, 7, 0xFF2C2C3C, Skin.BG);
-        Draw.fadeLine(18, 0, VW - 36, acc & 0xFFFFFF, 0xCC);
-        Draw.fadeLine(18, 1, VW - 36, acc & 0xFFFFFF, 0x60);
+        Glass.glass(0, 0, VW, VH, 6, Glass.PANEL, Glass.EDGE);
 
         // ---- tiêu đề
-        Skin.tile(PAD, 10, 30, "gear", acc);
-        drawScaled("Nhập / Xuất cài đặt", PAD + 38, 13, 1.3f, Skin.TEXT);
-        fr.drawStringWithShadow("config/zhwii-profiles", PAD + 38, 28, Skin.DIM);
+        Glass.glass(PAD, 10, 30, 30, 4, Glass.CARD, Glass.EDGE);
+        Glass.item(mc, new ItemStack(Items.writable_book), PAD + 7, 17, 1f);
+        drawScaled("Nhập / Xuất cài đặt", PAD + 38, 13, 1.3f, Glass.INK);
+        fr.drawString("config/zhwii-profiles", PAD + 38, 28, Glass.INK3, false);
         String hint = "Chọn hồ sơ rồi bấm Nhập. Cài đặt hiện tại được tự sao lưu vào " + ProfileManager.BACKUP + ".";
-        fr.drawStringWithShadow(fr.trimStringToWidth(hint, LIST_W), PAD, 48, Skin.DIM);
+        fr.drawString(fr.trimStringToWidth(hint, LIST_W), PAD, 48, Glass.INK2, false);
 
         // ---- danh sách
-        Skin.box(PAD, LIST_Y, LIST_W, LIST_H, 5, 0xFF1C1C28, 0xFF0F0F15);
+        Glass.glass(PAD, LIST_Y, LIST_W, LIST_H, 4, 0x40FFFFFF, Glass.EDGE);
         if (files.isEmpty()) {
-            drawCentered("Chưa có hồ sơ nào.", VW / 2f, LIST_Y + 30, Skin.SOFT);
+            drawCentered("Chưa có hồ sơ nào.", VW / 2f, LIST_Y + 30, Glass.INK2);
             drawCentered(fr.trimStringToWidth("Bấm 'Xuất file mới' hoặc chép file .cfg vào thư mục.", LIST_W - 16),
-                    VW / 2f, LIST_Y + 44, Skin.DIM);
+                    VW / 2f, LIST_Y + 44, Glass.INK3);
         }
         SimpleDateFormat df = new SimpleDateFormat("dd/MM HH:mm", Locale.ROOT);
         int hover = rowAt(mx, my);
@@ -251,35 +283,39 @@ public class ProfileScreen extends GuiScreen {
             File f = files.get(i);
             int rx = PAD + 3, ry = LIST_Y + 2 + k * ROW_H, rw = LIST_W - 14, rh = ROW_H - 4;
             boolean on = i == sel;
-            if (on) Skin.box(rx, ry, rw, rh, 4, acc, Draw.lerp(Skin.RAISED, acc, 0.2f));
-            else Draw.rrect(rx, ry, rx + rw, ry + rh, 4, i == hover ? Skin.HOVER : Skin.RAISED);
+            if (on) {
+                Draw.rrect(rx, ry, rx + rw, ry + rh, 3, Glass.BLUE);
+                Draw.ring(rx, ry, rx + rw, ry + rh, Glass.BLUE_RING);
+            } else {
+                Glass.glass(rx, ry, rw, rh, 3, i == hover ? Glass.HOV : Glass.CARD, Glass.EDGE);
+            }
 
             String right = ((f.length() + 512) / 1024) + " KB · " + df.format(new Date(f.lastModified()));
             int rwid = fr.getStringWidth(right);
-            fr.drawStringWithShadow(right, rx + rw - 8 - rwid, ry + (rh - 8) / 2, Skin.DIM);
+            fr.drawString(right, rx + rw - 8 - rwid, ry + (rh - 8) / 2, on ? 0xFFDCEBFF : Glass.INK3, false);
             String name = shortName(f);
             if (ProfileManager.BACKUP.equals(f.getName())) name = name + " (sao lưu)";
-            fr.drawStringWithShadow(fr.trimStringToWidth(name, rw - rwid - 24), rx + 8, ry + (rh - 8) / 2,
-                    on ? Skin.TEXT : Skin.SOFT);
+            fr.drawString(fr.trimStringToWidth(name, rw - rwid - 24), rx + 8, ry + (rh - 8) / 2,
+                    on ? 0xFFFFFFFF : Glass.INK, false);
         }
         if (files.size() > VISIBLE) { // thanh cuộn
             int tx = PAD + LIST_W - 8, ty0 = LIST_Y + 3, th = LIST_H - 6;
-            Draw.rrect(tx, ty0, tx + 3, ty0 + th, 1, 0x55000000);
+            Draw.rrect(tx, ty0, tx + 3, ty0 + th, 1, 0x33000000);
             int bh = Math.max(12, th * VISIBLE / files.size());
             int by = ty0 + Math.round((th - bh) * (first / (float) (files.size() - VISIBLE)));
-            Draw.rrect(tx, by, tx + 3, by + bh, 1, Draw.ACCENT_LIGHT);
+            Draw.rrect(tx, by, tx + 3, by + bh, 1, Glass.BLUE);
         }
 
         // ---- trạng thái
-        if (status.length() > 0) fr.drawStringWithShadow(fr.trimStringToWidth(status, LIST_W), PAD, ST_Y, statusCol);
+        if (status.length() > 0) fr.drawString(fr.trimStringToWidth(status, LIST_W), PAD, ST_Y, statusCol, false);
 
         // ---- nút
         for (int id = 0; id < LABELS.length; id++) {
             boolean over = Draw.in(mx, my, BX[id], BY[id], BW[id], BH);
             hov[id] += ((over ? 1f : 0f) - hov[id]) * 0.35f;
             if (Math.abs((over ? 1f : 0f) - hov[id]) < 0.01f) hov[id] = over ? 1f : 0f;
-            Skin.button(fr, BX[id], BY[id], BW[id], BH, LABELS[id], hov[id],
-                    id == A_IMPORT ? Skin.PRIMARY : Skin.NORMAL);
+            Glass.button(fr, BX[id], BY[id], BW[id], BH, LABELS[id], hov[id],
+                    id == A_IMPORT ? Glass.PRIMARY : Glass.NORMAL);
         }
     }
 

@@ -61,17 +61,17 @@ public class MenuScreen extends GuiScreen {
     private static final int TRACK_W = 140;
 
     // ---- màu (nền kính trắng, chữ tối, nhấn cam)
-    private static final int INK = 0xFF22262B;
-    private static final int INK2 = 0xFF4A5057;
-    private static final int INK3 = 0xFF7C838A;
-    private static final int ORANGE = 0xFFFF9A1F;
-    private static final int ORANGE_HI = 0xFFFFB84D;
-    private static final int ORANGE_DK = 0xFFB85F00;
+    private static final int INK = 0xFF13233A;
+    private static final int INK2 = 0xFF44546A;
+    private static final int INK3 = 0xFF7A8798;
+    private static final int ORANGE = 0xFF2F7DF6;
+    private static final int ORANGE_HI = 0xFF5A9BFF;
+    private static final int ORANGE_DK = 0xFF1F5FC4;
     private static final int RED = 0xFFD9404B;
-    private static final int GLASS_PANEL = 0x52FFFFFF;
-    private static final int GLASS_CARD = 0x8CFFFFFF;
-    private static final int GLASS_HOV = 0xB8FFFFFF;
-    private static final int GLASS_EDGE = 0xD8FFFFFF;
+    private static final int GLASS_PANEL = 0x66FFFFFF;
+    private static final int GLASS_CARD = 0xB8FFFFFF;
+    private static final int GLASS_HOV = 0xDCFFFFFF;
+    private static final int GLASS_EDGE = 0xF2FFFFFF;
     private static final int SHADE = 0x22000000;
 
     private static final java.util.Set<String> FAVS = new HashSet<String>();
@@ -589,10 +589,10 @@ public class MenuScreen extends GuiScreen {
     private void button(int x, int y, int w, int h, String label, float hov, boolean orange, int textColor) {
         if (orange) {
             Draw.rrect(x, y, x + w, y + h, 3, Draw.lerp(ORANGE, ORANGE_HI, hov));
-            Draw.ring(x, y, x + w, y + h, 0xFFFFD08A);
+            Draw.ring(x, y, x + w, y + h, 0xFFA9CCFF);
             Gui.drawRect(x + 3, y + 1, x + w - 3, y + 2, 0x66FFFFFF);
         } else {
-            glass(x, y, w, h, 3, Draw.lerp(0x66FFFFFF, GLASS_HOV, hov), GLASS_EDGE);
+            glass(x, y, w, h, 3, Draw.lerp(0x1A0B2A5A, 0x340B2A5A, hov), GLASS_EDGE);
         }
         if (label != null) {
             String t = fit(label, w - 6);
@@ -676,7 +676,7 @@ public class MenuScreen extends GuiScreen {
             int x = tabX(i), w = tabW(i);
             boolean sel = i == tabIndex();
             float h = hv("tab" + i, in(mx, my, x, TAB_Y, w, TAB_H));
-            button(x, TAB_Y, w, TAB_H, tabLabel(i), sel ? 1f : h, sel, sel ? 0xFF2A1700 : INK);
+            button(x, TAB_Y, w, TAB_H, tabLabel(i), sel ? 1f : h, sel, sel ? 0xFFFFFFFF : INK);
         }
         // nút góc phải: hồ sơ, sửa HUD, đóng
         button(profX(), TAB_Y, 46, TAB_H, "Hồ sơ", hv("prof", in(mx, my, profX(), TAB_Y, 46, TAB_H)), false, INK);
@@ -718,14 +718,14 @@ public class MenuScreen extends GuiScreen {
         boolean on = m.enabled;
 
         glass(x, y, w, CARD_H, 3, Draw.lerp(GLASS_CARD, GLASS_HOV, h), over ? 0xFFFFFFFF : GLASS_EDGE);
-        if (over) Draw.ring(x - 1, y - 1, x + w + 1, y + CARD_H + 1, 0x88FFC670);
+        if (over) Draw.ring(x - 1, y - 1, x + w + 1, y + CARD_H + 1, 0x885A9BFF);
 
         // tên (góc trái) + tim yêu thích (góc phải)
         txt(fit(Lang.vi(m.name), w - 26), x + 7, y + 7, on ? INK : INK2);
         boolean fav = FAVS.contains(m.id);
         boolean overFav = inGrid && in(mx, my, x + w - 20, y + 3, 16, 16);
         float fh = hv("fav" + i, overFav);
-        Icons.draw("heart", x + w - 16, y + 7, 1, fav ? 0xFFFF5A5F : Draw.lerp(0x55000000, 0xAA000000, fh));
+        Icons.draw("heart", x + w - 16, y + 7, 1, fav ? 0xFFE0457B : Draw.lerp(0x55000000, 0xAA000000, fh));
 
         // biểu tượng = vật phẩm Minecraft (to, giữa thẻ)
         float ix = x + (w - 32) / 2f, iy = y + 22;
@@ -738,9 +738,9 @@ public class MenuScreen extends GuiScreen {
         int tw = w - 12 - 22;
         boolean overTog = inGrid && in(mx, my, x + 6, by, tw, 18);
         boolean overGear = inGrid && in(mx, my, x + w - 24, by, 18, 18);
-        button(x + 6, by, tw, 18, on ? "ENABLED" : "DISABLED", hv("tog" + i, overTog), on, on ? 0xFF2A1700 : INK2);
+        button(x + 6, by, tw, 18, on ? "ENABLED" : "DISABLED", hv("tog" + i, overTog), on, on ? 0xFFFFFFFF : INK2);
         button(x + w - 24, by, 18, 18, null, hv("gear" + i, overGear), false, INK);
-        Icons.draw("gear", x + w - 24 + 5, by + 5, 1, Draw.lerp(0xFF4A5057, ORANGE_DK, hv("gear" + i, overGear)));
+        Icons.draw("gear", x + w - 24 + 5, by + 5, 1, Draw.lerp(0xFF44546A, ORANGE_DK, hv("gear" + i, overGear)));
     }
 
     // ----------------------------------------------------------- bảng tuỳ chỉnh
@@ -755,7 +755,7 @@ public class MenuScreen extends GuiScreen {
         txt(fit(Lang.vi(m.name), VW - 2 * PAD - 74 - 20 - 100), PAD + 96, TAB_Y + 6, INK);
         int ex = VW - PAD - 84;
         button(ex, TAB_Y, 84, TAB_H, m.enabled ? "ENABLED" : "DISABLED", hv("en", in(mx, my, ex, TAB_Y, 84, TAB_H)), m.enabled,
-                m.enabled ? 0xFF2A1700 : INK2);
+                m.enabled ? 0xFFFFFFFF : INK2);
 
         for (int i = 0; i < descLines.length; i++) txt(descLines[i], PAD + 2, GRID_Y + i * 10, INK2);
 
@@ -808,7 +808,7 @@ public class MenuScreen extends GuiScreen {
                 ModeSetting ms = (ModeSetting) r.s;
                 txt(fit(Lang.vi(r.s.label), rw - 130), rx, ty, INK);
                 int bx = rx + rw - 120, by = y + (r.h - 18) / 2;
-                button(bx, by, 120, 18, Lang.vi(ms.get()), h, true, 0xFF2A1700);
+                button(bx, by, 120, 18, Lang.vi(ms.get()), h, true, 0xFFFFFFFF);
                 break;
             }
             case R_COLOR: {
