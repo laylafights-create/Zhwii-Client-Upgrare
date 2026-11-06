@@ -445,7 +445,7 @@ public class HudEditorScreen extends GuiScreen {
         GlStateManager.translate(px + 8, py + 7, 0f);
         GlStateManager.scale(1.2f, 1.2f, 1f);
         fr.drawString(fr.trimStringToWidth(Lang.vi(selected.name).toUpperCase(), 100), 0, 0,
-                Draw.lerp(0xFF000000 | MenuScreen.catRgb(selected.category), 0xFFFFFFFF, 0.55f), false);
+                Draw.lerp(0xFF000000 | Glass.catRgb(selected.category), 0xFFFFFFFF, 0.55f), false);
         GlStateManager.popMatrix();
         String cat = selected.category.label;
         fr.drawString(cat, px + PW - 8 - fr.getStringWidth(cat), py + 9, 0xFF6B7788, false);

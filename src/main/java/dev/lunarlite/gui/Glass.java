@@ -1,5 +1,6 @@
 package dev.lunarlite.gui;
 
+import dev.lunarlite.module.Category;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.Gui;
@@ -34,6 +35,19 @@ public final class Glass {
     public static final int SHADE = 0x00000000;
     public static final int TINT = CARD;
     public static final int TINT_HOV = HOV;
+    /** Màu viền theo nhóm (RGB): null = "Tất cả" cam, PvP hồng, HUD xanh dương, Hình ảnh tím, Hiệu ứng ngọc, Tiện ích xanh lá. */
+    public static int catRgb(Category c) {
+        if (c == null) return 0xFFA21F;
+        switch (c) {
+            case PVP: return 0xFF4F9A;
+            case HUD: return 0x3D8BFF;
+            case VISUAL: return 0x9B63FF;
+            case EFFECT: return 0x22D3E6;
+            case UTILITY: return 0x2FD487;
+            default: return 0xFFA21F;
+        }
+    }
+
     /** Nền tối pha màu nhấn khi nút / hàng đang bật. */
     public static final int ON_FILL = 0xE0382400;
     public static final int ON_FILL_HI = 0xE0583800;
