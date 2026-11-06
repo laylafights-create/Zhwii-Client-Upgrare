@@ -28,6 +28,26 @@ minecraft {
     makeObfSourceJar = false
 }
 
+repositories {
+    mavenCentral()
+}
+
+// JLayer (giải mã MP3 cho Music Player trên Android/Linux/macOS) được đóng gói thẳng vào jar của mod.
+configurations {
+    shade
+    compile.extendsFrom shade
+}
+
+dependencies {
+    shade 'com.googlecode.soundlibs:jlayer:1.0.1.4'
+}
+
+jar {
+    from({ configurations.shade.collect { it.isDirectory() ? it : zipTree(it) } }) {
+        exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
+    }
+}
+
 processResources {
     inputs.property "version", project.version
     inputs.property "mcversion", project.minecraft.version
