@@ -56,15 +56,15 @@ import org.lwjgl.opengl.GL11;
  * Đăng ký: MUSIC.register() trong LunarLite.init.
  */
 public class MusicPlayerModule extends HudModule {
-    private static final String[] RES = {"common.ps1", "music_info.ps1", "music_cmd.ps1"};
+    private static final String[] RES = {"common.ps1", "music_info.ps1", "music_cmd.ps1", "music_play.ps1"};
     private static final int PW = 232;
     private static final int B_PREV = 0, B_PLAY = 1, B_NEXT = 2, B_VOLDN = 3, B_VOLUP = 4, B_LYR = 5, B_SEARCH = 6;
 
     private final BoolSetting showLyrics = add(new BoolSetting("lyrics", "Show Lyrics", true), "Music");
     private final BoolSetting showCover = add(new BoolSetting("cover", "Show Cover", true), "Music");
     private final SliderSetting lyricOffset = add(new SliderSetting("lyric_offset", "Lyrics Offset", 0, -3000, 3000, 50, "ms"), "Music", showLyrics);
-    private static final String[] SRC_NAME = {"YouTube Music", "YouTube", "Spotify", "SoundCloud"};
-    private final SliderSetting searchSrc = add(new SliderSetting("search_src", "Search Source", 1, 1, 4, 1, ""), "Music");
+    private static final String[] SRC_NAME = {"YouTube Music", "YouTube", "Spotify", "SoundCloud", "Nhạc miễn phí", "Nhạc trong máy"};
+    private final SliderSetting searchSrc = add(new SliderSetting("search_src", "Search Source", 1, 1, 6, 1, ""), "Music");
     private final BoolSetting animOn = add(new BoolSetting("anim", "Animations", true), "Music");
     private final SliderSetting animSpeed = add(new SliderSetting("anim_speed", "Animation Speed", 100, 25, 200, 5, "%"), "Music", animOn);
 
@@ -91,6 +91,8 @@ public class MusicPlayerModule extends HudModule {
     private DynamicTexture coverTex;
     private int coverN = 0;
 
+    private final GamePlayer gp = new GamePlayer(); // phát nhạc ngay trong game (nguồn 5, 6)
+    private boolean gameWas;
     private Process info, cmd;
     private Writer cmdOut;
     private File dir;
@@ -119,6 +121,7 @@ public class MusicPlayerModule extends HudModule {
     public void onTick() {
         if (enabled) { if (info == null && !startFailed) start(); }
         else if (info != null) stop();
+        if (enabled) syncGame();
         if (searching && !(Minecraft.getMinecraft().currentScreen instanceof GuiChat)) searching = false;
         if (hasSession && System.nanoTime() - lastUpdate > 5000000000L) hasSession = false;
     }
@@ -139,6 +142,7 @@ public class MusicPlayerModule extends HudModule {
                 Files.copy(in, new File(dir, r).toPath(), StandardCopyOption.REPLACE_EXISTING);
                 in.close();
             }
+            gp.setDir(dir);
             info = ps("music_info.ps1");
             cmd = ps("music_cmd.ps1");
             cmdOut = new OutputStreamWriter(cmd.getOutputStream(), StandardCharsets.UTF_8);
@@ -166,6 +170,7 @@ public class MusicPlayerModule extends HudModule {
     }
 
     private synchronized void stop() {
+        gp.shutdown();
         if (info != null) { info.destroy(); info = null; }
         if (cmd != null) { cmd.destroy(); cmd = null; }
         cmdOut = null;
@@ -195,6 +200,7 @@ public class MusicPlayerModule extends HudModule {
     }
 
     private void handle(JsonObject o) {
+        if (gp.active()) return; // đang phát trong game: bỏ qua nhạc của Windows
         lastUpdate = System.nanoTime();
         if (!o.get("ok").getAsBoolean()) { hasSession = false; return; }
         String t = str(o, "title"), a = str(o, "artist");
@@ -285,9 +291,9 @@ public class MusicPlayerModule extends HudModule {
         } catch (Exception ex) { return null; }
     }
 
-    private static String enc(String s) throws UnsupportedEncodingException { return URLEncoder.encode(s, "UTF-8"); }
+    static String enc(String s) throws UnsupportedEncodingException { return URLEncoder.encode(s, "UTF-8"); }
 
-    private static String http(String u) throws IOException {
+    static String http(String u) throws IOException {
         HttpURLConnection c = (HttpURLConnection) new URL(u).openConnection();
         c.setConnectTimeout(5000);
         c.setReadTimeout(8000);
@@ -483,13 +489,63 @@ public class MusicPlayerModule extends HudModule {
     private void press(int id) {
         kick[id] = 1f; // hiệu ứng bấm (icon giật nhẹ, vệt mờ)
         switch (id) {
-            case B_PREV: send("prev"); break;
-            case B_PLAY: send("play"); playing = !playing; basePos = pos(); baseNanos = System.nanoTime(); pop.x = -0.14f; break;
-            case B_NEXT: send("next"); break;
-            case B_VOLDN: vol = Math.max(0, vol - 5); send("vol:" + vol); break;
-            case B_VOLUP: vol = Math.min(100, vol + 5); send("vol:" + vol); break;
+            case B_PREV: if (gp.active()) gp.prev(); else send("prev"); break;
+            case B_PLAY:
+                if (gp.active()) gp.toggle();
+                else { send("play"); playing = !playing; basePos = pos(); baseNanos = System.nanoTime(); }
+                pop.x = -0.14f;
+                break;
+            case B_NEXT: if (gp.active()) gp.next(); else send("next"); break;
+            case B_VOLDN: setVol(Math.max(0, vol - 5)); break;
+            case B_VOLUP: setVol(Math.min(100, vol + 5)); break;
             case B_SEARCH: searching = !searching; query = ""; lastKeyNanos = System.nanoTime(); break;
             default: showLyrics.toggle(); break;
+        }
+    }
+
+    private void setVol(int v) {
+        vol = v;
+        if (gp.active()) gp.setVolume(v); else send("vol:" + v);
+    }
+
+    // ================================================================ phát trong game
+
+    /** Khi đang phát trong game: lấy bài, vị trí, âm lượng từ trình phát của mod thay cho nhạc của Windows. */
+    private void syncGame() {
+        if (!gp.active()) {
+            if (gameWas) { gameWas = false; lyricsKey = ""; coverFile = "\u0000"; } // trả lại cho nhạc của Windows
+            return;
+        }
+        final GamePlayer.Track t = gp.current();
+        if (t == null) return;
+        gameWas = true;
+        title = t.title; artist = t.artist;
+        dur = gp.dur(); playing = gp.playing();
+        basePos = gp.pos(); baseNanos = gp.posNanos();
+        vol = gp.volume();
+        hasSession = true;
+        lastUpdate = System.nanoTime();
+        String key = "game|" + t.title + "|" + t.lyricArtist + "|" + t.dur;
+        if (!key.equals(lyricsKey)) { lyricsKey = key; fetchLyrics(t.title, t.lyricArtist, t.dur > 0 ? t.dur : gp.dur()); }
+        if (!t.thumb.equals(coverFile)) {
+            coverFile = t.thumb;
+            final String url = t.thumb;
+            pool.submit(new Runnable() {
+                public void run() {
+                    BufferedImage img = null;
+                    if (!url.isEmpty()) {
+                        try {
+                            HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+                            c.setConnectTimeout(5000);
+                            c.setReadTimeout(8000);
+                            c.setRequestProperty("User-Agent", "ZhwiiClient/2.0");
+                            InputStream in = c.getInputStream();
+                            try { img = ImageIO.read(in); } finally { in.close(); }
+                        } catch (Exception ignored) { }
+                    }
+                    queueCover(img);
+                }
+            });
         }
     }
 
@@ -524,6 +580,12 @@ public class MusicPlayerModule extends HudModule {
         }
     }
 
+    private static File musicFolder() {
+        File cfg = dev.lunarlite.LunarLite.configDir();
+        File root = cfg.getAbsoluteFile().getParentFile();
+        return new File(root != null ? root : new File("."), "zhwii-music");
+    }
+
     private int srcIdx() {
         int i = Math.round((float) searchSrc.value) - 1;
         return i < 0 ? 0 : (i >= SRC_NAME.length ? SRC_NAME.length - 1 : i);
@@ -541,6 +603,12 @@ public class MusicPlayerModule extends HudModule {
 
     private void openSearch(final String q) {
         final int src = srcIdx();
+        if (src >= 4) { // nhạc miễn phí / nhạc trong máy: phát ngay trong game
+            if (!isWin()) { gp.searchOnline(""); return; }
+            if (src == 4) gp.searchOnline(q);
+            else gp.searchLocal(q, musicFolder());
+            return;
+        }
         pool.submit(new Runnable() {
             public void run() {
                 try {
@@ -694,6 +762,8 @@ public class MusicPlayerModule extends HudModule {
         boolean idle = !hasSession && !preview;
         String tt = fake ? "Tên bài hát" : idle ? "Chưa có bài đang phát" : title;
         String ar = fake ? "Nghệ sĩ" : idle ? "Bấm Tìm để tìm nhạc" : artist;
+        String nt = gp.note();
+        if (!nt.isEmpty() && !fake) ar = nt; // thông báo của trình phát trong game
         boolean pl = fake || (!idle && playing);
         long p = fake ? 83000L : idle ? 0L : pos(), d = fake ? 187000L : idle ? 0L : dur;
         int vo = fake ? 69 : Math.round(volShown);
